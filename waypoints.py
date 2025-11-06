@@ -25,8 +25,10 @@ def build_waypoints(start_pos: Dict[str, float], WAYPOINT_OFFSETS) -> list[dict[
 ############################# GET POSITION QUERY ##############################################
 
 async def query_position(bus, target_id: str) -> Tuple[Dict[str, float], Optional[float]]:
+
     mid = str(uuid.uuid4())
     resp = await bus.send_query({"type": "query", "query": "get.position", "target_id": target_id, "msg_id": mid})
+    
     if resp.get("error"):
         raise RuntimeError(f"get.position error for {target_id}: {resp['error']}")
     return resp["result"], resp.get("t_sim")
