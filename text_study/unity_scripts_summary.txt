@@ -1,0 +1,49 @@
+SimObject SCRIPT
+
+    - Provide Unity GameObject with a string ID
+    - Attach to objects --> ID Referenced in Python
+
+#################################################################################################
+
+UnityWsClientMulti SCRIPT
+
+    - Unity WebSocket Client --> Talk to Server Python --> Serve Position Queries --> Execute Commands
+    - Serializable Class --> Define JSON of Messages
+        - Query get.position --> ResponseMsg --> {result: Position, t_sim}
+        - Command set.route --> EventMsg ack/error
+        - Command speed.set --> """
+        - Event route.complete --> EventMsg from Unity to Python
+    
+    - ON START --> Scan the Scene --> Search SimObjects
+        - _byId --> Target ID --> GameObject
+        - _follow --> Target ID --> Route Follower
+        - Checks RouteComplete --> Send event route.complete to Python
+    
+    - CONNECTION & RECONNECT
+        - ConnectLoop() --> Create Client WebSocket --> To Python Ws URL --> Auto Reconnect on errors
+        - Run in Background --> Keep networking active
+    
+    - RECEIVING MESSAGES
+        - ReceiveLoop() --> Assemble Message Frames --> Call HandleMessage(json)
+        - Type - Query && Query - get.position --> Target by ID --> Reply transform.position --> Or error not found
+        - Type - Command speed.set --> Check RouteFollower Exists --> Update Speed --> Optional Acc/Dec --> Send command.ack / command.error
+        - Type - Command set.route --> Validate Target & Waypoints List --> Convert JSON to Vector3[] --> Call RouteFollower.StartRoute(wps, speed) --> Send command.ack / command.error
+    
+    - SENDING MESSAGES
+        - Send(json) --> Write UTF-8 Text Frame --> Uses Serialized Classes
+    
+    - CONFIGURATION
+        - PythonWsUrl --> Set ws:// Endpoint for Python Server
+        - ReconnectDelaySec --> Reconnect Backoff
+    
+
+UNITY & PYTHON COMMUNICATION
+
+    - Python Sends --> Query get.position / Commands set.route && speed.set
+    - Unity Responds --> Positions / Command route.complete
+
+###########################################################################################
+
+RouteFollower SCRIPT
+
+
