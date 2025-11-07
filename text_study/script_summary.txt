@@ -71,10 +71,3 @@ SPEED JITTER
 ROUTE COMPLETION
     - Unity Event route.complete --> Bus Reader Push to Events --> Handler --> Log "Stop" --> Free Active Slot
 
-
-
-
-##################################################################################################
-
-COMMAND ACKS
-
