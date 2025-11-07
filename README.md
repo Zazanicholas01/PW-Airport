@@ -7,3 +7,6 @@ Connection to metabase at:
 
 Connection string for metabase:
     - postgresql://airport:airport@postgres:5432/Airport
+
+Unity MR Project:
+    - MRProject/ folder (Meta Quest/Oculus)
