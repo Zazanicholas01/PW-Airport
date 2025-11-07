@@ -1,0 +1,10 @@
+ON CONNECT 
+    - Handler creates Bus and spawns reader
+
+FOR A TARGET
+    - Query position --> Build Waypoints --> Set.Route --> Log "Start"
+
+LOOP
+    - Poll Positions --> Log to CSV --> Print Status
+    - ON Route.Complete --> Log "Stop" --> Free Slot for Concurrency
+    - Speed Jitter --> Speed.Set --> Log to CSV

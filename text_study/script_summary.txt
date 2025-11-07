@@ -1,0 +1,80 @@
+BIG PICTURE
+
+    - Unity --> Connects to WebSocket Server (ws://0.0.0.0:8765) --> Expose Commands & Queries
+    - Server --> Keep up 2 targets --> Move along Waypoints --> Poll Positions --> Logs to CSV --> Random Jitter Speed
+    - Communication --> JSON-Based --> Queries & Commands & Events
+
+STARTUP
+    - Run Websocket Server (websockets.serve(handler, HOST, PORT))
+    - Each Connection --> Enters handler(ws) --> Creates Bus --> Starts the reader (bus.start())
+
+CONCURRENCY
+    - Loop While --> len(active) < CONCURRENCY
+    - Query Current Position --> query_position(bus, target) --> Unity Responds --> {result: {x,y,z}, t_sim}
+    - Build Waypoints from Current Position --> build_waypoints(start_pos, WAYPOINT_OFFSETS)
+    - Start Route --> start_route(...) --> Command set.route --> Logs "Start" --> log_route_event()
+
+POLL POSITIONS
+    - For each active target --> Query Position --> Async Tasks
+    - Update --> active[t]["last_t_sim"]
+    - Write --> pos.csv --> append_position_to_csv()
+
+HANDLE EVENTS
+    - Drain Bus.events Queue --> ON route.complete --> Log "Stop" --> Free Active Slot
+
+JITTER SPEEDS
+    - Speed_jitter(bus, active) --> Pick Random Active Target --> Call set_speed(...)
+    - Set_speed --> Command speed.set --> speed_log.csv --> log_speed_change()
+
+SHUTDOWN
+    - ON Disconnect --> Cancel Jitter --> Await Cleanup --> Stop Bus
+
+##################################################################################################
+
+MESSAGE BUS
+
+READER TASK (Bus._reader) --> Demux incoming messages
+    - Type == "response" --> Resolve pending_queries[msg_id]
+    - Type == "event":
+        - If ref_msg_id Match --> Resolve pending_acks[ref_msg_id] --> Command Ack
+        - Else --> Push to Events Queue --> App Logic
+
+SEND APIS
+    - Send_query(payload) --> Correlates by msg_id --> Awaits Response
+    - Send_cmd_wait_ack(payload) --> Correlates by Command msg_id --> Awaits Ack Event
+
+##################################################################################################
+
+WAYPOINTS & QUERIES
+
+    - build_waypoints() --> Return List --> Start at Current Position --> Adding Offsets
+    - query_position() --> {type: 'query', query: 'get.position'} --> Return {{x,y,z}, t_sim} --> Raise Error if present
+
+##################################################################################################
+
+
+
+
+
+KEY CALL CHAINS
+
+START ROUTE
+    - Handler --> Query Position (Unity Response) --> Build Waypoints --> Start Route --> 
+                --> Bus Send Cmd Wait Ack (Unity Ack Event) --> Log "Start"
+
+POLL POSITION
+    - Handler Timer Loop --> Query Position --> Append to CSV
+
+SPEED JITTER
+    - Speed Jitter Timer --> Set Speed --> Bus Send Cmd Wait Ack --> Log to CSV
+
+ROUTE COMPLETION
+    - Unity Event route.complete --> Bus Reader Push to Events --> Handler --> Log "Stop" --> Free Active Slot
+
+
+
+
+##################################################################################################
+
+COMMAND ACKS
+

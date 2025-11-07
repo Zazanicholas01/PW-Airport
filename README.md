@@ -10,3 +10,11 @@ Connection string for metabase:
 
 Unity MR Project:
     - MRProject/ folder (Meta Quest/Oculus)
+
+Run websocket server:
+    - python -m src.server
+
+CSV logs are written to:
+    - csv_log/pos.csv
+    - csv_log/route_log.csv
+    - csv_log/speed_log.csv

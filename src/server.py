@@ -7,14 +7,13 @@ import math
 import random
 import time
 import uuid
-from pathlib import Path
 from typing import Dict, Optional, Tuple
 
 import websockets
 
-from waypoints import build_waypoints, query_position
-from save_csv import log_speed_change, log_route_event, append_position_to_csv
-from bus import Bus
+from src.waypoints import build_waypoints, query_position
+from src.save_csv import log_speed_change, log_route_event, append_position_to_csv
+from src.bus import Bus
 
 ################################# CONSTANTS DEFINITION #################################
 
@@ -160,9 +159,7 @@ WAYPOINT_OFFSETS: list[tuple[float, float, float]] = [
 SPEED_MPS = 20.0
 POLL_HZ = 5
 
-POS_CSV = Path(__file__).with_name("pos.csv")
-ROUTE_LOG_CSV = Path(__file__).with_name("route_log.csv")
-SPEED_LOG_CSV = Path(__file__).with_name("speed_log.csv")
+# CSV logging paths are centralized in src/save_csv.py
 
 ######################## SET / START ROUTE COMMAND ##############################################
 

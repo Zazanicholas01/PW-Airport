@@ -1,7 +1,13 @@
 from typing import Dict, Optional
 import csv, time
+from pathlib import Path
 
-POS_CSV = 'pos.csv'
+# Centralized CSV directory under project root
+BASE_DIR = Path(__file__).resolve().parents[1]
+CSV_DIR = BASE_DIR / "csv_log"
+CSV_DIR.mkdir(parents=True, exist_ok=True)
+
+POS_CSV = CSV_DIR / "pos.csv"
 
 ######################### SAVE POSITIONS TO CSV ######################################
 
@@ -24,7 +30,7 @@ def append_position_to_csv(target_id: str, t_sim: Optional[float], pos: Dict[str
 
 ############################# SAVE EVENTS LOGS ###########################################
 
-ROUTE_LOG_CSV = 'route_log.csv'
+ROUTE_LOG_CSV = CSV_DIR / "route_log.csv"
 
 def log_route_event(target_id: str, event: str, ref_msg_id: str | None, t_sim: Optional[float]) -> None:
     
@@ -38,7 +44,7 @@ def log_route_event(target_id: str, event: str, ref_msg_id: str | None, t_sim: O
 
 ############################# SAVE SPEED LOGS ############################################
 
-SPEED_LOG_CSV = 'speed_log.csv'
+SPEED_LOG_CSV = CSV_DIR / "speed_log.csv"
 
 def log_speed_change(target_id: str, cmd_id: str, speed: float, accel_up: Optional[float], accel_down: Optional[float]) -> None:
     
