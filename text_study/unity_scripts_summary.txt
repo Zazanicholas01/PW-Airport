@@ -46,4 +46,55 @@ UNITY & PYTHON COMMUNICATION
 
 RouteFollower SCRIPT
 
+    - PURPOSE --> Move GameObject --> Following a Sequence of Waypoints --> Notifying Route Completion
+
+    - MOTION & SPEED
+        - Constants --> speedMetersPerSec / minSpeed / maxSpeed
+        - Variables --> _targetSpeed / _currentSpeed
+        - Acceleration --> accelUp / accelDown
+        - Each Update --> Speed changes by +- accel * deltaTime --> Clamp to Normalize
+    
+    STEERING & ORIENTATION
+        - orientToVelocity --> Rotate Object to Face Movement Direction
+        - baseEulerOffset --> Fixed Rotation --> Preserve Model Orientation
+    
+    WAYPOINTS & PROGRESS
+        - Internal State --> _wps (Vector3[]) --> _idx (Current Index) --> _active Flag
+        - Vector3.MoveTowards --> Move to Waypoint by speed * dt
+    
+    COMPLETION
+        - Last Waypoint --> _active to False --> Call OnRouteComplete()
+    
+    PUBLIC API
+        - StartRoute --> Start / Restart Following --> Manages Speed
+        - SetTargetSpeed --> Change Target Speed
+        - StopNow() --> Set all Speed to 0
+        - CancelRoute() --> Stop Following --> Clear Route
+
+################################################################################################
+
+SensorUIController SCRIPT
+
+    PURPOSE --> HTTP Endpoint Once per second --> Parse JSON Sensor Data --> Update On-Screen UI
+
+    DATA MODEL
+        - SensorData --> {light_value, led_state, datetime}
+    
+    CONFIG & UI
+        - serverUrl --> Defines the HTTP Endpoint
+        - UI Fields --> 3 Texts for every Sensor Data
+        - Optional --> LED Indicator Image --> Light Slider
+    
+    LIFECYCLE & FLOW
+        - Start --> Invoke Repeating --> Schedules Polling Every x seconds
+        - FetchData --> Starts GetSensorData()
+        - GetSensorData() --> Unity Web Request (GET) --> Send Request
+        - ON Success --> Parse JSON to SensorData --> Update UI
+        - On Error --> Log "Errore Connessione"
+    
+    UI UPDATES
+        - Set Text --> Light / State / Datetime Texts
+        - Update Light Slider.value (0-1023 for Analog)
+        - Set LED Indicator.color to Green (ON) or Red (OFF)
+        - Logs Summary
 
