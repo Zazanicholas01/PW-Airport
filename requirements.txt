@@ -1,2 +1,4 @@
 psycopg[binary]
 websockets
+sqlalchemy
+psycopg2-binary
