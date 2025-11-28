@@ -38,6 +38,104 @@ services:
     volumes:
       - metabase-data:/metabase-data
 
+  metabase-setup:
+    image: python:3.12-alpine
+    container_name: pw_airport_metabase_setup
+    depends_on:
+      - metabase
+    environment:
+      MB_BASE_URL: http://metabase:3000
+      MB_INIT_EMAIL: admin@pw-airport.local
+      MB_INIT_PASSWORD: ghiaccio123
+      MB_INIT_FIRST_NAME: Admin
+      MB_INIT_LAST_NAME: User
+      MB_SITE_NAME: PW Airport Metabase
+      MB_SITE_LOCALE: en
+      MB_SITE_URL: http://localhost:3000
+    command:
+      - /bin/sh
+      - -c
+      - |
+        set -e
+        python - <<'PY'
+        import json
+        import os
+        import time
+        import urllib.error
+        import urllib.request
+
+
+        BASE_URL = os.environ.get("MB_BASE_URL", "http://metabase:3000")
+        ADMIN_EMAIL = os.environ.get("MB_INIT_EMAIL", "admin@example.com")
+        ADMIN_PASSWORD = os.environ.get("MB_INIT_PASSWORD", "ChangeMe123!")
+        ADMIN_FIRST = os.environ.get("MB_INIT_FIRST_NAME", "Admin")
+        ADMIN_LAST = os.environ.get("MB_INIT_LAST_NAME", "User")
+        SITE_NAME = os.environ.get("MB_SITE_NAME", "Metabase")
+        SITE_LOCALE = os.environ.get("MB_SITE_LOCALE", "en")
+        SITE_URL = os.environ.get("MB_SITE_URL", "")
+
+
+        def http_json(method: str, path: str, payload=None):
+          data = json.dumps(payload).encode() if payload is not None else None
+          req = urllib.request.Request(
+            BASE_URL + path,
+            data=data,
+            method=method,
+            headers={"Content-Type": "application/json"},
+          )
+          with urllib.request.urlopen(req, timeout=10) as resp:
+            body = resp.read().decode()
+            return json.loads(body) if body else {}
+
+
+        def wait_for_metabase(timeout_seconds: int = 180) -> None:
+          deadline = time.time() + timeout_seconds
+          while time.time() < deadline:
+            try:
+              health = http_json("GET", "/api/health")
+              if health.get("status") == "ok":
+                print("Metabase is healthy.")
+                return
+            except Exception:
+              pass
+            time.sleep(2)
+          raise SystemExit("Metabase did not become healthy in time.")
+
+
+        def main():
+          wait_for_metabase()
+          props = http_json("GET", "/api/session/properties")
+          token = props.get("setup_token")
+          if not token:
+            print("Metabase already configured; nothing to do.")
+            return
+
+          payload = {
+            "token": token,
+            "user": {
+              "first_name": ADMIN_FIRST,
+              "last_name": ADMIN_LAST,
+              "email": ADMIN_EMAIL,
+              "password": ADMIN_PASSWORD,
+            },
+            "prefs": {
+              "site_name": SITE_NAME,
+              "site_locale": SITE_LOCALE,
+              "allow_tracking": False,
+              "site_url": SITE_URL,
+            },
+            "database": None,
+          }
+
+          result = http_json("POST", "/api/setup", payload)
+          print("Metabase setup completed:", result.get("status", "ok"))
+
+
+        if __name__ == "__main__":
+          main()
+        PY
+    restart: "no"
+
 volumes:
   postgres-data:
   metabase-data:
