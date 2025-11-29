@@ -88,7 +88,6 @@ class Terminal(Base):
     type = Column("Tipo", String, nullable=False)
     capacity = Column("Capacita", Integer, nullable=False)
 
-    stands = relationship("Stand", back_populates="terminal")
     flights = relationship("Flight", back_populates="terminal")
 
 
@@ -97,11 +96,9 @@ class Stand(Base):
 
     id = Column("id", String, primary_key=True)
     type = Column("Tipo", String, nullable=False)
-    terminal_id = Column("id_terminal", Integer, ForeignKey("Terminal.id"), nullable=False)
     status = Column("Stato", String, nullable=False)
     airplane_id = Column("id_aereo", String, ForeignKey("Aereo.Id"))
 
-    terminal = relationship("Terminal", back_populates="stands")
     airplane = relationship("Airplane", back_populates="stands")
     flights = relationship("Flight", back_populates="stand")
     operations = relationship("Operation", back_populates="stand")
@@ -211,7 +208,7 @@ class ParkingSpot(Base):
     __tablename__ = "Parcheggio"
 
     id = Column("id", Integer, primary_key=True, autoincrement=True)
-    airplane_id = Column("id_aereo", String, ForeignKey("Aereo.Id"), nullable=False)
+    airplane_id = Column("id_aereo", String, ForeignKey("Aereo.Id"))
     status = Column("Stato", String, nullable=False)
     spline = Column("Spline", Integer, nullable=False)
 

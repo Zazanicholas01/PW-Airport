@@ -93,6 +93,7 @@ def add_airports(session) -> None:
     session.commit()
     print("Creati aeroporti di esempio")
 
+
 def add_airlines(session) -> None:
     #### Aggiungi Compagnie Aeree ####
     airlines = [
@@ -107,11 +108,45 @@ def add_airlines(session) -> None:
     session.commit()
     print("Create compagnie aeree di esempio")
 
+
+def add_stands(session) -> None:
+    stands = [
+        models.Stand(id="O1", type="PC", status="Libero", airplane_id=None),
+        models.Stand(id="O2", type="PC", status="Libero", airplane_id=None),
+        models.Stand(id="O3", type="PC", status="Libero", airplane_id=None),
+        models.Stand(id="O4", type="PC", status="Libero", airplane_id=None),
+        models.Stand(id="O5", type="PC", status="Libero", airplane_id=None),
+        models.Stand(id="C1", type="C", status="Libero", airplane_id=None),
+        models.Stand(id="C2", type="C", status="Libero", airplane_id=None),
+        models.Stand(id="C3", type="C", status="Libero", airplane_id=None),
+        models.Stand(id="P1", type="P", status="Libero", airplane_id=None),
+        models.Stand(id="P2", type="P", status="Libero", airplane_id=None),
+        models.Stand(id="P3", type="P", status="Libero", airplane_id=None),
+    ]
+    session.add_all(stands)
+    session.commit()
+    print("Creati stand di esempio:")
+
+
+
+def add_parkings(session) -> None:
+    parkings = [
+        models.ParkingSpot(airplane_id=None, status="Libero", spline=1),
+        models.ParkingSpot(airplane_id=None, status="Libero", spline=2),
+        models.ParkingSpot(airplane_id=None, status="Libero", spline=3),
+    ]
+    session.add_all(parkings)
+    session.commit()
+    print("Creati parcheggi di esempio")
+
+
 def insert_seed_values() -> None:
     with Session() as session:
         add_terminal(session)
         add_airports(session)
         add_airlines(session)
+        add_parkings(session)
+        add_stands(session)
     
 def main() -> None:
     insert_seed_values()
