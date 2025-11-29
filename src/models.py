@@ -40,7 +40,8 @@ class Airline(Base):
 
     icao = Column("ICAO", String, primary_key=True)
     name = Column("Nome", String, nullable=False)
-    type = Column("Tipo", String, nullable=False)
+    type = Column("Tipo", String, nullable=False) # Cargo / Passeggeri
+    nationality = Column("Nazionalità", String, nullable=True) # Nazionale / Europeo / Intercontinentale
 
     airplanes = relationship("Airplane", back_populates="airline")
 
@@ -48,7 +49,7 @@ class Airline(Base):
 class Percorso(Base):
     __tablename__ = "Percorso"
 
-    id = Column("id", Integer, primary_key=True)
+    id = Column("id", Integer, primary_key=True, autoincrement=True)
     source = Column("Sorgente", String, nullable=False)
     destination = Column("Destinazione", String, nullable=False)
     spline = Column("Spline", Integer, nullable=False)
@@ -83,7 +84,7 @@ class Airplane(Base):
 class Terminal(Base):
     __tablename__ = "Terminal"
 
-    id = Column("id", Integer, primary_key=True)
+    id = Column("id", Integer, primary_key=True, autoincrement=True)
     type = Column("Tipo", String, nullable=False)
     capacity = Column("Capacita", Integer, nullable=False)
 
@@ -196,18 +197,20 @@ class Cargo(Base):
 
     id = Column("id", String, primary_key=True)
     flight_id = Column("id_viaggio", String, ForeignKey("Viaggio.id"), nullable=False)
+    terminal_id = Column("id_terminal", Integer, ForeignKey("Terminal.id"), nullable=False)
     type = Column("Tipo", String, nullable=False)
     quantity = Column("Quantita", Integer, nullable=False)
     weight = Column("Peso", Float, nullable=False)
 
     flight = relationship("Flight", back_populates="cargo")
     passengers = relationship("Passenger", back_populates="baggage")
+    terminal = relationship("Terminal")
 
 
 class ParkingSpot(Base):
     __tablename__ = "Parcheggio"
 
-    id = Column("id", Integer, primary_key=True)
+    id = Column("id", Integer, primary_key=True, autoincrement=True)
     airplane_id = Column("id_aereo", String, ForeignKey("Aereo.Id"), nullable=False)
     status = Column("Stato", String, nullable=False)
     spline = Column("Spline", Integer, nullable=False)
