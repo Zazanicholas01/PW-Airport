@@ -1,28 +1,11 @@
-"""Database bootstrap utility for the PW Airport project.
-
-This script connects to the Postgres instance defined in docker-compose.yml,
-recreates the Airport database from scratch, and ensures the schema is present.
-Run it after the containers are up:
-
-    docker compose up -d
-    pip install psycopg[binary]
-    python db.py
-"""
-
 from __future__ import annotations
 
 import os
 import sys
 from typing import Iterable
 
-try:
-    import psycopg  # type: ignore
-    from psycopg import sql  # type: ignore
-except ImportError as exc:  # pragma: no cover - setup guard
-    raise SystemExit(
-        "Missing dependency: psycopg. Install it with `pip install psycopg[binary]` "
-        "inside your virtual environment before running this script."
-    ) from exc
+import psycopg
+from psycopg import sql
 
 
 DB_NAME = os.getenv("POSTGRES_DB", "Airport")

@@ -128,7 +128,6 @@ def add_stands(session) -> None:
     print("Creati stand di esempio:")
 
 
-
 def add_parkings(session) -> None:
     parkings = [
         models.ParkingSpot(airplane_id=None, status="Libero", spline=1),
@@ -148,6 +147,7 @@ def insert_seed_values() -> None:
         add_parkings(session)
         add_stands(session)
     
+
 def main() -> None:
     insert_seed_values()
 

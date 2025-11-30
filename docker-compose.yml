@@ -19,122 +19,124 @@ services:
       timeout: 5s
       retries: 5
 
+  airportdb-init:
+    image: python:3.11-slim
+    container_name: pw_airport_db_init
+    depends_on:
+      postgres:
+        condition: service_healthy
+    working_dir: /app
+    volumes:
+      - ./scripts:/app/scripts:ro
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: Airport
+      POSTGRES_ADMIN_DB: postgres
+      POSTGRES_USER: airport
+      POSTGRES_PASSWORD: airport
+    entrypoint: >
+      sh -c "pip install --no-cache-dir 'psycopg[binary]' && python /app/scripts/db.py"
+
   metabase:
     image: metabase/metabase:latest
     container_name: pw_airport_metabase
     depends_on:
       postgres:
         condition: service_healthy
+      airportdb-init:
+        condition: service_completed_successfully
     environment:
-      MB_DB_TYPE: postgres
-      MB_DB_DBNAME: metabase
-      MB_DB_PORT: 5432
-      MB_DB_USER: metabase
-      MB_DB_PASS: metabase
-      MB_DB_HOST: postgres
+      MB_DB_CONNECTION_URI: postgres://metabase:metabase@postgres:5432/metabase
+      MB_SITE_URL: http://localhost:3002
+      MB_PASSWORD_COMPLEXITY: weak
     ports:
-      - "3000:3000"
+      - "3002:3000"
     restart: unless-stopped
     volumes:
       - metabase-data:/metabase-data
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/api/health || exit 1"]
+      interval: 10s
+      timeout: 10s
+      retries: 15
+      start_period: 60s
 
   metabase-setup:
-    image: python:3.12-alpine
+    image: curlimages/curl:8.4.0
     container_name: pw_airport_metabase_setup
     depends_on:
-      - metabase
+      metabase:
+        condition: service_healthy
+      airportdb-init:
+        condition: service_completed_successfully
     environment:
-      MB_BASE_URL: http://metabase:3000
-      MB_INIT_EMAIL: admin@pw-airport.local
-      MB_INIT_PASSWORD: ghiaccio123
-      MB_INIT_FIRST_NAME: Admin
-      MB_INIT_LAST_NAME: User
+      MB_ADMIN_FIRST: Admin
+      MB_ADMIN_LAST: User
+      MB_ADMIN_EMAIL: admin@pw-airport.local
+      MB_ADMIN_PASSWORD: ghiaccio123
       MB_SITE_NAME: PW Airport Metabase
-      MB_SITE_LOCALE: en
-      MB_SITE_URL: http://localhost:3000
-    command:
-      - /bin/sh
-      - -c
-      - |
-        set -e
-        python - <<'PY'
-        import json
-        import os
-        import time
-        import urllib.error
-        import urllib.request
+      MB_SITE_URL: http://localhost:3002
+      MB_PROVISION_DB_NAME: Airport DB
+      MB_PROVISION_DB_HOST: postgres
+      MB_PROVISION_DB_PORT: 5432
+      MB_PROVISION_DB_DBNAME: Airport
+      MB_PROVISION_DB_USER: airport
+      MB_PROVISION_DB_PASSWORD: airport
+    entrypoint: >
+      sh -c '
+        until curl -sf http://metabase:3000/api/health >/dev/null; do
+          echo "Waiting for Metabase to be healthy...";
+          sleep 5;
+        done;
+        TOKEN=$$(curl -sf http://metabase:3000/api/session/properties | sed -n "s/.*\"setup-token\":\"\([^\"]*\)\".*/\1/p");
+        if [ -n "$$TOKEN" ] && [ "$$TOKEN" != "null" ]; then
+          echo "Running automated setup...";
+          curl -sf -X POST http://metabase:3000/api/setup \
+            -H "Content-Type: application/json" \
+            -d "{\"token\":\"$$TOKEN\",\"user\":{\"first_name\":\"$$MB_ADMIN_FIRST\",\"last_name\":\"$$MB_ADMIN_LAST\",\"email\":\"$$MB_ADMIN_EMAIL\",\"password\":\"$$MB_ADMIN_PASSWORD\"},\"prefs\":{\"site_name\":\"$$MB_SITE_NAME\",\"site_url\":\"$$MB_SITE_URL\"},\"database\":null}";
+        else
+          echo "Setup already completed; continuing to DB provisioning...";
+        fi;
+        SESSION=$$(curl -sf -X POST http://metabase:3000/api/session \
+          -H "Content-Type: application/json" \
+          -d "{\"username\":\"$$MB_ADMIN_EMAIL\",\"password\":\"$$MB_ADMIN_PASSWORD\"}" | sed -n "s/.*\"id\":\"\([^\"]*\)\".*/\1/p");
+        if [ -z "$$SESSION" ]; then
+          echo "Failed to obtain session; retrying...";
+          exit 1;
+        fi;
+        DB_EXISTS=$$(curl -sf -H "X-Metabase-Session: $$SESSION" http://metabase:3000/api/database | grep -c "\"name\":\"$$MB_PROVISION_DB_NAME\"");
+        if [ "$${DB_EXISTS}" -gt 0 ]; then
+          echo "Database '\''$$MB_PROVISION_DB_NAME'\'' already present; done.";
+          exit 0;
+        fi;
+        echo "Creating database '\''$$MB_PROVISION_DB_NAME'\''...";
+        curl -sf -X POST http://metabase:3000/api/database \
+          -H "Content-Type: application/json" \
+          -H "X-Metabase-Session: $$SESSION" \
+            -d "{\"engine\":\"postgres\",\"name\":\"$$MB_PROVISION_DB_NAME\",\"details\":{\"host\":\"$$MB_PROVISION_DB_HOST\",\"port\":$$MB_PROVISION_DB_PORT,\"dbname\":\"$$MB_PROVISION_DB_DBNAME\",\"user\":\"$$MB_PROVISION_DB_USER\",\"password\":\"$$MB_PROVISION_DB_PASSWORD\",\"ssl\":false},\"is_full_sync\":true,\"is_on_demand\":false,\"refingerprint\":false}";
+      '
+    restart: on-failure
 
-
-        BASE_URL = os.environ.get("MB_BASE_URL", "http://metabase:3000")
-        ADMIN_EMAIL = os.environ.get("MB_INIT_EMAIL", "admin@example.com")
-        ADMIN_PASSWORD = os.environ.get("MB_INIT_PASSWORD", "ChangeMe123!")
-        ADMIN_FIRST = os.environ.get("MB_INIT_FIRST_NAME", "Admin")
-        ADMIN_LAST = os.environ.get("MB_INIT_LAST_NAME", "User")
-        SITE_NAME = os.environ.get("MB_SITE_NAME", "Metabase")
-        SITE_LOCALE = os.environ.get("MB_SITE_LOCALE", "en")
-        SITE_URL = os.environ.get("MB_SITE_URL", "")
-
-
-        def http_json(method: str, path: str, payload=None):
-          data = json.dumps(payload).encode() if payload is not None else None
-          req = urllib.request.Request(
-            BASE_URL + path,
-            data=data,
-            method=method,
-            headers={"Content-Type": "application/json"},
-          )
-          with urllib.request.urlopen(req, timeout=10) as resp:
-            body = resp.read().decode()
-            return json.loads(body) if body else {}
-
-
-        def wait_for_metabase(timeout_seconds: int = 180) -> None:
-          deadline = time.time() + timeout_seconds
-          while time.time() < deadline:
-            try:
-              health = http_json("GET", "/api/health")
-              if health.get("status") == "ok":
-                print("Metabase is healthy.")
-                return
-            except Exception:
-              pass
-            time.sleep(2)
-          raise SystemExit("Metabase did not become healthy in time.")
-
-
-        def main():
-          wait_for_metabase()
-          props = http_json("GET", "/api/session/properties")
-          token = props.get("setup_token")
-          if not token:
-            print("Metabase already configured; nothing to do.")
-            return
-
-          payload = {
-            "token": token,
-            "user": {
-              "first_name": ADMIN_FIRST,
-              "last_name": ADMIN_LAST,
-              "email": ADMIN_EMAIL,
-              "password": ADMIN_PASSWORD,
-            },
-            "prefs": {
-              "site_name": SITE_NAME,
-              "site_locale": SITE_LOCALE,
-              "allow_tracking": False,
-              "site_url": SITE_URL,
-            },
-            "database": None,
-          }
-
-          result = http_json("POST", "/api/setup", payload)
-          print("Metabase setup completed:", result.get("status", "ok"))
-
-
-        if __name__ == "__main__":
-          main()
-        PY
-    restart: "no"
+  airport-startup:
+    image: python:3.11-slim
+    container_name: pw_airport_startup
+    depends_on:
+      metabase-setup:
+        condition: service_completed_successfully
+    working_dir: /app
+    volumes:
+      - ./:/app:ro
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: Airport
+      POSTGRES_USER: airport
+      POSTGRES_PASSWORD: airport
+      PYTHONPATH: /app
+    entrypoint: >
+      sh -c "pip install --no-cache-dir -r /app/requirements.txt && python /app/scripts/startup.py"
+    restart: on-failure
 
 volumes:
   postgres-data:
