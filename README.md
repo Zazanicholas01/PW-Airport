@@ -1,3 +1,13 @@
+Setup Git & Github
+
+    - Clonare Repository GitHub
+        - git clone <nome_repository>
+        - cd <cartella_creata>
+    
+    - Creare Nuovi Branches & Spostarsi su Branch di Lavoro
+        - git branch -c dev && git branch -c start
+        - git checkout start
+
 docker compose up -d
 
 Connection to metabase at:
