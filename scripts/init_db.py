@@ -87,11 +87,11 @@ CREATE_AND_ALTER_STATEMENTS = [
         "Tipo" VARCHAR(255) NOT NULL,
         "Capacita" INTEGER NOT NULL,
         "Posizione" jsonb NOT NULL,
-        "Destinazione" VARCHAR(255) NOT NULL,
+        "Destinazione" VARCHAR(255),
         "Stato" VARCHAR(255) NOT NULL,
         "Velocita" FLOAT(53) NOT NULL,
-        "id_percorso" INTEGER NOT NULL,
-        "id_viaggio" VARCHAR(255) NOT NULL
+        "id_percorso" INTEGER,
+        "id_viaggio" VARCHAR(255)
     );
     ''',
     'ALTER TABLE "Veicolo" ADD PRIMARY KEY("id");',

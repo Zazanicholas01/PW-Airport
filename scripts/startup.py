@@ -4,6 +4,8 @@ from sqlalchemy.orm import sessionmaker
 from src.database import get_engine
 from src import models
 
+from uuid import uuid4
+
 engine = get_engine()
 Session = sessionmaker(bind=engine, future=True)
 
@@ -139,14 +141,37 @@ def add_parkings(session) -> None:
     print("Creati parcheggi di esempio")
 
 
+def add_vehicles(session) -> None:
+    vehicle_specifics = [("Bus", 50), ("Bus", 50), ("Cargo", 100), ("Cargo", 100), ("Cargo", 100), ("Fuel", 5000)]
+    vehicles = []
+    for vehicle in vehicle_specifics:
+        vehicles.append(
+            models.Vehicle(
+                id=uuid4().hex[:4], 
+                type=vehicle[0],
+                capacity=vehicle[1],
+                position={"x": 0, "y": 0, "z": 0}, # Ragionamento 
+                destination=None,
+                status="Disponibile",
+                speed=0.0,
+                route_id=None,
+                flight_id=None
+            )
+        )
+    session.add_all(vehicles)
+    session.commit()
+    print("Creati veicoli di esempio")
+
+
 def insert_seed_values() -> None:
     with Session() as session:
-        add_terminal(session)
-        add_airports(session)
-        add_airlines(session)
-        add_parkings(session)
-        add_stands(session)
-    
+        #add_terminal(session)
+        #add_airports(session)
+        #add_airlines(session)
+        #add_parkings(session)
+        #add_stands(session)
+        add_vehicles(session)
+
 
 def main() -> None:
     insert_seed_values()

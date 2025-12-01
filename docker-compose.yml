@@ -36,7 +36,7 @@ services:
       POSTGRES_USER: airport
       POSTGRES_PASSWORD: airport
     entrypoint: >
-      sh -c "pip install --no-cache-dir 'psycopg[binary]' && python /app/scripts/db.py"
+      sh -c "pip install --no-cache-dir 'psycopg[binary]' && python /app/scripts/init_db.py"
 
   metabase:
     image: metabase/metabase:latest
@@ -48,10 +48,10 @@ services:
         condition: service_completed_successfully
     environment:
       MB_DB_CONNECTION_URI: postgres://metabase:metabase@postgres:5432/metabase
-      MB_SITE_URL: http://localhost:3002
+      MB_SITE_URL: http://localhost:3000
       MB_PASSWORD_COMPLEXITY: weak
     ports:
-      - "3002:3000"
+      - "3000:3000"
     restart: unless-stopped
     volumes:
       - metabase-data:/metabase-data
@@ -76,7 +76,7 @@ services:
       MB_ADMIN_EMAIL: admin@pw-airport.local
       MB_ADMIN_PASSWORD: ghiaccio123
       MB_SITE_NAME: PW Airport Metabase
-      MB_SITE_URL: http://localhost:3002
+      MB_SITE_URL: http://localhost:3000
       MB_PROVISION_DB_NAME: Airport DB
       MB_PROVISION_DB_HOST: postgres
       MB_PROVISION_DB_PORT: 5432
