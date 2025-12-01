@@ -127,7 +127,7 @@ def add_stands(session) -> None:
     ]
     session.add_all(stands)
     session.commit()
-    print("Creati stand di esempio:")
+    print("Creati stand di esempio")
 
 
 def add_parkings(session) -> None:
@@ -165,12 +165,12 @@ def add_vehicles(session) -> None:
 
 def insert_seed_values() -> None:
     with Session() as session:
-        #add_terminal(session)
-        #add_airports(session)
-        #add_airlines(session)
-        #add_parkings(session)
-        #add_stands(session)
-        add_vehicles(session)
+        add_terminal(session)
+        add_airports(session)
+        add_airlines(session)
+        add_parkings(session)
+        add_stands(session)
+        #add_vehicles(session)
 
 
 def main() -> None:
