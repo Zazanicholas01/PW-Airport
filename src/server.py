@@ -6,6 +6,7 @@ import websockets
 from websockets import WebSocketServerProtocol
 
 from src.simulator import Simulator
+from src.init_graph import InitGraph
 
 # Configure basic logging so connections and messages are visible in stdout.
 logging.basicConfig(
@@ -17,6 +18,7 @@ HOST = "0.0.0.0"
 PORT = 8765
 
 pw_simulator = Simulator()
+pw_graph = InitGraph("LIAG")
 
 def _log_spline_payload_if_any(message: str) -> None:
     """Try to parse and log spline payloads sent from Unity."""

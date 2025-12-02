@@ -1,0 +1,40 @@
+{
+    "nodes": [
+        {
+            "id": "node0",
+            "links": ["C3", "ATT_L"]
+        },
+        {
+            "id": "node1",
+            "links": ["ATT_M"]
+        },
+        {
+            "id": "node2",
+            "links": ["ATT_C"]
+        },
+        {
+            "id": "node3",
+            "links": ["O5", "C2"]
+        },
+        {
+            "id": "node4",
+            "links": ["O4"]
+        },
+        {
+            "id": "node5",
+            "links": ["O3", "C1", "P3"]
+        },
+        {
+            "id": "node6",
+            "links": ["O2"]
+        },
+        {
+            "id": "node7",
+            "links": ["O1", "P2"]
+        },
+        {
+            "id": "node8",
+            "links": ["P1", "DEC"]
+        }
+    ]
+}

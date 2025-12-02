@@ -1,0 +1,113 @@
+using System;
+using System.Collections.Generic;
+using System.Threading.Tasks;
+using UnityEngine;
+using UnityEngine.Splines;
+
+[RequireComponent(typeof(LocalWebSocketClient))]
+public class SplineRegistry : MonoBehaviour
+{
+    [SerializeField] private string rootObjectName = "Splines";
+    [SerializeField] private bool includeInactive = true;
+
+    private LocalWebSocketClient ws;
+    private TaskCompletionSource<bool> sendCompletedTcs = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+    private void Awake() => ws = GetComponent<LocalWebSocketClient>();
+
+    private async void Start()
+    {
+        // Wait for websocket, then send once on play; call SendAllSplines() again after edits.
+        var connected = await ws.WaitForConnectionAsync();
+        if (!connected)
+        {
+            Debug.LogWarning("[SplineRegistry] WebSocket not connected; skipping spline send.");
+            sendCompletedTcs.TrySetResult(false);
+            return;
+        }
+        try
+        {
+            await SendAllSplines();
+            sendCompletedTcs.TrySetResult(true);
+        }
+        catch (Exception ex)
+        {
+            Debug.LogError($"[SplineRegistry] Failed to send splines: {ex.Message}");
+            sendCompletedTcs.TrySetResult(false);
+        }
+    }
+
+    public Task<bool> WaitForSplineSendAsync() => sendCompletedTcs.Task;
+
+    public async Task SendAllSplines()
+    {
+        foreach (var splineRecord in EnumerateSplines())
+        {
+            var wrapper = new SingleSplinePayload { spline = splineRecord };
+            var json = JsonUtility.ToJson(wrapper, true);
+            await ws.Send(json);
+            Debug.Log($"[SplineRegistry] Sent spline '{splineRecord.name}' with {splineRecord.knots.Count} knots.");
+            await Task.Yield(); // avoid flooding in one frame
+        }
+    }
+
+    private IEnumerable<SplineRecord> EnumerateSplines()
+    {
+        Transform root = GameObject.Find(rootObjectName)?.transform;
+        var containers = root != null
+            ? root.GetComponentsInChildren<SplineContainer>(includeInactive)
+            : FindObjectsOfType<SplineContainer>(includeInactive);
+
+        foreach (var container in containers)
+        {
+            var spline = container.Spline;
+            if (spline == null) continue;
+
+            var knotEntries = new List<KnotEntry>();
+            int knotIndex = 0;
+
+            foreach (var knot in spline.Knots)
+            {
+                Vector3 pos = container.transform.TransformPoint(knot.Position);
+                Vector3 tanIn = container.transform.TransformDirection(knot.TangentIn);
+                Vector3 tanOut = container.transform.TransformDirection(knot.TangentOut);
+                Quaternion rot = container.transform.rotation * knot.Rotation;
+
+                // Each knot entry holds an id and a list of points (single point here for compatibility).
+                knotEntries.Add(new KnotEntry
+                {
+                    id = knotIndex.ToString(),
+                    points = new List<KnotPoint>
+                    {
+                        new KnotPoint
+                        {
+                            x = pos.x, y = pos.y, z = pos.z,
+                            inX = tanIn.x, inY = tanIn.y, inZ = tanIn.z,
+                            outX = tanOut.x, outY = tanOut.y, outZ = tanOut.z,
+                            rotX = rot.x, rotY = rot.y, rotZ = rot.z, rotW = rot.w
+                        }
+                    }
+                });
+                knotIndex++;
+            }
+
+            yield return new SplineRecord
+            {
+                name = container.gameObject.name,
+                closed = spline.Closed,
+                knots = knotEntries
+            };
+        }
+    }
+
+    [Serializable] private class SingleSplinePayload { public SplineRecord spline; }
+    [Serializable] private class SplineRecord { public string name; public bool closed; public List<KnotEntry> knots; }
+    [Serializable] private class KnotEntry { public string id; public List<KnotPoint> points; }
+    [Serializable] private class KnotPoint
+    {
+        public float x, y, z;
+        public float inX, inY, inZ;
+        public float outX, outY, outZ;
+        public float rotX, rotY, rotZ, rotW;
+    }
+}
