@@ -13,6 +13,19 @@ public class SplineRegistry : MonoBehaviour
     private LocalWebSocketClient ws;
     private TaskCompletionSource<bool> sendCompletedTcs = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
+    [Serializable]
+    private class SimpleEvent {
+        public string type = "event";
+        public string @event;
+    }
+
+    [Serializable]
+    private class SplineEvent {
+        public string type = "event";
+        public string @event = "spline";
+        public SplineRecord spline;
+    }
+
     private void Awake() => ws = GetComponent<LocalWebSocketClient>();
 
     private async void Start()
@@ -41,14 +54,21 @@ public class SplineRegistry : MonoBehaviour
 
     public async Task SendAllSplines()
     {
+
+        // Begin Batch
+        await ws.Send(JsonUtility.ToJson(new SimpleEvent {@event = "send-splines"}));
+
         foreach (var splineRecord in EnumerateSplines())
         {
-            var wrapper = new SingleSplinePayload { spline = splineRecord };
-            var json = JsonUtility.ToJson(wrapper, true);
+            var payload = new SplineEvent { spline = splineRecord };
+            var json = JsonUtility.ToJson(payload, true);
             await ws.Send(json);
             Debug.Log($"[SplineRegistry] Sent spline '{splineRecord.name}' with {splineRecord.knots.Count} knots.");
             await Task.Yield(); // avoid flooding in one frame
         }
+
+        // Finish Batch
+        await ws.Send(JsonUtility.ToJson(new SimpleEvent {@event = "finish-send-splines"}));
     }
 
     private IEnumerable<SplineRecord> EnumerateSplines()

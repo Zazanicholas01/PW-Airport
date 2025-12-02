@@ -15,22 +15,38 @@ public class PrefabRegistry : MonoBehaviour
 
     private LocalWebSocketClient ws;
 
+    [Serializable]
+    private class SimpleEvent {
+        public string type = "event";
+        public string @event;
+    }
+
+    [Serializable]
+    private class PrefabPayload {
+        public string type;
+        public string name;
+    }
+
+    [Serializable]
+    private class PrefabListPayload {
+        public PrefabPayload[] prefabs;
+    }
+
     private void Awake() => ws = GetComponent<LocalWebSocketClient>();
 
     private async void Start()
     {
-        if (sendOnStart)
+        if (!sendOnStart) return;
+
+        // Ensure websocket connected, then wait for splines to go out before sending prefabs.
+        var connected = await ws.WaitForConnectionAsync();
+        if (!connected)
         {
-            // Ensure websocket connected, then wait for splines to go out before sending prefabs.
-            var connected = await ws.WaitForConnectionAsync();
-            if (!connected)
-            {
-                Debug.LogWarning("[PrefabRegistry] WebSocket not connected; skipping prefab send.");
-                return;
-            }
-            await EnsureSplineRegistryReady();
-            await SendPrefabNames();
+            Debug.LogWarning("[PrefabRegistry] WebSocket not connected; skipping prefab send.");
+            return;
         }
+        await EnsureSplineRegistryReady();
+        await SendPrefabNames();
     }
 
     private async Task EnsureSplineRegistryReady()
@@ -66,10 +82,16 @@ public class PrefabRegistry : MonoBehaviour
             return;
         }
 
+        // Begin Batch
+        await ws.Send(JsonUtility.ToJson(new SimpleEvent {@event = "send-prefabs"}));
+
         var payload = new PrefabListPayload { prefabs = prefabs.ToArray() };
         var json = JsonUtility.ToJson(payload);
         await ws.Send(json);
         Debug.Log($"[PrefabRegistry] Sent {prefabs.Count} prefabs: {json}");
+
+        // Finish Batch
+        await ws.Send(JsonUtility.ToJson(new SimpleEvent { @event = "finish-send-prefabs"}));
     }
 
     private string[] GetPrefabNames(string relativeFolder)
@@ -95,16 +117,4 @@ public class PrefabRegistry : MonoBehaviour
         return names;
     }
 
-    [Serializable]
-    private class PrefabPayload
-    {
-        public string type;
-        public string name;
-    }
-
-    [Serializable]
-    private class PrefabListPayload
-    {
-        public PrefabPayload[] prefabs;
-    }
 }

@@ -20,127 +20,161 @@ PORT = 8765
 pw_simulator = Simulator()
 pw_graph = InitGraph("LIAG")
 
-def _log_spline_payload_if_any(message: str) -> None:
-    """Try to parse and log spline payloads sent from Unity."""
-    try:
-        payload = json.loads(message)
-    except (json.JSONDecodeError, TypeError) as exc:
-        logging.debug("Non-JSON message ignored (len=%d): %s", len(message), exc)
-        return
+class ImportState:
+    def __init__(self) -> None:
+        self.reset()
+    
+    def reset(self) -> None:
+        self.receiving_splines = False
+        self.receiving_prefabs = False
+        self.pending_splines: list[dict] = []
+        self.pending_prefabs: list[dict] = []
 
-    if not isinstance(payload, dict):
-        logging.debug("Received JSON that is not an object")
-        return
+class SetupBusHandler:
+    """Handle setup / import events and batching via an async queue."""
 
-    # Prefab payloads
-    if _log_prefab_payload_if_any(payload):
-        return
+    def __init__(self, simulator: Simulator, graph: InitGraph) -> None:
+        self.simulator = simulator
+        self.graph = graph
+        self.state = ImportState()
+        self.queue: asyncio.Queue = asyncio.Queue()
+        self._task: asyncio.Task | None = None
 
-    # New path: single-spline messages { "spline": { ... } }
-    if "spline" in payload:
-        spline = payload["spline"]
-        _log_single_spline(spline)
-        return
+    async def start(self) -> None:
+        """Start the background event-processing loop."""
+        if self._task is None or self._task.done():
+            self._task = asyncio.create_task(self._event_loop())
 
-    # Legacy path: array of splines { "splines": [ ... ] }
-    if "splines" not in payload:
-        logging.debug("Received JSON without 'spline'/'splines' key")
-        return
+    async def stop(self) -> None:
+        """Stop the background loop if it is running."""
+        if self._task is not None:
+            self._task.cancel()
+            try:
+                await self._task
+            except asyncio.CancelledError:
+                pass
 
-    splines = payload.get("splines", [])
-    if not isinstance(splines, list):
-        logging.debug("Invalid spline payload: 'splines' is not a list")
-        return
+    async def enqueue(self, payload: dict) -> None:
+        """Enqueue a decoded JSON payload for processing."""
+        await self.queue.put(payload)
 
-    valid_splines = [s for s in splines if isinstance(s, dict)]
-    if valid_splines:
-        pw_simulator.add_splines(valid_splines)
-    for spline in valid_splines:
-        _log_single_spline(spline)
+    async def _event_loop(self) -> None:
+        """Background task to process incoming events from the queue."""
+        while True:
+            payload = await self.queue.get()
+            try:
+                await self.handle_payload(payload)
+            except Exception:
+                logging.exception("Error Handling Payload: %r", payload)
+            finally:
+                self.queue.task_done()
 
+    async def handle_payload(self, payload: dict) -> None:
+        """Main handler for all JSON payloads coming from the queue."""
+        if not isinstance(payload, dict):
+            return
 
-def _log_single_spline(spline: dict) -> None:
-    if not isinstance(spline, dict):
-        logging.debug("Invalid 'spline' payload (expected object)")
-        return
-    pw_simulator.add_spline(spline)
-    name = spline.get("name", "<unnamed>")
-    closed = spline.get("closed", False)
-    knots = spline.get("knots")
-    knot_count = _count_knots(knots)
-    logging.info("Spline '%s' closed=%s knots=%d", name, closed, knot_count)
-    pw_simulator.print_contents()
+        if payload.get("type") == "event":
+            await self._handle_control_event(payload)
 
+        if "spline" in payload:
+            await self._buffer_spline(payload["spline"])
+            return
 
-def _count_knots(knots) -> int:
-    """Count knot entries regardless of dict or list representation."""
-    if knots is None:
-        return 0
-    if isinstance(knots, dict):
-        return len(knots)
-    if isinstance(knots, list):
-        return len(knots)
-    logging.debug("Knots payload is neither dict nor list: %s", type(knots).__name__)
-    return 0
+        if "prefabs" in payload:
+            await self._buffer_prefabs(payload["prefabs"])
+            return
 
+    async def _handle_control_event(self, evt_payload: dict) -> None:
+        """Handle control events from Unity."""
+        event_name = evt_payload.get("event")
+        logging.info("Control Event Received: %s", event_name)
 
-def _log_prefab_payload_if_any(payload: dict) -> bool:
-    """Detect and log prefab name payloads."""
-    if not isinstance(payload, dict):
-        return False
+        if event_name == "setup-init":
+            self.state.reset()
+            logging.info("Setup init: State Reset")
+            return
 
-    # New payload: { "prefabs": [ { "type": "...", "name": "..." }, ... ] }
-    if "prefabs" in payload:
-        prefabs_val = payload.get("prefabs", [])
-        if not isinstance(prefabs_val, list):
-            logging.info("Prefabs key present but not a list")
-            return True
+        if event_name == "send-splines":
+            self.state.receiving_splines = True
+            self.state.pending_splines.clear()
+            logging.info("Begin Spline Batch")
+            return
 
-        by_type: dict[str, list[str]] = {}
-        valid_prefabs: list[dict] = []
-        for entry in prefabs_val:
-            if not isinstance(entry, dict):
+        if event_name == "finish-send-splines":
+            self.state.receiving_splines = False
+            await self._commit_splines()
+            logging.info("Finished Spline Batch")
+            return
+
+        if event_name == "send-prefabs":
+            self.state.receiving_prefabs = True
+            self.state.pending_prefabs.clear()
+            logging.info("Begin Prefab Batch")
+            return
+
+        if event_name == "finish-send-prefabs":
+            self.state.receiving_prefabs = False
+            await self._commit_prefabs()
+            logging.info("Finished Prefab Batch")
+            return
+
+    async def _buffer_spline(self, spline: dict) -> None:
+        """Buffer a single spline."""
+        if not self.state.receiving_splines:
+            logging.debug("Spline Ignored")
+            return
+        if not isinstance(spline, dict):
+            logging.debug("Invalid Spline Payload")
+            return
+        self.state.pending_splines.append(spline)
+
+    async def _commit_splines(self) -> None:
+        """Commit buffered splines."""
+        if not self.state.pending_splines:
+            logging.info("No splines to Commit")
+            return
+
+        for spline in self.state.pending_splines:
+            self.graph.add_spline(spline)
+            name = spline.get("name", "<unnamed>")
+            logging.info("Committed Spline %s", name)
+
+        self.graph.print_splines()
+
+    async def _buffer_prefabs(self, prefabs) -> None:
+        """Buffer multiple prefabs."""
+        if not self.state.receiving_prefabs:
+            logging.debug("Prefabs Ignored")
+            return
+
+        if not isinstance(prefabs, list):
+            logging.info("Invalid Prefab Payload")
+            return
+
+        for prefab in prefabs:
+            if not isinstance(prefab, dict):
                 continue
-            p_type = str(entry.get("type", "")).strip()
-            p_name = str(entry.get("name", "")).strip()
-            if not p_type or not p_name:
-                continue
-            by_type.setdefault(p_type, []).append(p_name)
-            valid_prefabs.append({"type": p_type, "name": p_name})
+            self.state.pending_prefabs.append(prefab)
 
-        if not by_type:
-            logging.info("Prefabs received but none parsed")
-            return True
+    async def _commit_prefabs(self) -> None:
+        """Commit buffered prefabs."""
+        if not self.state.pending_prefabs:
+            logging.info("No Prefabs to Commit")
+            return
 
-        summary = " ".join(f"{t}={sorted(names)}" for t, names in by_type.items())
-        total = sum(len(names) for names in by_type.values())
-        logging.info("Prefabs received (%d): %s", total, summary)
-        if valid_prefabs:
-            pw_simulator.add_prefabs(valid_prefabs)
-            pw_simulator.print_contents()
-        return True
+        self.simulator.add_prefabs(self.state.pending_prefabs)
+        logging.info("Committed %d Prefabs", len(self.state.pending_prefabs))
+        self.simulator.print_prefabs()
 
-    # Legacy payload: { "aereo": "...", "mezzo": "..." }
-    has_aereo = "aereo" in payload
-    has_mezzo = "mezzo" in payload
-    if has_aereo or has_mezzo:
-        a_val = payload.get("aereo", "")
-        m_val = payload.get("mezzo", "")
-        logging.info("Prefabs received: aereo=%s mezzo=%s", a_val, m_val)
-        legacy = []
-        if a_val:
-            legacy.append({"type": "aereo", "name": a_val})
-        if m_val:
-            legacy.append({"type": "mezzo", "name": m_val})
-        if legacy:
-            pw_simulator.add_prefabs(legacy)
-        return True
-
-    return False
+setup_bus: SetupBusHandler | None = None
 
 
 async def echo_handler(websocket: WebSocketServerProtocol) -> None:
     """Handle one WebSocket client: greet, log, and echo any text received."""
+    if setup_bus is None:
+        raise RuntimeError("setup_bus is not initialized")
+
     peer = websocket.remote_address
     logging.info("Client connected: %s", peer)
 
@@ -149,15 +183,28 @@ async def echo_handler(websocket: WebSocketServerProtocol) -> None:
         await websocket.send(json.dumps({"type": "welcome", "message": "Connected to Python WebSocket server"}))
         # Iterate over every incoming message and send it back unchanged in a JSON envelope.
         async for message in websocket:
-            _log_spline_payload_if_any(message)
-            await websocket.send(json.dumps({"type": "echo", "message": message}))
+            try:
+                payload = json.loads(message)
+            except (json.JSONDecodeError, TypeError):
+                logging.debug("Non-JSON Message Ignored")
+                continue
+
+            await setup_bus.enqueue(payload)
+            await websocket.send(json.dumps({"type": "ack", "message": message}))
+
     except websockets.ConnectionClosed:
         logging.info("Client %s disconnected", peer)
 
 
 async def main() -> None:
     """Start the WebSocket server and keep it running indefinitely."""
+    # Initialize the setup bus handler inside the running event loop.
+    global setup_bus
+    setup_bus = SetupBusHandler(pw_simulator, pw_graph)
+    await setup_bus.start()
+
     # websockets.serve creates a server context manager; exiting it stops the server.
+    
     async with websockets.serve(
         echo_handler,
         HOST,
@@ -170,6 +217,9 @@ async def main() -> None:
         logging.info("WebSocket server running on ws://%s:%s", HOST, PORT)
         # Keep the server alive forever; replaced by a future that never resolves.
         await asyncio.Future()
+    
+    if setup_bus is not None:
+        await setup_bus.stop()
 
 
 if __name__ == "__main__":

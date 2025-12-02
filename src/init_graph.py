@@ -8,3 +8,16 @@ class InitGraph:
 
     # Parsing splines without nodes
     # Constructing master nodes and edges from master spline
+    def add_splines(self, payload) -> None:
+        """Add many splines from the given payload."""
+        self.splines.extend(payload)
+    
+    def add_spline(self, spline) -> None:
+        """Add a single spline payload."""
+        self.splines.append(spline)
+    
+    def print_splines(self) -> None:
+        """Print current splines for debugging."""
+        print("Graph splines:")
+        print(self.splines)
+
