@@ -103,7 +103,7 @@ public class SplineRegistry : MonoBehaviour
                     knotEntries.Add(new KnotEntry
                     {
                         id = knotIndex.ToString(),
-                        points = new List<KnotPoint>
+                        parameters = new List<KnotPoint>
                         {
                             new KnotPoint
                             {
@@ -128,7 +128,7 @@ public class SplineRegistry : MonoBehaviour
 
     [Serializable] private class SingleSplinePayload { public SplineRecord spline; }
     [Serializable] private class SplineRecord { public string name; public bool closed; public List<KnotEntry> knots; }
-    [Serializable] private class KnotEntry { public string id; public List<KnotPoint> points; }
+    [Serializable] private class KnotEntry { public string id; public List<KnotPoint> parameters; }
     [Serializable] private class KnotPoint
     {
         public float x, y, z;

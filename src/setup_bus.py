@@ -82,6 +82,8 @@ class SetupBusHandler:
     async def _handle_control_event(self, evt_payload: dict) -> None:
         """Handle control events from Unity."""
         event_name = evt_payload.get("event")
+        if event_name == "spline":
+            return
         logging.info("Control Event Received: %s", event_name)
 
         if event_name == "setup-init":
@@ -140,13 +142,13 @@ class SetupBusHandler:
                 continue
 
             self.init_graph.add_spline(spline)
-            logging.info("Committed Spline %s", name)
 
-        self.init_graph.print_splines()
+        logging.info("Committed Splines")
+
+        #self.init_graph.print_master_spline()
         self.state.splines_committed = True
         self._check_setup_completion()
         # Aggiungere Logica per pulizia delle splines e creazione dei percorsi
-
 
 
     async def _buffer_prefabs(self, prefabs) -> None:

@@ -1,9 +1,9 @@
 DEFINIZIONE PERCORSI
 
-    - Aggiunta Nodi Master Spline
-    - Differenziare Invio Spline e Master Spline (no nodi - nodi)
-    - Implementazioni Nuovi Eventi Master Spline
-    - Pulizia Spline
+    - Aggiunta Nodi Master Spline -- (DONE)
+    - Differenziare Invio Spline e Master Spline (no nodi - nodi) -- (DONE)
+    - Implementazioni Nuovi Eventi Master Spline -- (DONE)
+    - Pulizia Spline -- (DONE)
     - Segmentazione Master Spline
     - Creazione Percorsi
     - Salvataggio Percorsi nel DB
