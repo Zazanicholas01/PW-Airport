@@ -132,14 +132,21 @@ class SetupBusHandler:
             return
 
         for spline in self.state.pending_splines:
-            self.init_graph.add_spline(spline)
+
             name = spline.get("name", "<unnamed>")
+            if name == "MasterSpline":
+                self.init_graph.add_master_spline(spline)
+                logging.info("Committed Master Spline")
+                continue
+
+            self.init_graph.add_spline(spline)
             logging.info("Committed Spline %s", name)
 
         self.init_graph.print_splines()
         self.state.splines_committed = True
         self._check_setup_completion()
         # Aggiungere Logica per pulizia delle splines e creazione dei percorsi
+
 
 
     async def _buffer_prefabs(self, prefabs) -> None:
