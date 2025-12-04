@@ -3,7 +3,7 @@ import logging, asyncio
 class SetupState:
     def __init__(self) -> None:
         self.reset()
-    
+
     def reset(self) -> None:
         self.receiving_splines = False
         self.receiving_prefabs = False
@@ -12,6 +12,7 @@ class SetupState:
         self.splines_committed = False
         self.prefabs_committed = False
         self.setup_completed = False
+
 
 class SetupBusHandler:
     """Handle setup / import events and batching via an async queue."""
@@ -23,10 +24,12 @@ class SetupBusHandler:
         self.queue: asyncio.Queue = asyncio.Queue()
         self._task: asyncio.Task | None = None
 
+
     async def start(self) -> None:
         """Start the background event-processing loop."""
         if self._task is None or self._task.done():
             self._task = asyncio.create_task(self._event_loop())
+
 
     async def stop(self) -> None:
         """Stop the background loop if it is running."""
@@ -37,9 +40,11 @@ class SetupBusHandler:
             except asyncio.CancelledError:
                 pass
 
+
     async def enqueue(self, payload: dict) -> None:
         """Enqueue a decoded JSON payload for processing."""
         await self.queue.put(payload)
+
 
     async def _event_loop(self) -> None:
         """Background task to process incoming events from the queue."""
@@ -52,11 +57,12 @@ class SetupBusHandler:
             finally:
                 self.queue.task_done()
 
+
     async def handle_payload(self, payload: dict) -> None:
         """Main handler for all JSON payloads coming from the queue."""
         if not isinstance(payload, dict):
             return
-        
+
         if self.state.setup_completed:
             logging.info("Setup already completed; ignoring payload")
             return
@@ -71,6 +77,7 @@ class SetupBusHandler:
         if "prefabs" in payload:
             await self._buffer_prefabs(payload["prefabs"])
             return
+
 
     async def _handle_control_event(self, evt_payload: dict) -> None:
         """Handle control events from Unity."""
@@ -106,6 +113,7 @@ class SetupBusHandler:
             logging.info("Finished Prefab Batch")
             return
 
+
     async def _buffer_spline(self, spline: dict) -> None:
         """Buffer a single spline."""
         if not self.state.receiving_splines:
@@ -115,6 +123,7 @@ class SetupBusHandler:
             logging.debug("Invalid Spline Payload")
             return
         self.state.pending_splines.append(spline)
+
 
     async def _commit_splines(self) -> None:
         """Commit buffered splines."""
@@ -131,6 +140,7 @@ class SetupBusHandler:
         self.state.splines_committed = True
         self._check_setup_completion()
 
+
     async def _buffer_prefabs(self, prefabs) -> None:
         """Buffer multiple prefabs."""
         if not self.state.receiving_prefabs:
@@ -146,6 +156,7 @@ class SetupBusHandler:
                 continue
             self.state.pending_prefabs.append(prefab)
 
+
     async def _commit_prefabs(self) -> None:
         """Commit buffered prefabs."""
         if not self.state.pending_prefabs:
@@ -157,6 +168,7 @@ class SetupBusHandler:
         self.simulator.print_prefabs()
         self.state.prefabs_committed = True
         self._check_setup_completion()
+
 
     def _check_setup_completion(self) -> None:
         """Mark setup as complete once both prefabs and splines have been received."""
