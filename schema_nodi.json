@@ -2,15 +2,15 @@
     "nodes": [
         {
             "id": "node0",
-            "links": ["C3", "ATT_L"]
+            "links": ["C3", "AtterraggioLungo"]
         },
         {
             "id": "node1",
-            "links": ["ATT_M"]
+            "links": ["AtterraggioMedio"]
         },
         {
             "id": "node2",
-            "links": ["ATT_C"]
+            "links": ["AtterraggioCorto"]
         },
         {
             "id": "node3",
@@ -34,7 +34,7 @@
         },
         {
             "id": "node8",
-            "links": ["P1", "DEC"]
+            "links": ["P1", "Decollo"]
         }
     ]
 }
