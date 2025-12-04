@@ -1,0 +1,17 @@
+DEFINIZIONE PERCORSI
+
+    - Aggiunta Nodi Master Spline
+    - Differenziare Invio Spline e Master Spline (no nodi - nodi)
+    - Implementazioni Nuovi Eventi Master Spline
+    - Pulizia Spline
+    - Segmentazione Master Spline
+    - Creazione Percorsi
+    - Salvataggio Percorsi nel DB
+
+DEFINIZIONE SPAWN
+
+    - Creazione Eventi Spawn
+    - Assegnazione Mesh
+    - Assegnazione Posizione
+    - Assegnazione Percorso
+    - Animazione su Unity

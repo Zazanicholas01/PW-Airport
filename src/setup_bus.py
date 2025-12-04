@@ -139,6 +139,7 @@ class SetupBusHandler:
         self.init_graph.print_splines()
         self.state.splines_committed = True
         self._check_setup_completion()
+        # Aggiungere Logica per pulizia delle splines e creazione dei percorsi
 
 
     async def _buffer_prefabs(self, prefabs) -> None:

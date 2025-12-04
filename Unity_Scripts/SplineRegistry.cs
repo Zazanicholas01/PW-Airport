@@ -8,6 +8,7 @@ using UnityEngine.Splines;
 public class SplineRegistry : MonoBehaviour
 {
     [SerializeField] private string rootObjectName = "Splines";
+    [SerializeField] private string masterSplineName = "MasterSpline";
     [SerializeField] private bool includeInactive = true;
 
     private LocalWebSocketClient ws;
@@ -63,7 +64,8 @@ public class SplineRegistry : MonoBehaviour
             var payload = new SplineEvent { spline = splineRecord };
             var json = JsonUtility.ToJson(payload, true);
             await ws.Send(json);
-            Debug.Log($"[SplineRegistry] Sent spline '{splineRecord.name}' with {splineRecord.knots.Count} knots.");
+            int knotCount = splineRecord.knots != null ? splineRecord.knots.Count : 0;
+            Debug.Log($"[SplineRegistry] Sent spline '{splineRecord.name}' with {knotCount} knots.");
             await Task.Yield(); // avoid flooding in one frame
         }
 
@@ -78,39 +80,43 @@ public class SplineRegistry : MonoBehaviour
             ? root.GetComponentsInChildren<SplineContainer>(includeInactive)
             : FindObjectsOfType<SplineContainer>(includeInactive);
 
+        List<KnotEntry> knotEntries = null;
+
         foreach (var container in containers)
         {
             var spline = container.Spline;
             if (spline == null) continue;
 
-            var knotEntries = new List<KnotEntry>();
-            int knotIndex = 0;
+            if (container.gameObject.name == masterSplineName){
+                
+                var knotEntries = new List<KnotEntry>();
+                int knotIndex = 0;
 
-            foreach (var knot in spline.Knots)
-            {
-                Vector3 pos = container.transform.TransformPoint(knot.Position);
-                Vector3 tanIn = container.transform.TransformDirection(knot.TangentIn);
-                Vector3 tanOut = container.transform.TransformDirection(knot.TangentOut);
-                Quaternion rot = container.transform.rotation * knot.Rotation;
-
-                // Each knot entry holds an id and a list of points (single point here for compatibility).
-                knotEntries.Add(new KnotEntry
+                foreach (var knot in spline.Knots)
                 {
-                    id = knotIndex.ToString(),
-                    points = new List<KnotPoint>
-                    {
-                        new KnotPoint
-                        {
-                            x = pos.x, y = pos.y, z = pos.z,
-                            inX = tanIn.x, inY = tanIn.y, inZ = tanIn.z,
-                            outX = tanOut.x, outY = tanOut.y, outZ = tanOut.z,
-                            rotX = rot.x, rotY = rot.y, rotZ = rot.z, rotW = rot.w
-                        }
-                    }
-                });
-                knotIndex++;
-            }
+                    Vector3 pos = container.transform.TransformPoint(knot.Position);
+                    Vector3 tanIn = container.transform.TransformDirection(knot.TangentIn);
+                    Vector3 tanOut = container.transform.TransformDirection(knot.TangentOut);
+                    Quaternion rot = container.transform.rotation * knot.Rotation;
 
+                    // Each knot entry holds an id and a list of points (single point here for compatibility).
+                    knotEntries.Add(new KnotEntry
+                    {
+                        id = knotIndex.ToString(),
+                        points = new List<KnotPoint>
+                        {
+                            new KnotPoint
+                            {
+                                x = pos.x, y = pos.y, z = pos.z,
+                                inX = tanIn.x, inY = tanIn.y, inZ = tanIn.z,
+                                outX = tanOut.x, outY = tanOut.y, outZ = tanOut.z,
+                                rotX = rot.x, rotY = rot.y, rotZ = rot.z, rotW = rot.w
+                            }
+                        }
+                    });
+                    knotIndex++;
+                }
+            }
             yield return new SplineRecord
             {
                 name = container.gameObject.name,
