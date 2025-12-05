@@ -150,9 +150,12 @@ class InitGraph:
                     "name": path_name,
                     "segments": segments,
                 })
+                print({
+                    "name": path_name,
+                    "segments": segments,
+                })
 
         self.landing_paths = paths        
-        print(paths)
 
         # Gestire Edge Cases modificando il t_start e t_end per movimento indietro
         # Loop Decollo (DOMENICA)
