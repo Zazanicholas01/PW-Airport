@@ -55,9 +55,11 @@ class InitGraph:
             return
         
         for i, node in enumerate(links_schema.get('nodes', [])):
-            self.master_links[i] = node.get('links', [])
+            links = node.get('links', [])
+            links = [f"Spline_{link}" for link in links]
+            self.master_links[i] = links
 
-        #print("Master Links Constructed: ", self.master_links)
+        print("Master Links Constructed: ", self.master_links)
 
 
     def extract_t_master_edges(self) -> None:
@@ -66,16 +68,92 @@ class InitGraph:
         knots = self.master_spline.get("knots", [])
         if not knots or len(knots) < 2:
             return None, None
-        
-        parameters = [knot.get("parameters", []) for knot in knots]
-        X = [param[0]["x"] if param else None for param in parameters]
+        try:
+            x_coords = [knot.get("parameters", [])[0]["x"] for knot in knots]
+        except (KeyError, IndexError, TypeError):
+            return
 
-        ms_length = X[-1] - X[0]
-        T = [round(abs(X[i] - X[0]) / ms_length, 2) for i in range(1, len(knots) - 1)]
+        ms_length = x_coords[-1] - x_coords[0]
+        if ms_length <= 0:
+            return
         
-        self.master_edges.append({"Name": "MS_01", "t_start": 0, "t_end": T[0]})
-        for i in range(1, len(T) - 1):
-            self.master_edges.append({"Name": f"MS_{i}{i+1}", "t_start": T[i-1], "t_end": T[i]})
+        t_values = [(x - x_coords[0]) / ms_length for x in x_coords]
+        t_values = [round(t, 2) for t in t_values]
         
-        #print("Master Edges: ", self.master_edges)
+        for i, (t_start, t_end) in enumerate(zip(t_values, t_values[1:]), start=1):
+            self.master_edges.append(
+                {
+                    "name": f"MS_{i-1}{i}",
+                    "t_start": t_start,
+                    "t_end": t_end
+                }
+            )
+        
+        print("Master Edges: ", self.master_edges)
+
+
+    def build_paths(self) -> None:
+        """Building Paths based on Master Edges, Master Links and Splines"""
+        
+        def find_master_edges(start_link, end_link):
+            if end_link == len(self.master_edges):
+                return self.master_edges[start_link:]
+            return self.master_edges[start_link:end_link]
+
+        # Loop Atterraggio Lungo / Medio / Corto
+        available_stands = ["O1", "O2", "O3", "O4", "O5", "P2", "P3", "C1", "C2"]
+        available_landings = ["AtterraggioLungo", "AtterraggioMedio", "AtterraggioCorto"]
+
+        available_stands = [f"Spline_{x}" for x in available_stands]
+        available_landings = [f"Spline_{x}" for x in available_landings]
+
+        paths = []
+        for landing_spline in available_landings:
+            start_link = 0
+            for stand_spline in available_stands:
+                end_link = None
+                for n, link in self.master_links.items():
+                    if stand_spline in link:
+                        end_link = int(n)
+                        break    
+                
+                if end_link is None:
+                    continue
+                
+                master_edges = find_master_edges(start_link=start_link, end_link=end_link)
+                segments = []
+
+                segments.append({
+                    "name": landing_spline,
+                    "t_start": 0.0,
+                    "t_end": 1.0,
+                })
+
+                if master_edges:
+                    segments.append({
+                        "name": "MasterSpline",
+                        "t_start": master_edges[0]["t_start"],
+                        "t_end": master_edges[-1]["t_end"],
+                    })
+                
+                segments.append({
+                    "name": stand_spline,
+                    "t_start": 0.0,
+                    "t_end": 1.0,
+                })
+
+                landing_id = landing_spline.replace("Spline_", "")
+                stand_id = stand_spline.replace("Spline_", "")
+                path_name = f"Path_{landing_id}_{stand_id}"
+                
+                paths.append({
+                    "name": path_name,
+                    "segments": segments,
+                })
+
+        self.landing_paths = paths        
+        print(paths)
+
+        # Gestire Edge Cases modificando il t_start e t_end per movimento indietro
+        # Loop Decollo (DOMENICA)
 

@@ -184,6 +184,8 @@ class SetupBusHandler:
         """Mark setup as complete once both prefabs and splines have been received."""
         if self.state.setup_completed:
             return
+        
         if self.state.splines_committed and self.state.prefabs_committed:
             self.state.setup_completed = True
             logging.info("Setup completed; subsequent setup payloads will be ignored.")
+            self.init_graph.build_paths()
