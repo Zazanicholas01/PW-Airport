@@ -96,20 +96,25 @@ class InitGraph:
         """Building Paths based on Master Edges, Master Links and Splines"""
         
         def find_master_edges(start_link, end_link):
+            """Returns the slicing of master edges between start link and end link"""
+
             if end_link == len(self.master_edges):
                 return self.master_edges[start_link:]
+            
             return self.master_edges[start_link:end_link]
 
         # Loop Atterraggio Lungo / Medio / Corto
-        available_stands = ["O1", "O2", "O3", "O4", "O5", "P2", "P3", "C1", "C2"]
+        available_stands = ["O1", "O2", "O3", "O4", "O5", "P1", "P2", "P3", "C1", "C2", "C3"]
         available_landings = ["AtterraggioLungo", "AtterraggioMedio", "AtterraggioCorto"]
+        available_departing = "Decollo"
 
         available_stands = [f"Spline_{x}" for x in available_stands]
         available_landings = [f"Spline_{x}" for x in available_landings]
+        available_departing = [f"Spline_{x}" for x in available_departing]
 
         paths = []
+        start_link = 0
         for landing_spline in available_landings:
-            start_link = 0
             for stand_spline in available_stands:
                 end_link = None
                 for n, link in self.master_links.items():
@@ -120,9 +125,12 @@ class InitGraph:
                 if end_link is None:
                     continue
                 
-                master_edges = find_master_edges(start_link=start_link, end_link=end_link)
-                segments = []
+                if stand_spline == "Spline_C3":
+                    master_edges = find_master_edges(start_link=end_link, end_link=start_link)
+                else:
+                    master_edges = find_master_edges(start_link=start_link, end_link=end_link)
 
+                segments = []
                 segments.append({
                     "name": landing_spline,
                     "t_start": 0.0,
@@ -130,11 +138,18 @@ class InitGraph:
                 })
 
                 if master_edges:
-                    segments.append({
-                        "name": "MasterSpline",
-                        "t_start": master_edges[0]["t_start"],
-                        "t_end": master_edges[-1]["t_end"],
-                    })
+                    if start_link > end_link:
+                        segments.append({
+                            "name": "MasterSpline",
+                            "t_start": master_edges[-1]["t_end"],
+                            "t_end": master_edges[0]["t_start"],
+                        })
+                    else:
+                        segments.append({
+                            "name": "MasterSpline",
+                            "t_start": master_edges[0]["t_start"],
+                            "t_end": master_edges[-1]["t_end"],
+                        })
                 
                 segments.append({
                     "name": stand_spline,
@@ -150,13 +165,54 @@ class InitGraph:
                     "name": path_name,
                     "segments": segments,
                 })
-                print({
-                    "name": path_name,
-                    "segments": segments,
+            
+            start_link += 1
+
+        self.landing_paths = paths
+        paths = []
+
+        # Loop Decollo
+        for stand_spline in available_stands:
+            start_link = None
+            end_link = len(self.master_edges)
+
+            for n, link in self.master_links.items():
+                if stand_spline in link:
+                    start_link = int(n)
+                
+                if start_link is None:
+                    continue
+                    
+            master_edges = find_master_edges(start_link=start_link, end_link=end_link)
+            segments = []
+
+            segments.append({
+                "name": stand_spline,
+                "t_start": 0.0,
+                "t_end": 1.0
+            })
+
+            if master_edges:
+                segments.append({
+                    "name": "MasterSpline",
+                    "t_start": master_edges[0]["t_start"],
+                    "t_end": master_edges[-1]["t_end"]
                 })
+            
+            segments.append({
+                "name": "Decollo",
+                "t_start": 0.0,
+                "t_end": 1.0
+            })
 
-        self.landing_paths = paths        
+            departing_id = "Decollo"
+            stand_id = stand_spline.replace("Spline_", "")
+            path_name = f"Path_{stand_id}_{departing_id}"
 
-        # Gestire Edge Cases modificando il t_start e t_end per movimento indietro
-        # Loop Decollo (DOMENICA)
+            paths.append({
+                "name": path_name,
+                "segments": segments
+            })
+
+        self.departing_paths = paths
 
