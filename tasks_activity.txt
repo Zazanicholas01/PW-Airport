@@ -5,7 +5,7 @@ DEFINIZIONE PERCORSI
     - Implementazioni Nuovi Eventi Master Spline -- (DONE)
     - Pulizia Spline -- (DONE)
     - Segmentazione Master Spline -- (DONE)
-    - Creazione Percorsi
+    - Creazione Percorsi -- (DONE)
     - Salvataggio Percorsi nel DB
 
 DEFINIZIONE SPAWN

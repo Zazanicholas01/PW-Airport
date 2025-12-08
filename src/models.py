@@ -50,9 +50,10 @@ class Percorso(Base):
     __tablename__ = "Percorso"
 
     id = Column("id", Integer, primary_key=True, autoincrement=True)
+    path_name = Column("Nome", String, nullable=False)
     source = Column("Sorgente", String, nullable=False)
     destination = Column("Destinazione", String, nullable=False)
-    spline = Column("Spline", Integer, nullable=False)
+    spline = Column("Spline", JSON, nullable=False)
 
     airplanes = relationship("Airplane", back_populates="route")
     vehicles = relationship("Vehicle", back_populates="route")

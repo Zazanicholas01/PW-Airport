@@ -40,20 +40,23 @@
         - ATT_M --> M_01 --> C3
         - Impostare in Unity la percorrenza all'indietro
         - Master Edges con t_start e t_end invertiti
-
-[
-    {
-        "name": "Spline_AtterraggioLungo",
-        "t_start", 0.0,
-        "t_end", 1.0,
-    },{
-        "name": "MasterSpline",
-        "t_start": 0.0,
-        "t_end": 0.62
-    },{
-        "name": "Spline_O1",
-        "t_start": 0.0,
-        "t_end": 1.0
-    },
-    {...}
-]
+{
+    "name": "Path_AtterraggioLungo_O1",
+    "source": "AtterraggioLungo",
+    "destination": "O1",
+    "segments": [
+        {
+            "name": "Spline_AtterraggioLungo",
+            "t_start", 0.0,
+            "t_end", 1.0,
+        },{
+            "name": "MasterSpline",
+            "t_start": 0.0,
+            "t_end": 0.62
+        },{
+            "name": "Spline_O1",
+            "t_start": 0.0,
+            "t_end": 1.0
+        }
+    ]
+}

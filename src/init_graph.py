@@ -163,6 +163,8 @@ class InitGraph:
                 
                 paths.append({
                     "name": path_name,
+                    "source": landing_id,
+                    "destination": stand_id,
                     "segments": segments,
                 })
             
@@ -211,8 +213,11 @@ class InitGraph:
 
             paths.append({
                 "name": path_name,
+                "source": stand_id,
+                "destination": departing_id,
                 "segments": segments
             })
 
         self.departing_paths = paths
+        self.paths = self.landing_paths + self.departing_paths
 

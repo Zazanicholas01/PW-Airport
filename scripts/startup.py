@@ -164,13 +164,15 @@ def add_vehicles(session) -> None:
 
 
 def insert_seed_values() -> None:
+    x = True
     with Session() as session:
-        add_terminal(session)
-        add_airports(session)
-        add_airlines(session)
-        add_parkings(session)
-        add_stands(session)
-        #add_vehicles(session)
+        if x:
+            add_terminal(session)
+            add_airports(session)
+            add_airlines(session)
+            add_parkings(session)
+            add_stands(session)
+            add_vehicles(session)
 
 
 def main() -> None:

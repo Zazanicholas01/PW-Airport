@@ -1,5 +1,10 @@
 import logging, asyncio
 
+from sqlalchemy.orm import sessionmaker
+
+from src.database import get_engine
+from src import models
+
 class SetupState:
     def __init__(self) -> None:
         self.reset()
@@ -12,6 +17,7 @@ class SetupState:
         self.splines_committed = False
         self.prefabs_committed = False
         self.setup_completed = False
+        self.path_building = False
 
 
 class SetupBusHandler:
@@ -23,6 +29,8 @@ class SetupBusHandler:
         self.state = SetupState()
         self.queue: asyncio.Queue = asyncio.Queue()
         self._task: asyncio.Task | None = None
+        self.engine = get_engine()
+        self.Session = sessionmaker(bind=self.engine, future=True)
 
 
     async def start(self) -> None:
@@ -189,3 +197,20 @@ class SetupBusHandler:
             self.state.setup_completed = True
             logging.info("Setup completed; subsequent setup payloads will be ignored.")
             self.init_graph.build_paths()
+            self.state.path_building = True
+        
+        if self.state.path_building:
+            paths = []
+            for path in self.init_graph.paths:
+                path = models.Percorso(
+                    path_name=path["name"],
+                    source=path["source"],
+                    destination=path["destination"],
+                    spline=path["segments"]
+                )
+                paths.append(path)
+
+            with self.Session() as session:
+                session.add_all(paths)
+                session.commit()
+            print("Aggiunti percorsi\n\n\n")
