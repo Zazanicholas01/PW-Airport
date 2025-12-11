@@ -32,9 +32,29 @@ class SpawnScheduler:
         self._stands_loaded = False
         self._stand_state: dict[str, StandState] = {}
         self.starting_n_prefabs = 3
+        self._stands_reset = False
+
+
+    def _reset_all_stands_once(self) -> None:
+        """Set all stands to free_status once at simulation start"""
+
+        if self._stands_reset:
+            return
+        
+        with self.Session() as session:
+            session.execute(
+                update(models.Stand).values(status=self.free_status)
+            )
+            session.commit()
+        
+        self._stands_reset = True
+        logging.info("All stands reset to free status")
+
 
     def plan_initial_spawns(self) -> list[dict]:
         """Pick stands and prefabs for the initial spawn batch."""
+
+        self._reset_all_stands_once()
         self._ensure_stand_cache()
         stand_ids = self._pick_available_stand_ids(self.starting_n_prefabs)
         prefabs = self._pick_prefabs(count=len(stand_ids))
