@@ -13,15 +13,17 @@ public class PrefabRegistry : MonoBehaviour
     [SerializeField] private bool sendOnStart = true;
     [SerializeField] private SplineRegistry splineRegistry;
 
+    [SerializeField]
+    private GameObject[] registeredPrefabs;
+
     [Serializable]
     public class PrefabEntry{
         public string name;        // Nome che arriva da Python
         public GameObject prefab;  // Riferimento effettivo al Prefab da istanziare
     }
 
-    [SerializableField] private PrefabEntry[] prefabEntries;
-
     private readonly Dictionary<string, GameObject> prefabMap = new Dictionary<string, GameObject>(StringComparer.OrdinalIgnoreCase);
+    private bool prefabMapBuilt = false;
 
     private LocalWebSocketClient ws;
 
@@ -42,35 +44,29 @@ public class PrefabRegistry : MonoBehaviour
         public PrefabPayload[] prefabs;
     }
 
-    [ContextMenu("Debug List Prefabs")]
-    private void DebugListPrefabs()
-    {
-        var aerei = GetPrefabNames(aereiFolder);
-        Debug.Log($"[PrefabRegistry] Aerei prefabs: {string.Join(", ", aerei)}");
-        var mezzi = GetPrefabNames(mezziFolder);
-        Debug.Log($"[PrefabRegistry] Mezzi prefabs: {string.Join(", ", mezzi)}");
-    }
-
     private void Awake() {
         ws = GetComponent<LocalWebSocketClient>();
-        BuildPrefabMap();
     } 
 
     private void BuildPrefabMap() {
         prefabMap.Clear();
-        if (prefabEntries == null) return;
+        if (registeredPrefabs == null || registeredPrefabs.Length == 0) {
 
-        foreach (var entry in prefabEntries) {
-            if (entry == null || entry.prefab == null || string.IsNullOrWhiteSpace(entry.name))
-                continue;
+            Debug.LogWarning("[PrefabRegistry] registeredPrefabs is empty; no prefabs will be spawnable.");
+            return;
+        }
+
+        foreach (var go in registeredPrefabs) {
+            if (go == null) continue;
             
-            if (!prefabMap.ContainsKey(entry.name)){
-                prefabMap.Add(entry.name, entry.prefab);
+            if (!prefabMap.ContainsKey(go.name)){
+                prefabMap.Add(go.name, go);
             }
         }
 
+        prefabMapBuilt = true;
         Debug.Log($"[PrefabRegistry] Built prefab map with {prefabMap.Count} entries.");
-        Debug.Log(prefabMap)
+        Debug.Log(prefabMap);
     }
 
     public bool TryGetPrefab(string name, out GameObject prefab) {
@@ -79,8 +75,11 @@ public class PrefabRegistry : MonoBehaviour
             return false;
         }
 
-        if (prefabMap.Count == 0){
-            BuildPrefabMap();
+        if (!prefabMapBuilt)
+        {
+            Debug.LogWarning("[PrefabRegistry] Prefab map not built yet; did SendPrefabNames() complete?");
+            prefab = null;
+            return false;
         }
 
         return prefabMap.TryGetValue(name, out prefab);
@@ -144,16 +143,13 @@ public class PrefabRegistry : MonoBehaviour
 
         // Finish Batch
         await ws.Send(JsonUtility.ToJson(new SimpleEvent { @event = "finish-send-prefabs"}));
+
+        BuildPrefabMap();
     }
 
     private string[] GetPrefabNames(string relativeFolder)
     {
         string folderPath = Path.Combine(Application.dataPath, relativeFolder);
-
-        Debug.Log($"[PrefabRegistry] Application.dataPath = {Application.dataPath}");
-        Debug.Log($"[PrefabRegistry] Aerei folder path = {Path.Combine(Application.dataPath, aereiFolder)}");
-        Debug.Log($"[PrefabRegistry] Mezzi folder path = {Path.Combine(Application.dataPath, mezziFolder)}");
-
 
         if (!Directory.Exists(folderPath))
         {
@@ -161,16 +157,13 @@ public class PrefabRegistry : MonoBehaviour
             return Array.Empty<string>();
         }
 
-        Debug.Log($"[PrefabRegistry] Directory.Exists({folderPath}) = {Directory.Exists(folderPath)}");
         var names = Directory.GetFiles(folderPath, "*.prefab", SearchOption.TopDirectoryOnly)
             .Select(Path.GetFileNameWithoutExtension)
             .OrderBy(n => n)
             .ToArray();
-        Debug.Log($"[PrefabRegistry] Found {files.Length} prefab files in {folderPath}");
 
         if (names.Length == 0)
         {
-            Debug.LogWarning($"[PrefabRegistry] No prefabs found in {folderPath}");
             return Array.Empty<string>();
         }
 
