@@ -13,6 +13,9 @@ public class LocalWebSocketClient : MonoBehaviour
     private CancellationTokenSource cts;
     private TaskCompletionSource<bool> connectedTcs = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
+    // Evento ascoltato dai Dispatchers
+    public event Action<string> MessageReceived;
+
     public Task<bool> WaitForConnectionAsync() => connectedTcs.Task;
     public bool IsConnected => socket?.State == WebSocketState.Open;
 
@@ -39,6 +42,7 @@ public class LocalWebSocketClient : MonoBehaviour
     private async Task ListenLoop()
     {
         var buffer = new byte[1024];
+
         while (socket.State == WebSocketState.Open)
         {
             using var ms = new MemoryStream();
@@ -51,6 +55,17 @@ public class LocalWebSocketClient : MonoBehaviour
 
             var message = Encoding.UTF8.GetString(ms.ToArray());
             Debug.Log($"[WS] Received: {message}");
+
+            // Richiamo a Unity Main Thread Dispatcher
+            if (MessageReceived != null){
+                UnityMainThreadDispatcher.Instance.Enqueue(() =>{
+                    try{
+                        MessageReceived?.Invoke(message);
+                    }catch(Exception ex){
+                        Debug.LogError($"[WS] MessageReceived handler error: {ex.Message}");
+                    }
+                });
+            }
         }
     }
 

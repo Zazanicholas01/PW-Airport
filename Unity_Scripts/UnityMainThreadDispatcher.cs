@@ -7,6 +7,7 @@ using UnityEngine;
 /// Helper per eseguire codice nel main thread di Unity
 /// Necessario per operazioni WebSocket che girano in thread separati
 /// </summary>
+
 public class UnityMainThreadDispatcher : MonoBehaviour
 {
     private static UnityMainThreadDispatcher _instance;

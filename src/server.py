@@ -8,6 +8,8 @@ from websockets import WebSocketServerProtocol
 from src.simulator import Simulator
 from src.init_graph import InitGraph
 from src.setup_bus import SetupBusHandler
+from src.message_bus import WsMessageBus
+from src.spawn_scheduler import SpawnScheduler
 
 ######## LOGGING CONFIGURATION ########
 
@@ -28,7 +30,40 @@ pw_graph = InitGraph("LIAG")
 
 setup_bus: SetupBusHandler | None = None
 
+
+######## FUNZIONI ASINCRONE PER CREAZIONE TASK ASYNCIO
+
+
+async def incoming_dispatch_loop(bus: WsMessageBus, setup_bus: SetupBusHandler):
+    """Smista i messaggi in entrata verso i vari handler"""
+
+    while True:
+        payload = await bus.incoming.get()
+        try:
+            await setup_bus.enqueue(payload)
+        finally:
+            bus.incoming.task_done()
+
+
+async def schedule_initial_spawns(bus: WsMessageBus, setup_bus: SetupBusHandler, simulator):
+    """Attende fine setup, poi pianifica e invia i primi spawn verso Unity"""
+
+    while not setup_bus.state.setup_completed:
+        await asyncio.sleep(0.1)
+    
+    scheduler = SpawnScheduler(simulator=simulator)
+    commands = scheduler.plan_initial_spawns()
+    if not commands:
+        logging.info("No initial spawns commands generated")
+        return
+
+    for cmd in commands:
+        await bus.send_command(cmd)
+    logging.info("Scheduled %d initial spawn commands", len(commands))
+
+
 ######## WEBSOCKET ECHO HANDLER ########
+
 
 async def echo_handler(websocket: WebSocketServerProtocol) -> None:
     """Handle one WebSocket client: greet, log, and echo any text received."""
@@ -38,24 +73,34 @@ async def echo_handler(websocket: WebSocketServerProtocol) -> None:
     peer = websocket.remote_address
     logging.info("Client connected: %s", peer)
 
-    try:
-        # Send an initial handshake payload so the client knows it is connected.
-        await websocket.send(json.dumps({"type": "welcome", "message": "Connected to Python WebSocket server"}))
-        # Iterate over every incoming message and send it back unchanged in a JSON envelope.
-        async for message in websocket:
-            try:
-                payload = json.loads(message)
-            except (json.JSONDecodeError, TypeError):
-                logging.debug("Non-JSON Message Ignored")
-                continue
+    bus = WsMessageBus()
+    await bus.start(websocket=websocket)
 
-            await setup_bus.enqueue(payload)
-            await websocket.send(json.dumps({"type": "ack", "message": message}))
+    dispatch_task = asyncio.create_task(incoming_dispatch_loop(bus, setup_bus))
+    spawn_task = asyncio.create_task(schedule_initial_spawns(bus, setup_bus, pw_simulator))
+
+    try:
+        # Handshake verso Unity
+        await bus.send_command({"type": "welcome", "message": "Connected to Python server"})
+
+        await asyncio.gather(bus._recv_task, bus._send_task, dispatch_task, spawn_task)
 
     except websockets.ConnectionClosed:
         logging.info("Client %s disconnected", peer)
+    finally:
+        await bus.stop()
+        dispatch_task.cancel()
+        spawn_task.cancel()
+
+        for task in (dispatch_task, spawn_task):
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+
 
 ######## MAIN SERVER STARTUP ########
+
 
 async def main() -> None:
     """Start the WebSocket server and keep it running indefinitely."""
@@ -82,7 +127,9 @@ async def main() -> None:
     if setup_bus is not None:
         await setup_bus.stop()
 
+
 ##### ENTRY POINT ########
+
 
 if __name__ == "__main__":
     try:
