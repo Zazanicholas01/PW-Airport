@@ -53,7 +53,7 @@ class Percorso(Base):
     path_name = Column("Nome", String, nullable=False)
     source = Column("Sorgente", String, nullable=False)
     destination = Column("Destinazione", String, nullable=False)
-    spline = Column("Spline", JSON, nullable=False)
+    spline = Column("Spline", JSON)
 
     airplanes = relationship("Airplane", back_populates="route")
     vehicles = relationship("Vehicle", back_populates="route")

@@ -35,6 +35,7 @@ setup_bus: SetupBusHandler | None = None
 
 
 async def incoming_dispatch_loop(bus: WsMessageBus, setup_bus: SetupBusHandler):
+
     """Smista i messaggi in entrata verso i vari handler"""
 
     while True:
@@ -46,6 +47,7 @@ async def incoming_dispatch_loop(bus: WsMessageBus, setup_bus: SetupBusHandler):
 
 
 async def schedule_initial_spawns(bus: WsMessageBus, setup_bus: SetupBusHandler, simulator):
+    
     """Attende fine setup, poi pianifica e invia i primi spawn verso Unity"""
 
     while not setup_bus.state.setup_completed:
@@ -67,6 +69,7 @@ async def schedule_initial_spawns(bus: WsMessageBus, setup_bus: SetupBusHandler,
 
 async def echo_handler(websocket: WebSocketServerProtocol) -> None:
     """Handle one WebSocket client: greet, log, and echo any text received."""
+    
     if setup_bus is None:
         raise RuntimeError("setup_bus is not initialized")
 

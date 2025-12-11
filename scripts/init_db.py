@@ -113,7 +113,7 @@ CREATE_AND_ALTER_STATEMENTS = [
         "Nome" VARCHAR(255) NOT NULL,
         "Sorgente" VARCHAR(255) NOT NULL,
         "Destinazione" VARCHAR(255) NOT NULL,
-        "Spline" jsonb NOT NULL
+        "Spline" jsonb NULL
     );
     ''',
     'ALTER TABLE "Percorso" ADD PRIMARY KEY("id");',

@@ -1,6 +1,7 @@
 import logging, asyncio
 
 from sqlalchemy.orm import sessionmaker
+from sqlalchemy import delete, text
 
 from src.database import get_engine
 from src import models
@@ -225,18 +226,26 @@ class SetupBusHandler:
             logging.info("Setup completed; subsequent setup payloads will be ignored.")
             self.init_graph.build_paths()
             self.state.path_building = True
-        
-            paths = []
-            for path in self.init_graph.paths:
-                path = models.Percorso(
-                    path_name=path["name"],
-                    source=path["source"],
-                    destination=path["destination"],
-                    spline=path["segments"]
-                )
-                paths.append(path)
 
-            with self.Session() as session:
-                session.add_all(paths)
-                session.commit()
-            print("Aggiunti percorsi\n\n\n")
+            if self.state.path_building:
+                paths = []
+                for path in self.init_graph.paths:
+                    path = models.Percorso(
+                        path_name=path["name"],
+                        source=path["source"],
+                        destination=path["destination"],
+                        spline=path["segments"],
+                    )
+                    paths.append(path)
+
+                with self.Session() as session:
+                    session.execute(delete(models.Percorso))
+                    session.execute(
+                        text(
+                            "SELECT setval(pg_get_serial_sequence('\"Percorso\"', 'id'), 1, false);"
+                        )
+                    )
+
+                    session.add_all(paths)
+                    session.commit()
+                logging.info("Aggiunti Percorsi al DB")
