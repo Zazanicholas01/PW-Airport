@@ -80,21 +80,23 @@ public class SplineRegistry : MonoBehaviour
             ? root.GetComponentsInChildren<SplineContainer>(includeInactive)
             : FindObjectsOfType<SplineContainer>(includeInactive);
 
-        List<KnotEntry> knotEntries = null;
-
         foreach (var container in containers)
         {
             var spline = container.Spline;
             if (spline == null) continue;
 
-            if (container.gameObject.name == masterSplineName){
-                
-                var knotEntries = new List<KnotEntry>();
-                int knotIndex = 0;
+            bool isMaster = container.gameObject.name == masterSplineName;
+            List<KnotEntry> knotEntries = isMaster ? new List<KnotEntry()> : null;
+            LastKnotPosition lastKnotPos = null;
 
-                foreach (var knot in spline.Knots)
-                {
-                    Vector3 pos = container.transform.TransformPoint(knot.Position);
+            var knotEntries = new List<KnotEntry>();
+            int knotIndex = 0;
+
+            foreach (var knot in spline.Knots)
+            {
+                Vector3 pos = container.transform.TransformPoint(knot.Position);
+
+                if (isMaster) {
                     Vector3 tanIn = container.transform.TransformDirection(knot.TangentIn);
                     Vector3 tanOut = container.transform.TransformDirection(knot.TangentOut);
                     Quaternion rot = container.transform.rotation * knot.Rotation;
@@ -114,9 +116,17 @@ public class SplineRegistry : MonoBehaviour
                             }
                         }
                     });
-                    knotIndex++;
                 }
+
+                lastKnotPos = new LastKnotPosition {
+                    x = pos.x;
+                    y = pos.y;
+                    z = pos.z;
+                };
+
+                knotIndex++;
             }
+
             yield return new SplineRecord
             {
                 name = container.gameObject.name,
@@ -126,14 +136,35 @@ public class SplineRegistry : MonoBehaviour
         }
     }
 
-    [Serializable] private class SingleSplinePayload { public SplineRecord spline; }
-    [Serializable] private class SplineRecord { public string name; public bool closed; public List<KnotEntry> knots; }
-    [Serializable] private class KnotEntry { public string id; public List<KnotPoint> parameters; }
-    [Serializable] private class KnotPoint
-    {
+    [Serializable] 
+    private class SingleSplinePayload { 
+        public SplineRecord spline; 
+    }
+
+    [Serializable] 
+    private class SplineRecord { 
+        public string name; 
+        public bool closed; 
+        public List<KnotEntry> knots; 
+        public LastKnotPosition lastKnotPosition;
+    }
+
+    [Serializable] 
+    private class KnotEntry { 
+        public string id; 
+        public List<KnotPoint> parameters; 
+    }
+
+    [Serializable] 
+    private class KnotPoint {
         public float x, y, z;
         public float inX, inY, inZ;
         public float outX, outY, outZ;
         public float rotX, rotY, rotZ, rotW;
+    }
+
+    [Serializable]
+    private class LastKnotPosition {
+        public float x, y, z;
     }
 }

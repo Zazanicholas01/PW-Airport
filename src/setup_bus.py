@@ -140,18 +140,46 @@ class SetupBusHandler:
         if not self.state.pending_splines:
             logging.info("No splines to Commit")
             return
+        
+        stand_positions: dict[str, dict] = {}
 
         for spline in self.state.pending_splines:
 
             name = spline.get("name", "<unnamed>")
+
             if name == "MasterSpline":
                 self.init_graph.add_master_spline(spline)
                 logging.info("Committed Master Spline")
                 continue
+            else:
+                self.init_graph.add_spline(spline)
 
-            self.init_graph.add_spline(spline)
+                last = spline.get("lastKnotPosition")
+                if (
+                    isinstance(last, dict)
+                    and name.startswith("Spline_")
+                    and all(k in last for k in ("x", "y", "z"))
+                ):
+                    stand_id = name.removeprefix("Spline_")
+                    stand_positions[stand_id] = {
+                        "x": last.get("x"),
+                        "y": last.get("y"),
+                        "z": last.get("z"),
+                    }
 
         logging.info("Committed Splines")
+
+        if stand_positions:
+            with self.Session() as session:
+                for stand_id, pos in stand_positions.items():
+                    if stand_id not in ("AtterraggioLungo", "AtterraggioMedio", "AtterraggioCorto", "Decollo", "Parcheggio1", "Parcheggio2", "Parcheggio3"):
+                        stand = session.get(models.Stand, stand_id)
+                        if stand is None:
+                            logging.warning("Stand not found")
+                            continue
+                        stand.position = pos
+                session.commit()
+            logging.info("Updated stand positions")
 
         #self.init_graph.print_master_spline()
         self.state.splines_committed = True

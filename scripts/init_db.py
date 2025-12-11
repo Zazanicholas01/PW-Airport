@@ -69,7 +69,8 @@ CREATE_AND_ALTER_STATEMENTS = [
         "id" VARCHAR(255) NOT NULL,
         "Tipo" VARCHAR(255) NOT NULL,
         "Stato" VARCHAR(255) NOT NULL,
-        "id_aereo" VARCHAR(255)
+        "id_aereo" VARCHAR(255),
+        "Posizione" jsonb NULL
     );
     ''',
     'ALTER TABLE "Piazzola" ADD PRIMARY KEY("id");',

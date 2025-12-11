@@ -99,6 +99,7 @@ class Stand(Base):
     type = Column("Tipo", String, nullable=False)
     status = Column("Stato", String, nullable=False)
     airplane_id = Column("id_aereo", String, ForeignKey("Aereo.Id"))
+    position = Column("Posizione", JSON, nullable=True)
 
     airplane = relationship("Airplane", back_populates="stands")
     flights = relationship("Flight", back_populates="stand")
