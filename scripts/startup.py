@@ -167,7 +167,7 @@ def insert_seed_values() -> None:
     x = True
     with Session() as session:
         if x:
-            add_terminal(session)
+            if not session.query(models.Terminal).first(): add_terminal(session)
             add_airports(session)
             add_airlines(session)
             add_parkings(session)

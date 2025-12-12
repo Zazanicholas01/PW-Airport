@@ -4,13 +4,14 @@ import random
 from datetime import datetime, date, timedelta
 
 from sqlalchemy.orm import sessionmaker
+from sqlalchemy import delete
 
 from src.database import get_engine
 
 class RandomFlightGenerator:
     def __init__(self, session_factory):
         self.flights = []
-        self.personal_aiport = "LIAG"
+        self.personal_airport = "LIAG"
         self.Session = session_factory or sessionmaker(bind=get_engine(), future=True)
         self._airports = []
         self._airlines = []
@@ -73,7 +74,7 @@ class RandomFlightGenerator:
         return current
 
 
-    def pick_terminal_id(self, terminals: list[models.Terminal], flight_type: str) -> int:
+    def _pick_terminal_id(self, terminals: list[models.Terminal], flight_type: str) -> int:
 
         t_type = flight_type.lower()
         if t_type == "passeggeri":
@@ -173,7 +174,12 @@ class RandomFlightGenerator:
         flights: list[models.Flight] = []
 
         with self.Session() as session:
-            airports, terminals, airlines = self._load_metadata(session)
+            session.execute(
+                delete(models.Flight)
+            )
+            session.commit()
+
+            airports, terminals, airlines = self.load_metadata(session)
 
             if not airports:
                 raise RuntimeError("No remote airports available")
@@ -189,17 +195,17 @@ class RandomFlightGenerator:
             for _ in range(n):
                 is_departure_from_personal = random.choice([True, False])
 
-                flight_type = random.choice(["Merce", "Passeggero"])
+                flight_type = random.choice(["Cargo", "Passeggeri"])
                 terminal_id = self._pick_terminal_id(terminals, flight_type)
 
                 remote_airport = random.choice(airports)
 
                 if is_departure_from_personal:
-                    origin = self.personal_aiport
+                    origin = self.personal_airport
                     destination = remote_airport.icao
                 else:
                     origin = remote_airport.icao
-                    destination = self.personal_aiport
+                    destination = self.personal_airport
                 
                 route_category = self._route_category(remote_airport)
                 airline = self._pick_airline(airlines, flight_type, route_category)

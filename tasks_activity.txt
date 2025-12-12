@@ -16,7 +16,7 @@ DEFINIZIONE SPAWN
     - Assegnazione Percorso
     - Animazione su Unity
 
-GENERAZIONE RANDOM VIAGGI
+GENERAZIONE RANDOM VIAGGI -- (DONE)
 
     - ID (UUID)
     - ID Aereo (Inizialmente NULL)
