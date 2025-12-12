@@ -110,7 +110,7 @@ class Flight(Base):
     __tablename__ = "Viaggio"
 
     id = Column("id", String, primary_key=True)
-    airplane_id = Column("id_aereo", String, ForeignKey("Aereo.Id"), nullable=False)
+    airplane_id = Column("id_aereo", String, ForeignKey("Aereo.Id"))
     arrival_time = Column("Orario_arrivo", DateTime, nullable=False)
     departure_time = Column("Orario_partenza", DateTime, nullable=False)
     terminal_id = Column("id_terminal", Integer, ForeignKey("Terminal.id"), nullable=False)
@@ -120,6 +120,7 @@ class Flight(Base):
     status = Column("Stato", String, nullable=False)
     icao = Column("ICAO", String, nullable=False)
     date = Column("Data", Date, nullable=False)
+    tipo = Column("Tipo", String, nullable=False)
 
     airplane = relationship("Airplane", back_populates="flights")
     terminal = relationship("Terminal", back_populates="flights")

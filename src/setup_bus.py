@@ -32,6 +32,7 @@ class SetupBusHandler:
         self._task: asyncio.Task | None = None
         self.engine = get_engine()
         self.Session = sessionmaker(bind=self.engine, future=True)
+        self.setup_finished = False
 
 
     async def start(self) -> None:
@@ -249,3 +250,6 @@ class SetupBusHandler:
                     session.add_all(paths)
                     session.commit()
                 logging.info("Aggiunti Percorsi al DB")
+
+        if self.state.splines_committed and self.state.prefabs_committed and self.state.path_building and self.state.setup_completed:
+            self.setup_finished = True

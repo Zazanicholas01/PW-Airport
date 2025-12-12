@@ -34,24 +34,25 @@ DROP_STATEMENTS = [
 CREATE_AND_ALTER_STATEMENTS = [
     '''
     CREATE TABLE "Viaggio"(
-        "id" VARCHAR(255) NOT NULL,
-        "id_aereo" VARCHAR(255) NOT NULL,
-        "Orario_arrivo" TIMESTAMP(0) WITHOUT TIME ZONE NOT NULL,
-        "Orario_partenza" TIMESTAMP(0) WITHOUT TIME ZONE NOT NULL,
+        "id" VARCHAR(36) NOT NULL,
+        "id_aereo" VARCHAR(36) NULL,
+        "Orario_arrivo" TIMESTAMP(0) WITHOUT TIME ZONE NULL,
+        "Orario_partenza" TIMESTAMP(0) WITHOUT TIME ZONE NULL,
         "id_terminal" INTEGER NOT NULL,
-        "id_piazzola" VARCHAR(255) NULL,
-        "Provenienza" VARCHAR(255) NOT NULL,
-        "Destinazione" VARCHAR(255) NOT NULL,
-        "Stato" VARCHAR(255) NOT NULL,
-        "ICAO" VARCHAR(255) NOT NULL,
-        "Data" DATE NOT NULL
+        "Provenienza" VARCHAR(10) NOT NULL,
+        "Destinazione" VARCHAR(10) NOT NULL,
+        "Stato" VARCHAR(20) NOT NULL,
+        "ICAO" VARCHAR(30) NULL,
+        "Data" DATE NOT NULL,
+        "Tipo" VARCHAR(15) NOT NULL,
+        "id_compagnia" VARCHAR(20) NULL
     );
     ''',
     'ALTER TABLE "Viaggio" ADD PRIMARY KEY("id");',
     '''
     CREATE TABLE "Aereo"(
-        "Id" VARCHAR(255) NOT NULL,
-        "Tipo" VARCHAR(255) NOT NULL,
+        "Id" VARCHAR(36) NOT NULL,
+        "Tipo" VARCHAR(36) NOT NULL,
         "Raggio" VARCHAR(255) NOT NULL,
         "Modello" VARCHAR(255) NOT NULL,
         "Capacita" INTEGER NOT NULL,
@@ -178,13 +179,12 @@ CREATE_AND_ALTER_STATEMENTS = [
     'ALTER TABLE "Piazzola" ADD CONSTRAINT "piazzola_id_aereo_foreign" FOREIGN KEY("id_aereo") REFERENCES "Aereo"("Id");',
     'ALTER TABLE "Parcheggio" ADD CONSTRAINT "parcheggio_id_aereo_foreign" FOREIGN KEY("id_aereo") REFERENCES "Aereo"("Id");',
     'ALTER TABLE "Operazione" ADD CONSTRAINT "operazione_id_piazzola_foreign" FOREIGN KEY("id_piazzola") REFERENCES "Piazzola"("id");',
-    'ALTER TABLE "Aereo" ADD CONSTRAINT "aereo_ca_foreign" FOREIGN KEY("CA") REFERENCES "Compagnia_Aerea"("ICAO");',
+    'ALTER TABLE "Viaggio" ADD CONSTRAINT "viaggio_ca_foreign" FOREIGN KEY("id_compagnia") REFERENCES "Compagnia_Aerea"("ICAO");',
     'ALTER TABLE "Operazione" ADD CONSTRAINT "operazione_id_viaggio_foreign" FOREIGN KEY("id_viaggio") REFERENCES "Viaggio"("id");',
     'ALTER TABLE "Passeggero" ADD CONSTRAINT "passeggero_id_bagaglio_foreign" FOREIGN KEY("id_bagaglio") REFERENCES "Merce"("id");',
     'ALTER TABLE "Viaggio" ADD CONSTRAINT "viaggio_destinazione_foreign" FOREIGN KEY("Destinazione") REFERENCES "Aeroporto"("ICAO");',
     'ALTER TABLE "Veicolo" ADD CONSTRAINT "veicolo_id_viaggio_foreign" FOREIGN KEY("id_viaggio") REFERENCES "Viaggio"("id");',
     'ALTER TABLE "Aereo" ADD CONSTRAINT "aereo_id_percorso_foreign" FOREIGN KEY("id_percorso") REFERENCES "Percorso"("id");',
-    'ALTER TABLE "Viaggio" ADD CONSTRAINT "viaggio_id_piazzola_foreign" FOREIGN KEY("id_piazzola") REFERENCES "Piazzola"("id");',
     'ALTER TABLE "Operazione" ADD CONSTRAINT "operazione_id_aereo_foreign" FOREIGN KEY("id_aereo") REFERENCES "Aereo"("Id");',
 ]
 

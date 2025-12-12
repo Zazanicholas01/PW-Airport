@@ -10,8 +10,23 @@ DEFINIZIONE PERCORSI
 
 DEFINIZIONE SPAWN
 
-    - Creazione Eventi Spawn
-    - Assegnazione Mesh
-    - Assegnazione Posizione
+    - Creazione Eventi Spawn -- (DONE)
+    - Assegnazione Mesh -- (DONE)
+    - Assegnazione Posizione -- (DONE)
     - Assegnazione Percorso
     - Animazione su Unity
+
+GENERAZIONE RANDOM VIAGGI
+
+    - ID (UUID)
+    - ID Aereo (Inizialmente NULL)
+    - Tipo (Merce / Passeggero) -- (DONE)
+    - Provenienza
+    - Destinazione (Usati per calcolare la distanza del viaggio)
+    - Stato (UNASSIGNED)
+    - ICAO (inizia NULL poi non appena si ha l'aereo si può generare)
+    - Data -- (DONE)
+    - ID Terminal (Ricavato da Tipo (Merce / Passeggero))
+    - ID Compagnia Aerea
+
+CA-N_VIAGGIO-DATA-SRC-DEST-SEQ

@@ -10,6 +10,7 @@ from src.init_graph import InitGraph
 from src.setup_bus import SetupBusHandler
 from src.message_bus import WsMessageBus
 from src.spawn_scheduler import SpawnScheduler
+from src.runtime_bus import RuntimeBusHandler
 
 ######## LOGGING CONFIGURATION ########
 
@@ -29,19 +30,25 @@ pw_simulator = Simulator()
 pw_graph = InitGraph("LIAG")
 
 setup_bus: SetupBusHandler | None = None
+runtime_bus: RuntimeBusHandler | None = None
 
 
 ######## FUNZIONI ASINCRONE PER CREAZIONE TASK ASYNCIO
 
 
-async def incoming_dispatch_loop(bus: WsMessageBus, setup_bus: SetupBusHandler):
+async def incoming_dispatch_loop(bus: WsMessageBus, setup_bus: SetupBusHandler, runtime_bus: RuntimeBusHandler):
 
     """Smista i messaggi in entrata verso i vari handler"""
 
     while True:
         payload = await bus.incoming.get()
         try:
-            await setup_bus.enqueue(payload)
+            # Switch tra Setup Bus e Runtime Bus
+
+            if not setup_bus.setup_finished:
+                await setup_bus.enqueue(payload)
+            else:
+                await runtime_bus.enqueue(payload)
         finally:
             bus.incoming.task_done()
 
@@ -76,10 +83,13 @@ async def echo_handler(websocket: WebSocketServerProtocol) -> None:
     peer = websocket.remote_address
     logging.info("Client connected: %s", peer)
 
+    runtime_bus = RuntimeBusHandler(pw_simulator)
+    await runtime_bus.start()
+
     bus = WsMessageBus()
     await bus.start(websocket=websocket)
 
-    dispatch_task = asyncio.create_task(incoming_dispatch_loop(bus, setup_bus))
+    dispatch_task = asyncio.create_task(incoming_dispatch_loop(bus, setup_bus, runtime_bus))
     spawn_task = asyncio.create_task(schedule_initial_spawns(bus, setup_bus, pw_simulator))
 
     try:
