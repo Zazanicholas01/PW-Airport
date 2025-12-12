@@ -186,6 +186,7 @@ CREATE_AND_ALTER_STATEMENTS = [
     'ALTER TABLE "Veicolo" ADD CONSTRAINT "veicolo_id_viaggio_foreign" FOREIGN KEY("id_viaggio") REFERENCES "Viaggio"("id");',
     'ALTER TABLE "Aereo" ADD CONSTRAINT "aereo_id_percorso_foreign" FOREIGN KEY("id_percorso") REFERENCES "Percorso"("id");',
     'ALTER TABLE "Operazione" ADD CONSTRAINT "operazione_id_aereo_foreign" FOREIGN KEY("id_aereo") REFERENCES "Aereo"("Id");',
+    'ALTER TABLE "Aereo" ADD CONSTRAINT "aereo_ca_foreign" FOREIGN KEY("CA") REFERENCES "Compagnia_Aerea"("ICAO");',
 ]
 
 

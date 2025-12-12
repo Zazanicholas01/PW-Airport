@@ -44,6 +44,7 @@ class Airline(Base):
     nationality = Column("Nazionalità", String, nullable=True) # Nazionale / Europeo / Intercontinentale
 
     airplanes = relationship("Airplane", back_populates="airline")
+    flights = relationship("Flight", back_populates="airline")
 
 
 class Percorso(Base):
@@ -102,7 +103,6 @@ class Stand(Base):
     position = Column("Posizione", JSON, nullable=True)
 
     airplane = relationship("Airplane", back_populates="stands")
-    flights = relationship("Flight", back_populates="stand")
     operations = relationship("Operation", back_populates="stand")
 
 
@@ -111,20 +111,20 @@ class Flight(Base):
 
     id = Column("id", String, primary_key=True)
     airplane_id = Column("id_aereo", String, ForeignKey("Aereo.Id"))
-    arrival_time = Column("Orario_arrivo", DateTime, nullable=False)
-    departure_time = Column("Orario_partenza", DateTime, nullable=False)
+    arrival_time = Column("Orario_arrivo", DateTime, nullable=True)
+    departure_time = Column("Orario_partenza", DateTime, nullable=True)
     terminal_id = Column("id_terminal", Integer, ForeignKey("Terminal.id"), nullable=False)
-    stand_id = Column("id_piazzola", String, ForeignKey("Piazzola.id"))
     origin = Column("Provenienza", String, ForeignKey("Aeroporto.ICAO"), nullable=False)
     destination = Column("Destinazione", String, ForeignKey("Aeroporto.ICAO"), nullable=False)
     status = Column("Stato", String, nullable=False)
-    icao = Column("ICAO", String, nullable=False)
+    icao = Column("ICAO", String, nullable=True)
     date = Column("Data", Date, nullable=False)
     tipo = Column("Tipo", String, nullable=False)
+    airline_code = Column("id_compagnia", String, ForeignKey("Compagnia_Aerea.ICAO"))
 
     airplane = relationship("Airplane", back_populates="flights")
     terminal = relationship("Terminal", back_populates="flights")
-    stand = relationship("Stand", back_populates="flights")
+    airline = relationship("Airline", back_populates="flights")
     origin_airport = relationship(
         "Airport",
         back_populates="departures",
