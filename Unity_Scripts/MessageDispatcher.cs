@@ -10,6 +10,7 @@ public class MessageDispatcher : MonoBehaviour
     private readonly object queueLock = new();
 
     public event Action<SpawnCommand> OnSpawnCommand;
+    public event Action<ClockSyncCommand> OnClockSync;
 
     [Serializable]
     private class CommandEnvelope
@@ -24,6 +25,14 @@ public class MessageDispatcher : MonoBehaviour
         public string prefab;
         public string stand_id;
         public SerializableVector3 position;
+    }
+
+    [Serializable]
+    public class ClockSyncCommand {
+        public string command;
+        public long sim_unix_ms;
+        public float time_scale;
+        public int sync_id;
     }
 
     [Serializable]
@@ -101,6 +110,9 @@ public class MessageDispatcher : MonoBehaviour
 
         switch (envelope.command.ToLowerInvariant())
         {
+            case "clock_sync":
+                HandleClockSync(json);
+                break;
             case "spawn":
             case "spawn_plane": // legacy name from Python side
                 HandleSpawn(json);
@@ -132,5 +144,15 @@ public class MessageDispatcher : MonoBehaviour
 
         OnSpawnCommand?.Invoke(cmd);
         Debug.Log("[MessageDispatcher] Spawn command dispatched.");
+    }
+
+    private void HandleClockSync(string json) {
+        ClockSyncCommand cmd;
+        try {
+            cmd = JsonUtility.FromJson<ClockSyncCommand>(json);
+        }catch { return; }
+
+        if (cmd == null) return;
+        OnClockSync?.Invoke(cmd);
     }
 }

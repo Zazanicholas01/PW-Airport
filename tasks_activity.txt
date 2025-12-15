@@ -15,6 +15,10 @@ DEFINIZIONE SPAWN
     - Assegnazione Posizione -- (DONE)
     - Assegnazione Percorso
     - Animazione su Unity
+    - Despawn Fine Decollo & Spawn Inizio Atterraggio
+    - Regolazione Velocità Dinamiche
+    - Regolazione Rotazioni / Tangenti
+    - Gestione Bus & Spline Bus
 
 GENERAZIONE RANDOM VIAGGI -- (DONE)
 
@@ -30,3 +34,36 @@ GENERAZIONE RANDOM VIAGGI -- (DONE)
     - ID Compagnia Aerea
 
 CA-N_VIAGGIO-DATA-SRC-DEST-SEQ
+
+GAME OBJECT IN SCENA REGISTRY
+    - Mappa ID Univoco - Game Objects in scena
+
+GESTIONE FINESTRA TEMPORALE PER INIZIARE A GESTIRE UN VIAGGIO
+    - Decidere un tempo fisso e variabile per decidere quando gestire un viaggio in base alla distanza temporale dall'orario di partenza (decollo) e orario di arrivo (atterraggio)
+
+GESTIONE TEMPORALE PYTHON - UNITY
+    - Python --> Tempo reale
+    - Unity --> Tempo di simulazione
+    - ?????????????????????????????????????????????????????????????????????
+    - Clock Autoritario su Python
+    - Sincronizzazione non sempre necessaria
+    - Timelapse deciso su Python
+    - Unity regola in base a tick di Python e speed le animazioni
+    - Regolazione a intervalli fissi non dipendenti dagli FPS
+    - Gestione Event-Driven dove possibile
+    - Valutare Arc Length Mapping
+
+GESTIONE ROTAZIONI E TANGENTI
+    - Gestire al momento dello spawn tangenti e rotazioni allineate con le spline in modo che poi sia tutto automatico
+
+COMANDI UNITY PER IMPOSTARE TIME SCALE DA UNITY
+
+    - {"command":"set_time_scale","time_scale":0}
+    - {"command":"set_time_scale","time_scale":4}
+
+Poi in RuntimeBusHandler.handle_payload() (o dove preferisci) gestisci:
+
+    - set_time_scale → clock.set_time_scale(x)
+    - set_sim_time (se vuoi jump) → clock.set_sim_time(datetime.fromtimestamp(ms/1000, tz=UTC))
+    
+Così la UI Unity può controllare play/pause/fast-forward.

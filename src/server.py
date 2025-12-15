@@ -4,6 +4,7 @@ import logging
 
 import websockets
 from websockets import WebSocketServerProtocol
+from datetime import datetime, timezone
 
 from src.simulator import Simulator
 from src.init_graph import InitGraph
@@ -11,6 +12,7 @@ from src.setup_bus import SetupBusHandler
 from src.message_bus import WsMessageBus
 from src.spawn_scheduler import SpawnScheduler
 from src.runtime_bus import RuntimeBusHandler
+from src.sim_clock import SimulationClock
 
 ######## LOGGING CONFIGURATION ########
 
@@ -71,6 +73,22 @@ async def schedule_initial_spawns(bus: WsMessageBus, setup_bus: SetupBusHandler,
     logging.info("Scheduled %d initial spawn commands", len(commands))
 
 
+async def clock_sync_loop(bus: WsMessageBus, clock: SimulationClock, *, hz: float = 10.0):
+    period = 1.0 / hz
+    logging.info("Clock sync loop started: hz=%.1f", hz)
+
+    while True:
+        sync = clock.make_sync()
+        await bus.send_command({
+            "command": "clock_sync",
+            "sync_id": sync.sync_id,
+            "sim_unix_ms": sync.sim_unix_ms,
+            "time_scale": sync.time_scale,
+        })
+
+        await asyncio.sleep(period)
+
+
 ######## WEBSOCKET ECHO HANDLER ########
 
 
@@ -89,23 +107,28 @@ async def echo_handler(websocket: WebSocketServerProtocol) -> None:
     bus = WsMessageBus()
     await bus.start(websocket=websocket)
 
+    clock = SimulationClock(sim_start=datetime.now(timezone.utc), time_scale=1.0)
+
+    logging.info("Clock init: sim_start=%s time_scale=%.2f", clock.now().isoformat(), clock.time_scale)
+
     dispatch_task = asyncio.create_task(incoming_dispatch_loop(bus, setup_bus, runtime_bus))
     spawn_task = asyncio.create_task(schedule_initial_spawns(bus, setup_bus, pw_simulator))
+    clock_task = asyncio.create_task(clock_sync_loop(bus, clock, hz=10.0))
 
     try:
         # Handshake verso Unity
         await bus.send_command({"type": "welcome", "message": "Connected to Python server"})
-
-        await asyncio.gather(bus._recv_task, bus._send_task, dispatch_task, spawn_task)
+        await bus._recv_task
 
     except websockets.ConnectionClosed:
         logging.info("Client %s disconnected", peer)
     finally:
         await bus.stop()
-        dispatch_task.cancel()
-        spawn_task.cancel()
 
-        for task in (dispatch_task, spawn_task):
+        for task in (dispatch_task, spawn_task, clock_task):
+            task.cancel()
+        
+        for task in (dispatch_task, spawn_task, clock_task):
             try:
                 await task
             except asyncio.CancelledError:

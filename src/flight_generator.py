@@ -32,6 +32,43 @@ class RandomFlightGenerator:
         return airports, terminals, airlines
     
 
+    def _random_times_for_today(
+        self,
+        *,
+        min_departure_delta: timedelta = timedelta(hours=2),
+        min_duration: timedelta = timedelta(minutes=30),
+        max_duration: timedelta = timedelta(minutes=240),
+    ) -> tuple[datetime, datetime]:
+        now = datetime.now()
+        today = now.date()
+
+        start_of_day = datetime(today.year, today.month, today.day)
+        end_of_day = start_of_day + timedelta(days=1)
+
+        earliest_departure = max(start_of_day, now + min_departure_delta)
+        latest_departure = end_of_day - min_duration
+
+        if earliest_departure > latest_departure:
+            raise RuntimeError(
+                f"Not enough time remaining today to schedule flights "
+                f"(now={now.isoformat()}, min_departure_delta={min_departure_delta})."
+            )
+
+        window_seconds = int((latest_departure - earliest_departure).total_seconds())
+        dep_time = earliest_departure + timedelta(seconds=random.randint(0, window_seconds))
+
+        max_allowed_seconds = int((end_of_day - dep_time).total_seconds())
+        min_duration_seconds = int(min_duration.total_seconds())
+        max_duration_seconds = min(int(max_duration.total_seconds()), max_allowed_seconds)
+
+        if max_duration_seconds < min_duration_seconds:
+            raise RuntimeError("Invalid duration window for today-only flight generation.")
+
+        duration_seconds = random.randint(min_duration_seconds, max_duration_seconds)
+        arr_time = dep_time + timedelta(seconds=duration_seconds)
+        return dep_time, arr_time
+
+
     def _init_flight_counters(self, session, airlines) -> dict[str, int]:
 
         counters = {a.icao: 0 for a in airlines}
@@ -94,18 +131,6 @@ class RandomFlightGenerator:
             raise RuntimeError("No terminals available")
 
         return random.choice(candidates).id
-    
-
-    def _random_times_for_today(self) -> tuple[datetime, datetime]:
-        
-        today = date.today()
-        start_of_day = datetime(today.year, today.month, today.day)
-        dep_offset_minutes = random.randint(0, 21*60)
-        dep_time = start_of_day + timedelta(minutes=dep_offset_minutes)
-
-        duration_minutes = random.randint(30, 240)
-        arr_time = dep_time + timedelta(minutes=duration_minutes)
-        return dep_time, arr_time
     
 
     def _route_category(self, remote_airport: models.Airport) -> str:
@@ -210,7 +235,7 @@ class RandomFlightGenerator:
                 route_category = self._route_category(remote_airport)
                 airline = self._pick_airline(airlines, flight_type, route_category)
                 
-                departure_time, arrival_time = self._random_times_for_today()
+                departure_time, arrival_time = self._random_times_for_today(min_departure_delta=timedelta(hours=2))
 
                 flight_number = self._next_flight_code(airline, counters)
                 seq_number = 1
