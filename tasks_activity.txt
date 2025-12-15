@@ -65,5 +65,16 @@ Poi in RuntimeBusHandler.handle_payload() (o dove preferisci) gestisci:
 
     - set_time_scale → clock.set_time_scale(x)
     - set_sim_time (se vuoi jump) → clock.set_sim_time(datetime.fromtimestamp(ms/1000, tz=UTC))
-    
+
 Così la UI Unity può controllare play/pause/fast-forward.
+
+LINKIN PARK
+
+    - DECOLLO
+        - Link alla Piazzola
+        - Una volta che parte (Finisce prima spline e passa a master spline) --> Unlink della Piazzola
+        - Aggiornamento DB stato piazzola
+    
+    - Atterraggio
+        - Link alla Piazzola solo quando è parcheggiato
+        - Piazzola riservata all'aereo X per il tempo di percorrenza della spline

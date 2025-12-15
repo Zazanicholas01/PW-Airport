@@ -1,6 +1,8 @@
 import asyncio, json, logging
 from websockets.exceptions import ConnectionClosed
 
+from typing import Callable
+
 class WsMessageBus:
     def __init__(self) -> None:
         self.incoming: asyncio.Queue = asyncio.Queue()
@@ -8,6 +10,7 @@ class WsMessageBus:
         self._recv_task = None
         self._send_task = None
         self.closed = asyncio.Event()
+        self._before_send: list[Callable[[dict], None]] = []
     
     async def start(self, websocket):
         """Avvia i task di ricezione e invio"""
@@ -34,6 +37,13 @@ class WsMessageBus:
         """Enqueue di un comando da mandare a Unity"""
         if self.closed.is_set():
             return
+
+        for hook in self._before_send:
+            try:
+                hook(payload)
+            except Exception:
+                logging.exception("Outgoing hook failed for payload: %r", payload)
+
         await self.outgoing.put(payload)
     
 
@@ -70,3 +80,6 @@ class WsMessageBus:
                 logging.exception("Error sending command to Unity")
             finally:
                 self.outgoing.task_done()
+
+    def add_outgoing_hook(self, hook: Callable[[dict], None]) -> None:
+        self._before_send.append(hook)

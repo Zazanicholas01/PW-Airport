@@ -2,8 +2,9 @@ import logging
 import random
 from dataclasses import dataclass
 from typing import Iterable
+from uuid import uuid4
 
-from sqlalchemy import select, update
+from sqlalchemy import select, update, delete
 from sqlalchemy.orm import Session, sessionmaker
 
 from src.database import get_engine
@@ -43,8 +44,9 @@ class SpawnScheduler:
         
         with self.Session() as session:
             session.execute(
-                update(models.Stand).values(status=self.free_status)
+                update(models.Stand).values(status=self.free_status, airplane_id=None,)
             )
+            session.execute(delete(models.Airplane))
             session.commit()
         
         self._stands_reset = True
@@ -69,12 +71,16 @@ class SpawnScheduler:
                 position = None
                 if stand_id in self._stand_state:
                     position = self._stand_state[stand_id].position
+                
+                airplane_id = str(uuid4())
                 spawn_commands.append(
                     {
                         "command": "spawn_plane",
                         "prefab": prefab["name"],
                         "stand_id": stand_id,
                         "position": position,
+                        "airplane_id": airplane_id,
+                        "spawn_context": "bootstrap",
                     }
                 )
 

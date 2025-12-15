@@ -73,7 +73,7 @@ class Airplane(Base):
     fuel_level = Column("Livello_Carburante", Float, nullable=False)
     maintenance = Column("Manutenzione", Boolean, nullable=False)
     airline_code = Column("CA", String, ForeignKey("Compagnia_Aerea.ICAO"))
-    route_id = Column("id_percorso", Integer, ForeignKey("Percorso.id"), nullable=False)
+    route_id = Column("id_percorso", Integer, ForeignKey("Percorso.id"), nullable=True)
 
     airline = relationship("Airline", back_populates="airplanes")
     route = relationship("Percorso", back_populates="airplanes")

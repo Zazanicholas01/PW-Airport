@@ -1,10 +1,16 @@
 import asyncio, logging
 
 from sqlalchemy.orm import sessionmaker
+from sqlalchemy import select
 
 from src.flight_generator import RandomFlightGenerator
+from src import models
 
 from src.database import get_engine
+from src.utils.db_functions import (
+    link_airplane_to_stand,
+    unlink_airplane_from_stand,
+)
 
 _engine = get_engine()
 Session = sessionmaker(bind=_engine, future=True)
@@ -37,6 +43,36 @@ class RuntimeBusHandler:
             finally:
                 self.queue.task_done()
     
+    def _find_stand_id_by_airplane_id(self, session, airplane_id: str) -> str | None:
+        return session.execute(
+            select(models.Stand.id).where(models.Stand.airplane_id == airplane_id)
+        ).scalar_one_or_none()
 
     async def handle_payload(self, payload: dict):
-        pass
+        if payload.get("type") != "event":
+            return
+
+        evt = payload.get("event")
+        airplane_id = payload.get("airplane_id")
+        if not isinstance(airplane_id, str) or not airplane_id:
+            return
+
+        with self.Session() as session:
+            stand_id = self._find_stand_id_by_airplane_id(session, airplane_id)
+
+        if evt == "plane_parked":
+            #### Implementare logica di atterraggio ########
+            return
+
+        if evt == "plane_left_stand":
+            if stand_id is None:
+                return
+            stand = session.get(models.Stand, stand_id)
+            if stand is None:
+                return
+            if stand.airplane_id != airplane_id:
+                return
+            stand.airplane_id = None
+            session.commit()
+            return
+

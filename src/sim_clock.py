@@ -55,6 +55,5 @@ class SimulationClock:
         self._sync_id += 1
         sim = self.now()
         sim_unix_ms = int(sim.timestamp() * 1000)
-        logging.info(datetime.fromtimestamp(sim_unix_ms/1000, tz=timezone.utc).astimezone())
 
         return ClockSync(sync_id=self._sync_id, sim_unix_ms=sim_unix_ms, time_scale=self._time_scale)

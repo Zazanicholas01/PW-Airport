@@ -61,7 +61,7 @@ CREATE_AND_ALTER_STATEMENTS = [
         "Livello_Carburante" FLOAT(53) NOT NULL,
         "Manutenzione" BOOLEAN NOT NULL,
         "CA" VARCHAR(255) NULL,
-        "id_percorso" INTEGER NOT NULL
+        "id_percorso" INTEGER NULL
     );
     ''',
     'ALTER TABLE "Aereo" ADD PRIMARY KEY("Id");',

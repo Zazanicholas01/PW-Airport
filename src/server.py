@@ -5,6 +5,7 @@ import logging
 import websockets
 from websockets import WebSocketServerProtocol
 from datetime import datetime, timezone
+from uuid import uuid4
 
 from src.simulator import Simulator
 from src.init_graph import InitGraph
@@ -13,6 +14,14 @@ from src.message_bus import WsMessageBus
 from src.spawn_scheduler import SpawnScheduler
 from src.runtime_bus import RuntimeBusHandler
 from src.sim_clock import SimulationClock
+from src.world_state import WorldState
+
+from src import models
+from src.database import get_engine
+from sqlalchemy.orm import sessionmaker
+
+from src.utils.db_functions import link_airplane_to_stand
+from src.utils.mapping import range_for_airplane_model, type_for_airplane_model
 
 ######## LOGGING CONFIGURATION ########
 
@@ -30,9 +39,46 @@ PORT = 8765
 
 pw_simulator = Simulator()
 pw_graph = InitGraph("LIAG")
+pw_world_state = WorldState()
+#logging.getLogger().setLevel(logging.DEBUG)
+
+_engine = get_engine()
+Session = sessionmaker(bind=_engine, future=True)
+
 
 setup_bus: SetupBusHandler | None = None
 runtime_bus: RuntimeBusHandler | None = None
+
+
+def ensure_airplane_row(*, airplane_id: str | None, prefab: str) -> str:
+    with Session() as session:
+        if airplane_id:
+            existing = session.get(models.Airplane, airplane_id)
+            if existing is not None:
+                return airplane_id
+        else:
+            airplane_id = str(uuid4())
+
+        range_value = range_for_airplane_model(prefab)
+        airplane_type = type_for_airplane_model(prefab)
+
+        airplane = models.Airplane(
+            id=airplane_id,
+            type=airplane_type,
+            range=range_value,
+            model=prefab,
+            capacity=100,
+            status="Parked",
+            speed=0.0,
+            fuel_level=1.0,
+            maintenance=False,
+            airline_code=None,
+            route_id=None,
+        )
+        session.add(airplane)
+        session.commit()
+        logging.info("[db] Airplane created id=%s prefab=%s", airplane_id, prefab)
+        return airplane_id
 
 
 ######## FUNZIONI ASINCRONE PER CREAZIONE TASK ASYNCIO
@@ -70,6 +116,7 @@ async def schedule_initial_spawns(bus: WsMessageBus, setup_bus: SetupBusHandler,
 
     for cmd in commands:
         await bus.send_command(cmd)
+
     logging.info("Scheduled %d initial spawn commands", len(commands))
 
 
@@ -106,6 +153,31 @@ async def echo_handler(websocket: WebSocketServerProtocol) -> None:
 
     bus = WsMessageBus()
     await bus.start(websocket=websocket)
+
+    def _track_spawns(payload: dict) -> None:
+        cmd = payload.get("command")
+        if cmd not in ("spawn_plane", "spawn"):
+            return
+        stand_id = payload.get("stand_id")
+        prefab = payload.get("prefab")
+
+        ctx = payload.get("spawn_context")
+        airplane_id = payload.get("airplane_id") if isinstance(payload.get("airplane_id"), str) else None
+        airplane_id = ensure_airplane_row(airplane_id=airplane_id, prefab=prefab)
+
+        if ctx == "bootstrap":
+            link_airplane_to_stand(stand_id=stand_id, airplane_id=airplane_id)
+
+        if not isinstance(stand_id, str) or not isinstance(prefab, str):
+            return
+
+        pw_world_state.record_plane_spawn(
+            stand_id = stand_id,
+            prefab = prefab,
+            position = payload.get("position"),
+        )
+
+    bus.add_outgoing_hook(_track_spawns)
 
     clock = SimulationClock(sim_start=datetime.now(timezone.utc), time_scale=1.0)
 
