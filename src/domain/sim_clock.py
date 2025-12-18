@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timezone, timedelta
-import time, logging
+import time
 
 def utc_now() -> datetime:
     return datetime.now(timezone.utc)

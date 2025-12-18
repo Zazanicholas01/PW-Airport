@@ -3,8 +3,8 @@ import logging, asyncio
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy import delete, text
 
-from src.database import get_engine
-from src import models
+from src.db.engine import get_engine
+from src.db import models
 
 class SetupState:
     def __init__(self) -> None:

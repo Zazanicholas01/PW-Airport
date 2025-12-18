@@ -1,4 +1,4 @@
-import json, math
+import json
 from pathlib import Path
 
 class InitGraph:

@@ -3,14 +3,10 @@ import asyncio, logging
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy import select
 
-from src.flight_generator import RandomFlightGenerator
-from src import models
+from src.services.flight_generator import RandomFlightGenerator
+from src.db import models
 
-from src.database import get_engine
-from src.utils.db_functions import (
-    link_airplane_to_stand,
-    unlink_airplane_from_stand,
-)
+from src.db.engine import get_engine
 
 _engine = get_engine()
 Session = sessionmaker(bind=_engine, future=True)

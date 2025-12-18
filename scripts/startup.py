@@ -1,8 +1,8 @@
 from sqlalchemy import select
 from sqlalchemy.orm import sessionmaker
 
-from src.database import get_engine
-from src import models
+from src.db.engine import get_engine
+from src.db import models
 
 from uuid import uuid4
 

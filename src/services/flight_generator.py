@@ -1,12 +1,12 @@
 from uuid import uuid4
-from src import models
+from src.db import models
 import random
 from datetime import datetime, date, timedelta
 
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy import delete
 
-from src.database import get_engine
+from src.db.engine import get_engine
 
 class RandomFlightGenerator:
     def __init__(self, session_factory):

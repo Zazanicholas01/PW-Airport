@@ -1,7 +1,7 @@
 import logging
-from src import models
+from src.db import models
 
-from src.database import get_engine
+from src.db.engine import get_engine
 from sqlalchemy.orm import sessionmaker
 
 _engine = get_engine()

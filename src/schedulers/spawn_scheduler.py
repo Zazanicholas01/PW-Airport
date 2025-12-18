@@ -7,8 +7,8 @@ from uuid import uuid4
 from sqlalchemy import select, update, delete
 from sqlalchemy.orm import Session, sessionmaker
 
-from src.database import get_engine
-from src import models
+from src.db.engine import get_engine
+from src.db import models
 
 
 @dataclass
