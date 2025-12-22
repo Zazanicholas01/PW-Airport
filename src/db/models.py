@@ -111,8 +111,8 @@ class Flight(Base):
 
     id = Column("id", String, primary_key=True)
     airplane_id = Column("id_aereo", String, ForeignKey("Aereo.Id"))
-    arrival_time = Column("Orario_arrivo", DateTime, nullable=True)
-    departure_time = Column("Orario_partenza", DateTime, nullable=True)
+    arrival_time = Column("Orario_arrivo", DateTime(timezone=True), nullable=True)
+    departure_time = Column("Orario_partenza", DateTime(timezone=True), nullable=True)
     terminal_id = Column("id_terminal", Integer, ForeignKey("Terminal.id"), nullable=False)
     origin = Column("Provenienza", String, ForeignKey("Aeroporto.ICAO"), nullable=False)
     destination = Column("Destinazione", String, ForeignKey("Aeroporto.ICAO"), nullable=False)

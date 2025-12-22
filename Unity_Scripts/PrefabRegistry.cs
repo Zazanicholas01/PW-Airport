@@ -16,13 +16,16 @@ public class PrefabRegistry : MonoBehaviour
     [SerializeField]
     private GameObject[] registeredPrefabs;
 
+    public enum PrefabKind { Plane, GroundVehicle, Unknown }
+
     [Serializable]
     public class PrefabEntry{
         public string name;        // Nome che arriva da Python
+        public PrefabKind type;
         public GameObject prefab;  // Riferimento effettivo al Prefab da istanziare
     }
 
-    private readonly Dictionary<string, GameObject> prefabMap = new Dictionary<string, GameObject>(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, PrefabEntry> prefabMap = new Dictionary<string, PrefabEntry>(StringComparer.OrdinalIgnoreCase);
     private bool prefabMapBuilt = false;
 
     private LocalWebSocketClient ws;
@@ -50,17 +53,26 @@ public class PrefabRegistry : MonoBehaviour
 
     private void BuildPrefabMap() {
         prefabMap.Clear();
+
         if (registeredPrefabs == null || registeredPrefabs.Length == 0) {
 
             Debug.LogWarning("[PrefabRegistry] registeredPrefabs is empty; no prefabs will be spawnable.");
             return;
         }
 
+        var planeNames = new HashSet<string>(GetPrefabNames(aereiFolder), StringComparer.OrdinalIgnoreCase);
+        var groundNames = new HashSet<string>(GetPrefabNames(mezziFolder), StringComparer.OrdinalIgnoreCase);
+
         foreach (var go in registeredPrefabs) {
             if (go == null) continue;
+
+            var kind =
+                planeNames.Contains(go.name) ? PrefabKind.Plane :
+                groundNames.Contains(go.name) ? PrefabKind.GroundVehicle :
+                PrefabKind.Unknown;
             
             if (!prefabMap.ContainsKey(go.name)){
-                prefabMap.Add(go.name, go);
+                prefabMap.Add(go.name, new PrefabEntry { name = go.name, type = kind, prefab = go });
             }
         }
 
@@ -70,19 +82,24 @@ public class PrefabRegistry : MonoBehaviour
     }
 
     public bool TryGetPrefab(string name, out GameObject prefab) {
+        prefab = null;
+        
         if (string.IsNullOrWhiteSpace(name)){
-            prefab = null;
             return false;
         }
 
         if (!prefabMapBuilt)
         {
             Debug.LogWarning("[PrefabRegistry] Prefab map not built yet; did SendPrefabNames() complete?");
-            prefab = null;
             return false;
         }
 
-        return prefabMap.TryGetValue(name, out prefab);
+        if (prefabMap.TryGetValue(name, out var entry) && entry != null){
+            prefab = entry.prefab;
+            return prefab != null;
+        }
+
+        return false;
     }
 
     private async void Start()

@@ -36,8 +36,8 @@ CREATE_AND_ALTER_STATEMENTS = [
     CREATE TABLE "Viaggio"(
         "id" VARCHAR(36) NOT NULL,
         "id_aereo" VARCHAR(36) NULL,
-        "Orario_arrivo" TIMESTAMP(0) WITHOUT TIME ZONE NULL,
-        "Orario_partenza" TIMESTAMP(0) WITHOUT TIME ZONE NULL,
+        "Orario_arrivo" TIMESTAMP(0) WITH TIME ZONE NULL,
+        "Orario_partenza" TIMESTAMP(0) WITH TIME ZONE NULL,
         "id_terminal" INTEGER NOT NULL,
         "Provenienza" VARCHAR(10) NOT NULL,
         "Destinazione" VARCHAR(10) NOT NULL,

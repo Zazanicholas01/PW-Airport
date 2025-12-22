@@ -58,8 +58,9 @@ class SpawnScheduler:
 
         self._reset_all_stands_once()
         self._ensure_stand_cache()
+
         stand_ids = self._pick_available_stand_ids(self.starting_n_prefabs)
-        prefabs = self._pick_prefabs(count=len(stand_ids))
+        prefabs = self._pick_prefabs(count=self.starting_n_prefabs, allowed_types={"aereo", "plane"})
 
         if not stand_ids or not prefabs:
             return []
@@ -108,19 +109,27 @@ class SpawnScheduler:
         self._stands_loaded = True
         logging.info("Loaded %d stands into scheduler cache", len(self._stand_state))
 
-    def _pick_prefabs(self, count: int) -> list[dict]:
+    def _pick_prefabs(self, count: int, *, allowed_types: set[str] | None = None) -> list[dict]:
         """Randomly sample prefabs from the simulator payloads."""
         if not self.simulator.prefabs:
             logging.warning("No prefabs available for spawning")
             return []
 
-        if count <= 0:
+        candidates = list(self.simulator.prefabs)
+        if allowed_types is not None:
+            candidates = [
+                p for p in candidates
+                if str(p.get("type", "")).lower() in allowed_types
+            ]
+        
+        if not candidates:
+            logging.warning("No prefabs available for spawning")
             return []
 
-        if len(self.simulator.prefabs) <= count:
-            return list(self.simulator.prefabs)
+        if len(candidates) <= count:
+            return candidates
 
-        return random.sample(self.simulator.prefabs, k=count)
+        return random.sample(candidates, k=count)
 
     def _pick_available_stand_ids(self, count: int) -> list[str]:
         """Return a sample of stand IDs that are currently marked as free in cache."""

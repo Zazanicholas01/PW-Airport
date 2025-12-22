@@ -1,16 +1,20 @@
 import logging
 from uuid import uuid4
 
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import sessionmaker
 from src.db import models
+from src.db.engine import get_engine
 
 from src.utils.mapping import (
     range_for_airplane_model,
     type_for_airplane_model
 )
 
+_engine = get_engine()
+SessionLocal = sessionmaker(bind=_engine, future=True)
+
 def ensure_airplane_row(*, airplane_id: str | None, prefab: str) -> str:
-    with Session() as session:
+    with SessionLocal() as session:
         if airplane_id:
             existing = session.get(models.Airplane, airplane_id)
             if existing is not None:

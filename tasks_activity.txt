@@ -78,3 +78,53 @@ LINKIN PARK
     - Atterraggio
         - Link alla Piazzola solo quando è parcheggiato
         - Piazzola riservata all'aereo X per il tempo di percorrenza della spline
+
+FLIGHT SCHEDULER
+
+    - Definire Finestra Temporale per gestione viaggi -- (DONE)
+    - DECOLLO
+        - Definire compatibilità aereo
+        - Aereo parcheggiato in piazzola
+        - Tipo volo deve combaciare (Merce / Passeggero)
+        - Raggio volo compatibile (Corto / Medio / Lungo) (non influente sulla spline)
+
+        - Riservazioni per piazzole assegnate ma viaggio non ancora partito
+        - Mapping aerei compatibili (più o meno già fatto)
+    
+    - ATTERRAGGIO
+
+        - Nessun controllo su compatibilità aerei
+        - Controllo su piazzole libere e piazzole compatibili (P-C-O)
+            - Priorità P-C --> Se no O
+        - Se piazzole libere --> Riservazione piazzola
+        - Se non piazzole libere --> Parcheggio
+        - Se non parcheggio libero --> Aumentare numero di parcheggi in Unity
+
+PATH SCHEDULER
+
+    - Definire percorso per aerei una volta assegnato un viaggio
+
+    - DECOLLO
+        - Partenza piazzola collegata con aereo parcheggiato
+        - Arrivo --> Decollo
+    
+    - ATTERRAGGIO
+        - Prima spline --> Decisa in base al raggio del volo
+        - Arrivo --> Piazzola schedulata dal flight scheduler
+        - Gestione caso dinamico del parcheggio
+
+ANIMAZIONI
+
+    - Definire metodi di animazioni dei game objects
+
+        - Game Object Registry in Unity collegato con world state in python
+            - Mapping Plane -> GameObject / Bus -> GameObject
+            - Lifecycle Spawn / Despawn
+
+        - Arc Length Mapping per gestione velocità dinamiche
+        - Gestione comandi di inizio percorrenza e comandi di cambio velocità
+        - Gestione comandi di "next spline" con eventi da Unity
+            - Ha senso farlo direttamente in Unity (Magari solo avvisare python x questioni di precedenze)
+
+        - Gestione precedenze
+        - Gestione rotazioni e tangenti

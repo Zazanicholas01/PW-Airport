@@ -54,7 +54,15 @@ public class LocalWebSocketClient : MonoBehaviour
             } while (!result.EndOfMessage);
 
             var message = Encoding.UTF8.GetString(ms.ToArray());
-            Debug.Log($"[WS] Received: {message}");
+
+            // Control to log all messages except clock messages from Python
+            var compact = message.Replace(" ", "");
+            var isClockSync = compact.Contains("\"command\":\"clock_sync\"");
+
+            if (!isClockSync)
+            {
+                Debug.Log($"[WS] Received: {message}");
+}
 
             // Richiamo a Unity Main Thread Dispatcher
             if (MessageReceived != null){

@@ -4,6 +4,7 @@ services:
   postgres:
     image: postgres:16-alpine
     container_name: pw_airport_postgres
+    command: ["postgres", "-c", "timezone=Europe/Rome"]
     environment:
       POSTGRES_DB: Airport
       POSTGRES_USER: airport
@@ -50,6 +51,7 @@ services:
       MB_DB_CONNECTION_URI: postgres://metabase:metabase@postgres:5432/metabase
       MB_SITE_URL: http://localhost:3000
       MB_PASSWORD_COMPLEXITY: weak
+      JAVA_TOOL_OPTIONS: "-Duser.timezone=Europe/Rome"
     ports:
       - "3000:3000"
     restart: unless-stopped
@@ -105,6 +107,11 @@ services:
           echo "Failed to obtain session; retrying...";
           exit 1;
         fi;
+        echo "Setting Metabase report timezone...";
+        curl -sf -X PUT "http://metabase:3000/api/setting/report-timezone" \
+          -H "Content-Type: application/json" \
+          -H "X-Metabase-Session: $$SESSION" \
+          -d "{\"value\":\"Europe/Rome\"}";
         DB_EXISTS=$$(curl -sf -H "X-Metabase-Session: $$SESSION" http://metabase:3000/api/database | grep -c "\"name\":\"$$MB_PROVISION_DB_NAME\"");
         if [ "$${DB_EXISTS}" -gt 0 ]; then
           echo "Database '\''$$MB_PROVISION_DB_NAME'\'' already present; done.";

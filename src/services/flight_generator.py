@@ -1,7 +1,7 @@
 from uuid import uuid4
 from src.db import models
 import random
-from datetime import datetime, date, timedelta
+from datetime import datetime, date, timedelta, timezone
 
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy import delete
@@ -32,6 +32,83 @@ class RandomFlightGenerator:
         return airports, terminals, airlines
     
 
+    def _random_seconds_between(self, start: datetime, end: datetime) -> int:
+        if end <= start:
+            raise ValueError("Invalid time window")
+        return random.randint(0, int((end - start).total_seconds()))
+    
+
+    def _random_time_between(self, start: datetime, end: datetime) -> datetime:
+        return start + timedelta(seconds=self._random_seconds_between(start, end))
+
+
+    def _times_departure_within_window_today(
+        self,
+        *,
+        window: timedelta,
+        min_duration: timedelta = timedelta(minutes=30),
+        max_duration: timedelta = timedelta(minutes=240),
+        guard: timedelta = timedelta(minutes=1),
+    ) -> tuple[datetime, datetime]:
+        now = self._utc_now_naive()
+        today = now.date()
+        start_of_day = datetime(today.year, today.month, today.day, tzinfo=timezone.utc)
+        end_of_day = start_of_day + timedelta(days=1)
+
+        dep_lower = now + guard
+        dep_upper = min(now + window - guard, end_of_day - min_duration)
+        if dep_lower >= dep_upper:
+            return self._random_times_for_today(min_departure_delta=timedelta(seconds=0))
+
+        dep_time = self._random_time_between(dep_lower, dep_upper)
+
+        max_allowed_seconds = int((end_of_day - dep_time).total_seconds())
+        min_dur = int(min_duration.total_seconds())
+        max_dur = min(int(max_duration.total_seconds()), max_allowed_seconds)
+
+        if max_dur < min_dur:
+            return self._random_times_for_today(min_departure_delta=timedelta(seconds=0))
+        
+        duration_seconds = random.randint(min_dur, max_dur)
+
+        arr_time = dep_time + timedelta(seconds=duration_seconds)
+        return dep_time, arr_time
+
+
+    def _times_arrival_within_window_today(
+        self,
+        *,
+        window: timedelta,
+        min_duration: timedelta = timedelta(minutes=30),
+        max_duration: timedelta = timedelta(minutes=240),
+        guard: timedelta = timedelta(minutes=1),
+    ) -> tuple[datetime, datetime]:
+        now = self._utc_now_naive()
+        today = now.date()
+        start_of_day = datetime(today.year, today.month, today.day, tzinfo=timezone.utc)
+        end_of_day = start_of_day + timedelta(days=1)
+
+        arr_lower = max(now + guard + min_duration, start_of_day + min_duration)
+        arr_upper = min(now + window - guard, end_of_day - guard)
+        if arr_lower >= arr_upper:
+            return self._random_times_for_today(min_departure_delta=timedelta(seconds=0))
+
+        arr_time = self._random_time_between(arr_lower, arr_upper)
+
+        max_back_seconds = int((arr_time - start_of_day).total_seconds())
+        max_by_now_seconds = int((arr_time - (now + guard)).total_seconds())
+        min_dur = int(min_duration.total_seconds())
+        max_dur = min(int(max_duration.total_seconds()), max_back_seconds, max_by_now_seconds)
+
+        if max_dur < min_dur:
+            duration_seconds = min_dur
+        else:
+            duration_seconds = random.randint(min_dur, max_dur)
+
+        dep_time = arr_time - timedelta(seconds=duration_seconds)
+        return dep_time, arr_time
+
+
     def _random_times_for_today(
         self,
         *,
@@ -39,10 +116,10 @@ class RandomFlightGenerator:
         min_duration: timedelta = timedelta(minutes=30),
         max_duration: timedelta = timedelta(minutes=240),
     ) -> tuple[datetime, datetime]:
-        now = datetime.now()
+        now = self._utc_now_naive()
         today = now.date()
 
-        start_of_day = datetime(today.year, today.month, today.day)
+        start_of_day = datetime(today.year, today.month, today.day, tzinfo=timezone.utc)
         end_of_day = start_of_day + timedelta(days=1)
 
         earliest_departure = max(start_of_day, now + min_departure_delta)
@@ -190,12 +267,15 @@ class RandomFlightGenerator:
         return random.choice(candidates)
 
 
-    def generate_flights(self, n: int) -> list[models.Flight]:
+    def _utc_now_naive(self) -> datetime:
+        return datetime.now(timezone.utc)
+
+    def generate_flights(self, n: int, *, ensure_in_window: bool = True, window: timedelta = timedelta(hours=1)) -> list[models.Flight]:
 
         if n <= 0:
             return []
 
-        today = date.today()
+        today = self._utc_now_naive().date()
         flights: list[models.Flight] = []
 
         with self.Session() as session:
@@ -217,8 +297,13 @@ class RandomFlightGenerator:
             
             counters = self._init_flight_counters(session, airlines)
             
-            for _ in range(n):
-                is_departure_from_personal = random.choice([True, False])
+            for idx in range(n):
+                if ensure_in_window and idx == 0:
+                    is_departure_from_personal = True
+                elif ensure_in_window and idx == 1:
+                    is_departure_from_personal = False
+                else:
+                    is_departure_from_personal = random.choice([True, False])
 
                 flight_type = random.choice(["Cargo", "Passeggeri"])
                 terminal_id = self._pick_terminal_id(terminals, flight_type)
@@ -235,7 +320,12 @@ class RandomFlightGenerator:
                 route_category = self._route_category(remote_airport)
                 airline = self._pick_airline(airlines, flight_type, route_category)
                 
-                departure_time, arrival_time = self._random_times_for_today(min_departure_delta=timedelta(hours=2))
+                if ensure_in_window and idx == 0:
+                    departure_time, arrival_time = self._times_departure_within_window_today(window=window)
+                elif ensure_in_window and idx == 1:
+                    departure_time, arrival_time = self._times_arrival_within_window_today(window=window)
+                else:
+                    departure_time, arrival_time = self._random_times_for_today(min_departure_delta=timedelta(hours=2))
 
                 flight_number = self._next_flight_code(airline, counters)
                 seq_number = 1

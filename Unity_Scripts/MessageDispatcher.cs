@@ -108,7 +108,10 @@ public class MessageDispatcher : MonoBehaviour
             return;
         }
 
-        switch (envelope.command.ToLowerInvariant())
+        var cmd = envelope?.command?.Trim();
+        if (string.IsNullOrEmpty(cmd)){ return; }
+
+        switch (cmd.ToLowerInvariant())
         {
             case "clock_sync":
                 HandleClockSync(json);

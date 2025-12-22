@@ -1,4 +1,5 @@
 from __future__ import annotations
+import logging
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -64,6 +65,7 @@ class WorldState:
             last_position=spawn_position,
         )
         self._planes_by_stand[stand_id] = plane
+        logging.info("[world_state] spawn recorded stand=%s prefab=%s total=%d", stand_id, prefab, len(self._planes_by_stand))
         return plane
     
     def get_plane_on_stand(self, stand_id: str) -> PlaneOnStand | None:
@@ -74,3 +76,11 @@ class WorldState:
 
     def to_dict(self) -> dict[str, Any]:
         return {"planes_on_stands": [p.to_dict() for p in self.list_planes_on_stands()]}
+
+    def count_planes(self) -> int:
+        return len(self._planes_by_stand)
+
+    def debug_summary(self) -> str:
+        items = sorted(self._planes_by_stand.values(), key=lambda p:p.stand_id)
+        parts = [f"{p.stand_id}:{p.prefab}" for p in items]
+        return f"planes={len(items)} [{', '.join(parts)}]"
