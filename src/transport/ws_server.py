@@ -61,33 +61,30 @@ async def flight_scheduler_loop(*, setup_bus, clock, airport_icao: str, poll_sec
             window=scheduler.window,
         )
 
-        if (next_tick - last_window_log) >= poll_seconds:
-            last_window_log = next_tick
-            items = []
-            for f in flights:
-                items.append(
-                    {
-                        "id": getattr(f, "id", None),
-                        "origin": getattr(f, "origin", None),
-                        "destination": getattr(f, "destination", None),
-                        "dep": getattr(f, "departure_time", None),
-                        "arr": getattr(f, "arrival_time", None),
-                        "tipo": getattr(f, "tipo", None),
-                        "status": getattr(f, "status", None),
-                        "airplane_id": getattr(f, "airplane_id", None),
-                    }
+        t = time.monotonic()
+        if (t - last_window_log) >= poll_seconds:
+            last_window_log = t
+            items = [
+                {
+                    "id": getattr(f, "id", None),
+                    "origin": getattr(f, "origin", None),
+                    "destination": getattr(f, "destination", None),
+                    "dep": getattr(f, "departure_time", None),
+                    "arr": getattr(f, "arrival_time", None),
+                    "tipo": getattr(f, "tipo", None),
+                    "status": getattr(f, "status", None),
+                    "airplane_id": getattr(f, "airplane_id", None),
+                }
+                for f in flights
+            ]
+            logging.info("[flight_scheduler] window now=%s flights_in_window=%d flights=%s",
+                now.isoformat(),
+                len(items),
+                items,
                 )
-                logging.info("[flight_scheduler] window now=%s flights_in_window=%d flights=%s",
-                    now.isoformat(),
-                    len(items),
-                    items,
-                    )
         for flight in flights:
             
             if not scheduler.to_schedule(flight=flight, now_utc=now):
-                continue
-
-            if getattr(flight, "origin", None) != airport_icao:
                 continue
 
             flight_id = getattr(flight, "id", None)

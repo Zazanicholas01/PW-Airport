@@ -56,11 +56,14 @@ def list_flights_in_sliding_window(*, airport_icao: str, now_utc: datetime, wind
                     # ARRIVAL
                     and_(
                         models.Flight.destination == airport_icao,
-                        models.Flight.arrival_time.is_not(None),
-                        models.Flight.arrival_time <= upper,
                         models.Flight.departure_time.is_not(None),
                         models.Flight.departure_time <= now_db,
                     ),
+                    and_(
+                        models.Flight.destination == airport_icao,
+                        models.Flight.arrival_time.is_not(None),
+                        models.Flight.arrival_time <= upper,
+                    )
                 )
             )
         )

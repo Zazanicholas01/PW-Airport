@@ -45,6 +45,7 @@ class FlightSlidingWindowScheduler:
             arr_utc = as_utc(getattr(flight, "arrival_time", None))
             if arr_utc is None:
                 return False
+            
             return (arr_utc - now_utc) <= self.window
         
         return False
