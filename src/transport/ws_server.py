@@ -14,10 +14,11 @@ from src.utils.datetimes import as_utc
 from src.services.spawn_tracking import ensure_airplane_row
 from src.db.db_functions import (
     assign_airplane_to_departure_flight,
+    create_and_assign_airplane_for_landing_departure,
     link_airplane_to_stand,
     list_flights_in_sliding_window,
     normalize_flight_type,
-    reserve_stand_for_arrival_flight
+    reserve_stand_and_link_airplane_for_landing_arrival
 )
 
 setup_bus: SetupBusHandler | None = None
@@ -83,41 +84,41 @@ async def flight_scheduler_loop(*, setup_bus, clock, airport_icao: str, poll_sec
                 items,
                 )
         for flight in flights:
-            
-            if not scheduler.to_schedule(flight=flight, now_utc=now):
-                continue
 
             flight_id = getattr(flight, "id", None)
             if not isinstance(flight_id, str) or not flight_id:
                 continue
 
             # DEPARTURE
-            if getattr(flight, "origin", None) == airport_icao:
+            if scheduler.should_schedule_departure(flight=flight, now_utc=now):
                 required_type = normalize_flight_type(getattr(flight, "tipo", None))
-                assignment = assign_airplane_to_departure_flight(
-                    flight_id=flight_id,
-                    required_type=required_type,
-                )
+                assignment = assign_airplane_to_departure_flight(flight_id=flight_id, required_type=required_type)
                 if assignment is None:
                     logging.info("[flight_scheduler] no compatible parked airplane flight_id=%s", flight_id)
                     continue
-
                 airplane_id, stand_id = assignment
-                scheduler.mark_scheduled(flight_id)
                 logging.info("[flight_scheduler] departure assigned airplane_id=%s stand_id=%s flight_id=%s", airplane_id, stand_id, flight_id)
                 continue
 
             # LANDING
-            if getattr(flight, "destination", None) == airport_icao:
-                flight_type = normalize_flight_type(getattr(flight, "tipo", None))
+            if scheduler.should_assign_landing_plane(flight=flight, now_utc=now):
+                logging.info("[flight_scheduler] landing_dep: due flight_id=%s dep=%s", flight_id, getattr(flight, "departure_time", None))
 
-                stand_id = reserve_stand_for_arrival_flight(flight_id=flight_id, flight_type=flight_type)
-                if stand_id is not None:
-                    scheduler.mark_scheduled(flight_id)
-                    logging.info("[flight_scheduler] landing reserved stand_id=%s flight_id=%s", stand_id, flight_id)
+                airplane_id = create_and_assign_airplane_for_landing_departure(flight_id=flight_id)
+                if airplane_id is None:
+                    logging.info("[flight_scheduler] landing_dep: could not create/link airplane flight_id=%s", flight_id)
                     continue
+                logging.info("[flight_scheduler] landing_dep: linked airplane_id=%s to flight_id=%s (Ongoing)", airplane_id, flight_id)
+                continue
 
-                logging.warning("[flight_scheduler] landing: no free stands for Unity flight_id=%s", flight_id)
+            # LANDING: arrival_time window -> reserve stand + link plane to stand + set Landing
+            if scheduler.should_reserve_landing_stand(flight=flight, now_utc=now):
+                stand_id = reserve_stand_and_link_airplane_for_landing_arrival(flight_id=flight_id)
+                if stand_id is None:
+                    logging.warning("[flight_scheduler] landing_arr: no available stands flight_id=%s", flight_id)
+                    continue
+                logging.info("[flight_scheduler] landing_arr: stand_id=%s reserved + plane linked flight_id=%s", stand_id, flight_id)
+                continue
 
         next_tick += poll_seconds
         await asyncio.sleep(max(0.0, next_tick - time.monotonic()))

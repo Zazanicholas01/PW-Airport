@@ -23,32 +23,67 @@ class FlightSlidingWindowScheduler:
     airport_icao: str
     window: timedelta = SLIDING_WINDOW
     scheduled_flight_ids: set[str] = field(default_factory=set)
+    handled: set[tuple[str, str]] = field(default_factory=set)
 
-    def to_schedule(self, *, flight, now_utc: datetime) -> bool:
+    def _once(self, flight, stage: str) -> bool:
         flight_id = getattr(flight, "id", None)
-        if not isinstance(flight_id, str) or flight_id in self.scheduled_flight_ids:
+        if not isinstance(flight_id, str) or not flight_id:
             return False
         
-        # DEPARTURE within window from departure time
-        if getattr(flight, "origin", None) == self.airport_icao:
-            dep_utc = as_utc(getattr(flight, "departure_time", None))
-            if dep_utc is None:
-                return False
-            return (dep_utc - now_utc) <= self.window
+        key = (flight_id, stage)
+        if key in self.handled:
+            return False
+        self.handled.add(key)
+        return True
+
+    def should_schedule_departure(self, *, flight, now_utc: datetime) -> bool:
+        if getattr(flight, "origin", None) != self.airport_icao:
+            return False
         
-        # ARRIVAL only if already departed AND within window from arrival_time
-        if getattr(flight, "destination", None) == self.airport_icao:
-            dep_utc = as_utc(getattr(flight, "departure_time", None))
-            if dep_utc is None or dep_utc > now_utc:
-                return False # Not departed yet
-            
-            arr_utc = as_utc(getattr(flight, "arrival_time", None))
-            if arr_utc is None:
-                return False
-            
-            return (arr_utc - now_utc) <= self.window
+        if getattr(flight, "status", None) != "Unscheduled":
+            return False
         
-        return False
+        dep_utc = as_utc(getattr(flight, "departure_time", None))
+        if dep_utc is None:
+            return False
+        
+        if (dep_utc - now_utc) > self.window:
+            return False
+        
+        return self._once(flight, "dep")
+    
+    def should_assign_landing_plane(self, *, flight, now_utc: datetime) -> bool:
+        if getattr(flight, "destination", None) != self.airport_icao:
+            return False
+        
+        if getattr(flight, "status", None) != "Unscheduled":
+            return False
+        
+        dep_utc = as_utc(getattr(flight, "departure_time", None))
+        if dep_utc is None:
+            return False
+        
+        if (dep_utc - now_utc) > self.window:
+            return False
+        
+        return self._once(flight, "landing_dep")
+    
+    def should_reserve_landing_stand(self, *, flight, now_utc: datetime) -> bool:
+        if getattr(flight, "destination", None) != self.airport_icao:
+            return False
+        
+        if getattr(flight, "status", None) != "Ongoing":
+            return False
+        
+        if getattr(flight, "airplane_id", None) is None:
+            return False
+        
+        arr_utc = as_utc(getattr(flight, "arrival_time", None))
+        if arr_utc is None:
+            return False
+        if (arr_utc - now_utc) > self.window:
+            return False
+        return self._once(flight, "landing_arr")
 
     def mark_scheduled(self, flight_id: str) -> None:
         self.scheduled_flight_ids.add(flight_id)

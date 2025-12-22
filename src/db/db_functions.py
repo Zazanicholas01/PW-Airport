@@ -7,6 +7,8 @@ from sqlalchemy import select, or_, and_, update
 
 from datetime import datetime, timedelta, timezone
 
+from uuid import uuid4
+
 _engine = get_engine()
 Session = sessionmaker(bind=_engine, future=True)
 
@@ -44,30 +46,37 @@ def list_flights_in_sliding_window(*, airport_icao: str, now_utc: datetime, wind
         q = (
             select(models.Flight)
             .where(models.Flight.airplane_id.is_(None))
-            .where(models.Flight.status == "Unscheduled")
             .where(
                 or_(
                     # DEPARTURE
                     and_(
                         models.Flight.origin == airport_icao,
+                        models.Flight.status == "Unscheduled",
                         models.Flight.departure_time.is_not(None),
                         models.Flight.departure_time <= upper,
                     ),
                     # ARRIVAL
                     and_(
                         models.Flight.destination == airport_icao,
+                        models.Flight.status == "Unscheduled",
                         models.Flight.departure_time.is_not(None),
                         models.Flight.departure_time <= now_db,
                     ),
-                    and_(
-                        models.Flight.destination == airport_icao,
-                        models.Flight.arrival_time.is_not(None),
-                        models.Flight.arrival_time <= upper,
-                    )
                 )
             )
         )
-        return list(session.scalars(q))
+        base = list(session.scalars(q))
+
+        q2 = (
+            select(models.Flight)
+            .where(models.Flight.destination == airport_icao)
+            .where(models.Flight.status == "Ongoing")
+            .where(models.Flight.airplane_id.is_not(None))
+            .where(models.Flight.arrival_time.is_not(None))
+            .where(models.Flight.arrival_time <= upper)
+        )
+        base.extend(list(session.scalars(q2)))
+        return base
 
 def normalize_flight_type(value: str | None) -> str | None:
     if value is None:
@@ -192,3 +201,103 @@ def assign_airplane_to_departure_flight(*, flight_id: str, required_type: str | 
         )
         session.commit()
         return airplane_id, stand_id
+    
+def create_and_assign_airplane_for_landing_departure(*, flight_id: str) -> str | None:
+    with Session() as session:
+        flight = session.get(models.Flight, flight_id)
+        if flight is None:
+            logging.warning("[db] landing_dep: flight not found flight_id=%s", flight_id)
+            return None
+        if flight.airplane_id is not None:
+            logging.info("[db] landing_dep: already has airplane flight_id=%s airplane_id=%s", flight_id, flight.airplane_id)
+            return None
+        if getattr(flight, "status", None) != "Unscheduled":
+            logging.info("[db] landing_dep: skip status=%s flight_id=%s", getattr(flight, "status", None), flight_id)
+            return None
+        
+        flight_type = normalize_flight_type(getattr(flight, "tipo", None))
+
+        required_range: str | None = None
+        origin_icao = getattr(flight, "origin", None)
+        if isinstance(origin_icao, str) and origin_icao:
+            origin_airport = session.get(models.Airport, origin_icao)
+            if origin_airport is not None:
+                required_range = normalize_distance(getattr(origin_airport, "distance", None))
+        
+        airplane_id = str(uuid4())
+        airplane = models.Airplane(
+            id=airplane_id,
+            type=flight_type or "Passeggero",
+            range=required_range or "Medio",
+            model=f"auto_{flight_type or 'Passeggero'}_{required_range or 'Medio'}",
+            capacity=100,
+            status='InFlight',
+            speed=0.0,
+            fuel_level=1.0,
+            maintenance=False,
+            airline_code=None,
+            route_id=None,
+        )
+        session.add(airplane)
+
+        session.execute(
+            update(models.Flight)
+            .where(models.Flight.id == flight_id)
+            .values(airplane_id=airplane_id, status="Ongoing")
+        )
+        session.commit()
+
+        logging.info(
+            "[db] landing_dep: created airplane_id=%s type=%s range=%s and linked to flight_id=%s (status=Ongoing)",
+            airplane_id, airplane.type, airplane.range, flight_id
+        )
+        return airplane_id
+    
+def reserve_stand_and_link_airplane_for_landing_arrival(*, flight_id: str) -> str | None:
+    with Session() as session:
+        flight = session.get(models.Flight, flight_id)
+        if flight is None:
+            logging.warning("[db] landing_arr: flight not found flight_id=%s", flight_id)
+
+            return None
+        airplane_id = getattr(flight, "airplane_id", None)
+        if not isinstance(airplane_id, str) or not airplane_id:
+            return None
+        if getattr(flight, "status", None) != "Ongoing":
+            return None
+        
+        flight_type = normalize_flight_type(getattr(flight, "tipo", None))
+        preferred = "C" if flight_type == "Cargo" else "P"
+        unavailable_statuses = {"Occupato","Reserved"}
+
+        stands = list(session.scalars(select(models.Stand)))
+        candidates = [s for s in stands if getattr(s, "status", None) not in unavailable_statuses]
+
+        def cat(s) -> str | None:
+            return stand_category(getattr(s, "type", None))
+
+        preferred_stands = [s for s in candidates if cat(s) == preferred]
+        chosen = preferred_stands[0] if preferred_stands else None
+        if chosen is None:
+            o_stands = [s for s in candidates if cat(s) == "O"]
+            if not o_stands:
+                return None
+            chosen = o_stands[0]
+        
+        session.execute(
+            update(models.Stand)
+            .where(models.Stand.id == chosen.id)
+            .values(status="Reserved", airplane_id=airplane_id)
+        )
+        session.execute(
+            update(models.Flight)
+            .where(models.Flight.id == flight_id)
+            .values(status="Landing")
+        )
+        session.execute(
+            update(models.Airplane)
+            .where(models.Airplane.id == airplane_id)
+            .values(status="Reserved")
+        )
+        session.commit()
+        return chosen.id
