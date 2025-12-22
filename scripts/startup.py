@@ -113,11 +113,11 @@ def add_airlines(session) -> None:
 
 def add_stands(session) -> None:
     stands = [
-        models.Stand(id="O1", type="PC", status="Libero", airplane_id=None),
-        models.Stand(id="O2", type="PC", status="Libero", airplane_id=None),
-        models.Stand(id="O3", type="PC", status="Libero", airplane_id=None),
-        models.Stand(id="O4", type="PC", status="Libero", airplane_id=None),
-        models.Stand(id="O5", type="PC", status="Libero", airplane_id=None),
+        models.Stand(id="O1", type="O", status="Libero", airplane_id=None),
+        models.Stand(id="O2", type="O", status="Libero", airplane_id=None),
+        models.Stand(id="O3", type="O", status="Libero", airplane_id=None),
+        models.Stand(id="O4", type="O", status="Libero", airplane_id=None),
+        models.Stand(id="O5", type="O", status="Libero", airplane_id=None),
         models.Stand(id="C1", type="C", status="Libero", airplane_id=None),
         models.Stand(id="C2", type="C", status="Libero", airplane_id=None),
         models.Stand(id="C3", type="C", status="Libero", airplane_id=None),

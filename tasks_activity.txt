@@ -83,22 +83,26 @@ FLIGHT SCHEDULER
 
     - Definire Finestra Temporale per gestione viaggi -- (DONE)
     - DECOLLO
-        - Definire compatibilità aereo
-        - Aereo parcheggiato in piazzola
-        - Tipo volo deve combaciare (Merce / Passeggero)
-        - Raggio volo compatibile (Corto / Medio / Lungo) (non influente sulla spline)
+        - Definire compatibilità aereo -- (DONE)
+        - Aereo parcheggiato in piazzola -- (DONE)
+        - Tipo volo deve combaciare (Merce / Passeggero) -- (DONE)
+        - Raggio volo compatibile (Corto / Medio / Lungo) (non influente sulla spline) -- (DONE)
 
-        - Riservazioni per piazzole assegnate ma viaggio non ancora partito
-        - Mapping aerei compatibili (più o meno già fatto)
-    
+        - Riservazioni per piazzole assegnate ma viaggio non ancora partito -- (DONE)
+        - Mapping aerei compatibili -- (DONE)
+
     - ATTERRAGGIO
 
-        - Nessun controllo su compatibilità aerei
-        - Controllo su piazzole libere e piazzole compatibili (P-C-O)
-            - Priorità P-C --> Se no O
-        - Se piazzole libere --> Riservazione piazzola
-        - Se non piazzole libere --> Parcheggio
-        - Se non parcheggio libero --> Aumentare numero di parcheggi in Unity
+        - Controllare che non sia già assegnato il viaggio
+        - Controllare tra tutti i viaggi di atterraggio (destinazione - LIAG):
+            - Non partito ma entro 1 ora dall'orario di partenza --> Assegnazione
+            - Partito e non ancora arrivato --> Assegnazione
+            - Dentro la sliding window del flight scheduler sull'orario di arrivo --> Inizio schedulazione piazzola
+        
+        - L'assegnazione deve seguire la stessa logica su raggio/distanza e tipo cargo/passeggero
+        - Per la schedulazione della piazzola:
+            - Priorità a P e C (Piazzola.tipo) dove P --> Passeggero e C --> Cargo
+            - Se non disponibili, assegnare Piazzola.tipo --> PC
 
 PATH SCHEDULER
 
@@ -107,7 +111,7 @@ PATH SCHEDULER
     - DECOLLO
         - Partenza piazzola collegata con aereo parcheggiato
         - Arrivo --> Decollo
-    
+
     - ATTERRAGGIO
         - Prima spline --> Decisa in base al raggio del volo
         - Arrivo --> Piazzola schedulata dal flight scheduler

@@ -9,11 +9,15 @@ from src.transport.message_bus import WsMessageBus
 from src.domain.sim_clock import SimulationClock
 from src.schedulers.spawn_scheduler import SpawnScheduler
 from src.schedulers.flight_scheduler import FlightSlidingWindowScheduler
+from src.utils.datetimes import as_utc
 
 from src.services.spawn_tracking import ensure_airplane_row
 from src.db.db_functions import (
+    assign_airplane_to_departure_flight,
     link_airplane_to_stand,
-    list_flights_in_sliding_window
+    list_flights_in_sliding_window,
+    normalize_flight_type,
+    reserve_stand_for_arrival_flight
 )
 
 setup_bus: SetupBusHandler | None = None
@@ -46,8 +50,10 @@ async def flight_scheduler_loop(*, setup_bus, clock, airport_icao: str, poll_sec
     )
 
     next_tick = time.monotonic()
+    last_window_log = 0.0
+
     while True:
-        now = clock.now()
+        now = as_utc(clock.now())
 
         flights = list_flights_in_sliding_window(
             airport_icao=airport_icao,
@@ -55,10 +61,66 @@ async def flight_scheduler_loop(*, setup_bus, clock, airport_icao: str, poll_sec
             window=scheduler.window,
         )
 
+        if (next_tick - last_window_log) >= poll_seconds:
+            last_window_log = next_tick
+            items = []
+            for f in flights:
+                items.append(
+                    {
+                        "id": getattr(f, "id", None),
+                        "origin": getattr(f, "origin", None),
+                        "destination": getattr(f, "destination", None),
+                        "dep": getattr(f, "departure_time", None),
+                        "arr": getattr(f, "arrival_time", None),
+                        "tipo": getattr(f, "tipo", None),
+                        "status": getattr(f, "status", None),
+                        "airplane_id": getattr(f, "airplane_id", None),
+                    }
+                )
+                logging.info("[flight_scheduler] window now=%s flights_in_window=%d flights=%s",
+                    now.isoformat(),
+                    len(items),
+                    items,
+                    )
         for flight in flights:
-            if scheduler.should_start(flight=flight, now_utc=now):
-                # Assign Plane to Flight Logic
-                logging.info("[flight_scheduler] start scheduling flight_id=%s", flight.id)
+            
+            if not scheduler.to_schedule(flight=flight, now_utc=now):
+                continue
+
+            if getattr(flight, "origin", None) != airport_icao:
+                continue
+
+            flight_id = getattr(flight, "id", None)
+            if not isinstance(flight_id, str) or not flight_id:
+                continue
+
+            # DEPARTURE
+            if getattr(flight, "origin", None) == airport_icao:
+                required_type = normalize_flight_type(getattr(flight, "tipo", None))
+                assignment = assign_airplane_to_departure_flight(
+                    flight_id=flight_id,
+                    required_type=required_type,
+                )
+                if assignment is None:
+                    logging.info("[flight_scheduler] no compatible parked airplane flight_id=%s", flight_id)
+                    continue
+
+                airplane_id, stand_id = assignment
+                scheduler.mark_scheduled(flight_id)
+                logging.info("[flight_scheduler] departure assigned airplane_id=%s stand_id=%s flight_id=%s", airplane_id, stand_id, flight_id)
+                continue
+
+            # LANDING
+            if getattr(flight, "destination", None) == airport_icao:
+                flight_type = normalize_flight_type(getattr(flight, "tipo", None))
+
+                stand_id = reserve_stand_for_arrival_flight(flight_id=flight_id, flight_type=flight_type)
+                if stand_id is not None:
+                    scheduler.mark_scheduled(flight_id)
+                    logging.info("[flight_scheduler] landing reserved stand_id=%s flight_id=%s", stand_id, flight_id)
+                    continue
+
+                logging.warning("[flight_scheduler] landing: no free stands for Unity flight_id=%s", flight_id)
 
         next_tick += poll_seconds
         await asyncio.sleep(max(0.0, next_tick - time.monotonic()))

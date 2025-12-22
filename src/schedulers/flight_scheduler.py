@@ -22,19 +22,32 @@ def flight_event_time_utc(flight, *, airport_icao: str) -> datetime | None:
 class FlightSlidingWindowScheduler:
     airport_icao: str
     window: timedelta = SLIDING_WINDOW
-    started_flight_ids: set[str] = field(default_factory=set)
+    scheduled_flight_ids: set[str] = field(default_factory=set)
 
-    def should_start(self, *, flight, now_utc: datetime) -> bool:
+    def to_schedule(self, *, flight, now_utc: datetime) -> bool:
         flight_id = getattr(flight, "id", None)
-        if not isinstance(flight_id, str) or flight_id in self.started_flight_ids:
+        if not isinstance(flight_id, str) or flight_id in self.scheduled_flight_ids:
             return False
         
-        event_utc = flight_event_time_utc(flight, airport_icao=self.airport_icao)
-        if event_utc is None:
-            return False
+        # DEPARTURE within window from departure time
+        if getattr(flight, "origin", None) == self.airport_icao:
+            dep_utc = as_utc(getattr(flight, "departure_time", None))
+            if dep_utc is None:
+                return False
+            return (dep_utc - now_utc) <= self.window
         
-        if (event_utc - now_utc) <= self.window:
-            self.started_flight_ids.add(flight_id)
-            return True
+        # ARRIVAL only if already departed AND within window from arrival_time
+        if getattr(flight, "destination", None) == self.airport_icao:
+            dep_utc = as_utc(getattr(flight, "departure_time", None))
+            if dep_utc is None or dep_utc > now_utc:
+                return False # Not departed yet
+            
+            arr_utc = as_utc(getattr(flight, "arrival_time", None))
+            if arr_utc is None:
+                return False
+            return (arr_utc - now_utc) <= self.window
         
         return False
+
+    def mark_scheduled(self, flight_id: str) -> None:
+        self.scheduled_flight_ids.add(flight_id)

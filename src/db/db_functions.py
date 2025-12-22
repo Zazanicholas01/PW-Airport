@@ -3,7 +3,7 @@ from src.db import models
 
 from src.db.engine import get_engine
 from sqlalchemy.orm import sessionmaker
-from sqlalchemy import select, or_, and_
+from sqlalchemy import select, or_, and_, update
 
 from datetime import datetime, timedelta, timezone
 
@@ -44,19 +44,148 @@ def list_flights_in_sliding_window(*, airport_icao: str, now_utc: datetime, wind
         q = (
             select(models.Flight)
             .where(models.Flight.airplane_id.is_(None))
+            .where(models.Flight.status == "Unscheduled")
             .where(
                 or_(
+                    # DEPARTURE
                     and_(
                         models.Flight.origin == airport_icao,
                         models.Flight.departure_time.is_not(None),
                         models.Flight.departure_time <= upper,
                     ),
+                    # ARRIVAL
                     and_(
                         models.Flight.destination == airport_icao,
                         models.Flight.arrival_time.is_not(None),
                         models.Flight.arrival_time <= upper,
+                        models.Flight.departure_time.is_not(None),
+                        models.Flight.departure_time <= now_db,
                     ),
                 )
             )
         )
         return list(session.scalars(q))
+
+def normalize_flight_type(value: str | None) -> str | None:
+    if value is None:
+        return None
+    v = value.strip().lower()
+    if not v:
+        return None
+    if "cargo" in v or "merce" in v:
+        return "Cargo"
+    if "passeg" in v:
+        return "Passeggero"
+    return value
+
+def normalize_distance(value: str | None) -> str | None:
+    if value is None:
+        return None
+    
+    v = value.strip().lower()
+    if not v:
+        return None
+    if "cort" in v:
+        return "Corto"
+    if "medi" in v:
+        return "Medio"
+    if "lung" in v:
+        return "Lungo"
+    return value
+
+def stand_category(value: str | None) -> str | None:
+    if value is None:
+        return None
+    v = value.strip().lower()
+    if not v:
+        return None
+    if v.startswith("p") or "passeg" in v:
+        return "P"
+    if v.startswith("c") or "cargo" in v or "merce" in v:
+        return "C"
+    if v.startswith("o") or "other" in v or "altro" in v:
+        return "O"
+    return None
+
+def reserve_stand_for_arrival_flight(*, flight_id: str, flight_type: str | None, free_status: str = "Libero", reserved_status: str = "Riservato") -> str | None:
+    preferred = "C" if flight_type == "Cargo" else "P"
+    
+    with Session() as session:
+        flight = session.get(models.Flight, flight_id)
+        if flight is None:
+            return None
+        
+        unavailable_statuses = {"Occupato", "StandReserved"}
+
+        stands = list(session.scalars(select(models.Stand)))
+        candidates = [
+            s for s in stands
+            if getattr(s, "status", None) not in unavailable_statuses
+        ]
+        if not candidates:
+            return None
+
+        preferred_stands = [s for s in candidates if stand_category(getattr(s, "id", None)) == preferred]
+        if preferred_stands:
+            chosen = preferred_stands[0]
+        else:
+            o_stands = [s for s in candidates if stand_category(getattr(s, "id", None)) == "O"]
+            if not o_stands:
+                return None
+            chosen = o_stands[0]
+        
+        session.execute(
+            update(models.Stand)
+            .where(models.Stand.id == chosen.id)
+            .values(status=reserved_status)
+        )
+        session.execute(
+            update(models.Flight)
+            .where(models.Flight.id == flight_id)
+            .values(status="StandReserved")
+        )
+        session.commit()
+        return chosen.id
+        
+
+def assign_airplane_to_departure_flight(*, flight_id: str, required_type: str | None) -> tuple[str, str] | None:
+    with Session() as session:
+        flight = session.get(models.Flight, flight_id)
+        if flight is None or flight.airplane_id is not None:
+            return None
+        
+        required_range: str | None = None
+        destination_icao = getattr(flight, "destination", None)
+        if isinstance(destination_icao, str) and destination_icao:
+            dest_airport = session.get(models.Airport, destination_icao)
+            if dest_airport is not None:
+                required_range = normalize_distance(getattr(dest_airport, "distance", None))
+
+        q = (
+            select(models.Airplane.id, models.Stand.id)
+            .join(models.Stand, models.Stand.airplane_id == models.Airplane.id)
+            .where(models.Airplane.status == "Parked")
+        )
+        if required_type is not None:
+            q = q.where(models.Airplane.type == required_type)
+        if required_range is not None:
+            q = q.where(models.Airplane.range == required_range)
+
+        row = session.execute(q).first()
+        if row is None:
+            return None
+
+        airplane_id, stand_id = row
+
+        session.execute(
+            update(models.Airplane)
+            .where(models.Airplane.id == airplane_id)
+            .values(status="Reserved")
+        )
+        session.execute(
+            update(models.Flight)
+            .where(models.Flight.id == flight_id)
+            .values(airplane_id=airplane_id, status="Scheduled")
+        )
+        session.commit()
+        return airplane_id, stand_id
