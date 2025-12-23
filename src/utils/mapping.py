@@ -37,4 +37,4 @@ def type_for_airplane_model(model: str) -> str:
 
     if m in cargo:
         return "Cargo"
-    return "Passenger"
+    return "Passengers"

@@ -110,7 +110,7 @@ class InitGraph:
 
         available_stands = [f"Spline_{x}" for x in available_stands]
         available_landings = [f"Spline_{x}" for x in available_landings]
-        available_departing = [f"Spline_{x}" for x in available_departing]
+        available_departing = [f"Spline_Departure"]
 
         paths = []
         start_link = 0

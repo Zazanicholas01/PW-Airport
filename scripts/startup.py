@@ -100,11 +100,11 @@ def add_airlines(session) -> None:
     #### Aggiungi Compagnie Aeree ####
     airlines = [
         models.Airline(icao="LUN", name="Lunex", type="Cargo", nationality="NI-EU"),
-        models.Airline(icao="UMB", name="UmbAir", type="Passenger", nationality="EU"),
-        models.Airline(icao="JAE", name="Jack Emirates", type="Passenger", nationality="I"),
-        models.Airline(icao="ALI", name="Nicholas in Alice", type="Passenger", nationality="N"),
-        models.Airline(icao="PRI", name="Private Airlines", type="Passenger", nationality="NI-EU"), # Jet Privato
-        models.Airline(icao="GOV", name="Government Airlines", type="Passenger", nationality="NI-EU") # Stealth
+        models.Airline(icao="UMB", name="UmbAir", type="Passengers", nationality="EU"),
+        models.Airline(icao="JAE", name="Jack Emirates", type="Passengers", nationality="I"),
+        models.Airline(icao="ALI", name="Nicholas in Alice", type="Passengers", nationality="N"),
+        models.Airline(icao="PRI", name="Private Airlines", type="Passengers", nationality="NI-EU"), # Jet Privato
+        models.Airline(icao="GOV", name="Government Airlines", type="Passengers", nationality="NI-EU") # Stealth
     ]
     session.add_all(airlines)
     session.commit()

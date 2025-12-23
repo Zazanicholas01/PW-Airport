@@ -87,7 +87,7 @@ def normalize_flight_type(value: str | None) -> str | None:
     if "cargo" in v or "merce" in v:
         return "Cargo"
     if "passeg" in v:
-        return "Passenger"
+        return "Passengers"
     return value
 
 def normalize_distance(value: str | None) -> str | None:
