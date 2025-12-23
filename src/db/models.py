@@ -40,8 +40,8 @@ class Airline(Base):
 
     icao = Column("ICAO", String, primary_key=True)
     name = Column("Nome", String, nullable=False)
-    type = Column("Tipo", String, nullable=False) # Cargo / Passeggeri
-    nationality = Column("Nazionalità", String, nullable=True) # Nazionale / Europeo / Intercontinentale
+    type = Column("Tipo", String, nullable=False) # Cargo / Passeggers
+    nationality = Column("Nazionalità", String, nullable=True) # National / European / International
 
     airplanes = relationship("Airplane", back_populates="airline")
     flights = relationship("Flight", back_populates="airline")

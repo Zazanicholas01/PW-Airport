@@ -132,9 +132,9 @@ def add_stands(session) -> None:
 
 def add_parkings(session) -> None:
     parkings = [
-        models.ParkingSpot(airplane_id=None, status="Libero", spline=1),
-        models.ParkingSpot(airplane_id=None, status="Libero", spline=2),
-        models.ParkingSpot(airplane_id=None, status="Libero", spline=3),
+        models.ParkingSpot(airplane_id=None, status="Available", spline=1),
+        models.ParkingSpot(airplane_id=None, status="Available", spline=2),
+        models.ParkingSpot(airplane_id=None, status="Available", spline=3),
     ]
     session.add_all(parkings)
     session.commit()
