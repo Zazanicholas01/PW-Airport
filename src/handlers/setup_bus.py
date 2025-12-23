@@ -174,7 +174,7 @@ class SetupBusHandler:
         if stand_positions:
             with self.Session() as session:
                 for stand_id, pos in stand_positions.items():
-                    if stand_id not in ("AtterraggioLungo", "AtterraggioMedio", "AtterraggioCorto", "Decollo", "Parcheggio1", "Parcheggio2", "Parcheggio3"):
+                    if stand_id not in ("LongLanding", "MediumLanding", "ShortLanding", "Departure", "Parking1", "Parking2", "Parking3"):
                         stand = session.get(models.Stand, stand_id)
                         if stand is None:
                             logging.warning("Stand not found")

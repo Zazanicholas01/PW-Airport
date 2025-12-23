@@ -87,7 +87,7 @@ def normalize_flight_type(value: str | None) -> str | None:
     if "cargo" in v or "merce" in v:
         return "Cargo"
     if "passeg" in v:
-        return "Passeggero"
+        return "Passenger"
     return value
 
 def normalize_distance(value: str | None) -> str | None:
@@ -98,11 +98,11 @@ def normalize_distance(value: str | None) -> str | None:
     if not v:
         return None
     if "cort" in v:
-        return "Corto"
+        return "Short"
     if "medi" in v:
-        return "Medio"
+        return "Medium"
     if "lung" in v:
-        return "Lungo"
+        return "Long"
     return value
 
 def stand_category(value: str | None) -> str | None:
@@ -119,7 +119,7 @@ def stand_category(value: str | None) -> str | None:
         return "O"
     return None
 
-def reserve_stand_for_arrival_flight(*, flight_id: str, flight_type: str | None, free_status: str = "Libero", reserved_status: str = "Riservato") -> str | None:
+def reserve_stand_for_arrival_flight(*, flight_id: str, flight_type: str | None, free_status: str = "Available", reserved_status: str = "Reserved") -> str | None:
     preferred = "C" if flight_type == "Cargo" else "P"
     
     with Session() as session:
@@ -127,7 +127,7 @@ def reserve_stand_for_arrival_flight(*, flight_id: str, flight_type: str | None,
         if flight is None:
             return None
         
-        unavailable_statuses = {"Occupato", "StandReserved"}
+        unavailable_statuses = {"Occupied", "Reserved"}
 
         stands = list(session.scalars(select(models.Stand)))
         candidates = [
@@ -268,7 +268,7 @@ def reserve_stand_and_link_airplane_for_landing_arrival(*, flight_id: str) -> st
         
         flight_type = normalize_flight_type(getattr(flight, "tipo", None))
         preferred = "C" if flight_type == "Cargo" else "P"
-        unavailable_statuses = {"Occupato","Reserved"}
+        unavailable_statuses = {"Occupied","Reserved"}
 
         stands = list(session.scalars(select(models.Stand)))
         candidates = [s for s in stands if getattr(s, "status", None) not in unavailable_statuses]

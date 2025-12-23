@@ -105,8 +105,8 @@ class InitGraph:
 
         # Loop Atterraggio Lungo / Medio / Corto
         available_stands = ["O1", "O2", "O3", "O4", "O5", "P1", "P2", "P3", "C1", "C2", "C3"]
-        available_landings = ["AtterraggioLungo", "AtterraggioMedio", "AtterraggioCorto"]
-        available_departing = "Decollo"
+        available_landings = ["LongLanding", "MediumLanding", "ShortLanding"]
+        available_departing = "Departure"
 
         available_stands = [f"Spline_{x}" for x in available_stands]
         available_landings = [f"Spline_{x}" for x in available_landings]
@@ -202,12 +202,12 @@ class InitGraph:
                 })
             
             segments.append({
-                "name": "Decollo",
+                "name": "Departure",
                 "t_start": 0.0,
                 "t_end": 1.0
             })
 
-            departing_id = "Decollo"
+            departing_id = "Departure"
             stand_id = stand_spline.replace("Spline_", "")
             path_name = f"Path_{stand_id}_{departing_id}"
 

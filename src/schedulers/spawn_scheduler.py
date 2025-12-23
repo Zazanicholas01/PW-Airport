@@ -24,7 +24,7 @@ class SpawnScheduler:
     """Plan plane spawns and reserve stands during simulation bootstrap."""
 
     def __init__(self, simulator, session_factory: sessionmaker | None = None,
-                free_status: str = "Libero",occupied_status: str = "Occupato",) -> None:
+                free_status: str = "Available",occupied_status: str = "Occupied",) -> None:
         
         self.simulator = simulator
         self.free_status = free_status

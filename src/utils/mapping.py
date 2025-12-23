@@ -22,11 +22,11 @@ def range_for_airplane_model(model: str) -> str:
     }
 
     if m in corto:
-        return "Corto"
+        return "Short"
     if m in medio:
-        return "Medio"
+        return "Medium"
     if m in lungo:
-        return "Lungo"
+        return "Long"
     
     raise ValueError("Unknown airplane model for range mapping")
 
@@ -37,4 +37,4 @@ def type_for_airplane_model(model: str) -> str:
 
     if m in cargo:
         return "Cargo"
-    return "Passeggero"
+    return "Passenger"

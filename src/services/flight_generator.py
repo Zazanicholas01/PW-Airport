@@ -191,7 +191,7 @@ class RandomFlightGenerator:
     def _pick_terminal_id(self, terminals: list[models.Terminal], flight_type: str) -> int:
 
         t_type = flight_type.lower()
-        if t_type == "passeggeri":
+        if t_type == "passengers":
             candidates = [
                 t for t in terminals
                 if isinstance(t.type, str) and "passeg" in t.type.lower()
@@ -215,7 +215,7 @@ class RandomFlightGenerator:
         country = (remote_airport.country or "").lower()
 
         if country == "italia":
-            return "Nazionale"
+            return "National"
         
         european_countries = {
             "francia",
@@ -227,9 +227,9 @@ class RandomFlightGenerator:
         }
 
         if country in european_countries:
-            return "Europeo"
+            return "European"
         
-        return "Internazionale"
+        return "International"
 
 
     def _pick_airline(self, airlines: list[models.Airline], flight_type: str, route_category: str) -> models.Airline:
@@ -237,7 +237,7 @@ class RandomFlightGenerator:
         def type_matches(a: models.Airline) -> bool:
 
             at = (a.type or "").lower()
-            if flight_type == "Merce":
+            if flight_type == "Cargo":
                 return "cargo" in at
             
             return "cargo" not in at
