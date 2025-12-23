@@ -13,7 +13,7 @@ def add_terminal(session) -> None:
 
     #### Aggiungi Terminal ####
     terminals = [
-        models.Terminal(type="Passeggeri", capacity=1200),
+        models.Terminal(type="Passengers", capacity=1200),
         models.Terminal(type="Cargo", capacity=800)
     ]
     session.add_all(terminals)
@@ -48,10 +48,10 @@ def evaluate_distance_airports():
         if distance_km is None:
             return None
         if distance_km < 500:
-            return "Corto"
+            return "Short"
         if distance_km < 4000:
-            return "Medio"
-        return "Lungo"
+            return "Medium"
+        return "Long"
 
     airports_data = [
         {"icao": "LIAG", "name": "Aeroporto Ghiaccio", "utc": "UTC+1", "country": "Italia"},
@@ -113,17 +113,17 @@ def add_airlines(session) -> None:
 
 def add_stands(session) -> None:
     stands = [
-        models.Stand(id="O1", type="O", status="Libero", airplane_id=None),
-        models.Stand(id="O2", type="O", status="Libero", airplane_id=None),
-        models.Stand(id="O3", type="O", status="Libero", airplane_id=None),
-        models.Stand(id="O4", type="O", status="Libero", airplane_id=None),
-        models.Stand(id="O5", type="O", status="Libero", airplane_id=None),
-        models.Stand(id="C1", type="C", status="Libero", airplane_id=None),
-        models.Stand(id="C2", type="C", status="Libero", airplane_id=None),
-        models.Stand(id="C3", type="C", status="Libero", airplane_id=None),
-        models.Stand(id="P1", type="P", status="Libero", airplane_id=None),
-        models.Stand(id="P2", type="P", status="Libero", airplane_id=None),
-        models.Stand(id="P3", type="P", status="Libero", airplane_id=None),
+        models.Stand(id="O1", type="O", status="Available", airplane_id=None),
+        models.Stand(id="O2", type="O", status="Available", airplane_id=None),
+        models.Stand(id="O3", type="O", status="Available", airplane_id=None),
+        models.Stand(id="O4", type="O", status="Available", airplane_id=None),
+        models.Stand(id="O5", type="O", status="Available", airplane_id=None),
+        models.Stand(id="C1", type="C", status="Available", airplane_id=None),
+        models.Stand(id="C2", type="C", status="Available", airplane_id=None),
+        models.Stand(id="C3", type="C", status="Available", airplane_id=None),
+        models.Stand(id="P1", type="P", status="Available", airplane_id=None),
+        models.Stand(id="P2", type="P", status="Available", airplane_id=None),
+        models.Stand(id="P3", type="P", status="Available", airplane_id=None),
     ]
     session.add_all(stands)
     session.commit()
@@ -152,7 +152,7 @@ def add_vehicles(session) -> None:
                 capacity=vehicle[1],
                 position={"x": 0, "y": 0, "z": 0}, # Ragionamento 
                 destination=None,
-                status="Disponibile",
+                status="Available",
                 speed=0.0,
                 route_id=None,
                 flight_id=None

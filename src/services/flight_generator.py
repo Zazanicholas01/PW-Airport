@@ -243,11 +243,11 @@ class RandomFlightGenerator:
             return "cargo" not in at
 
         allowed_nationalities = {"NI-EU"}
-        if route_category == "Nazionale":
+        if route_category == "National":
             allowed_nationalities.add("N")
-        elif route_category == "Europeo":
+        elif route_category == "European":
             allowed_nationalities.add("EU")
-        elif route_category == "Internazionale":
+        elif route_category == "International":
             allowed_nationalities.add("I")
         
         candidates = [
@@ -305,7 +305,7 @@ class RandomFlightGenerator:
                 else:
                     is_departure_from_personal = random.choice([True, False])
 
-                flight_type = random.choice(["Cargo", "Passeggeri"])
+                flight_type = random.choice(["Cargo", "Passengers"])
                 terminal_id = self._pick_terminal_id(terminals, flight_type)
 
                 remote_airport = random.choice(airports)

@@ -227,9 +227,9 @@ def create_and_assign_airplane_for_landing_departure(*, flight_id: str) -> str |
         airplane_id = str(uuid4())
         airplane = models.Airplane(
             id=airplane_id,
-            type=flight_type or "Passeggero",
-            range=required_range or "Medio",
-            model=f"auto_{flight_type or 'Passeggero'}_{required_range or 'Medio'}",
+            type=flight_type or "Passengers",
+            range=required_range or "Medium",
+            model=f"auto_{flight_type or 'Passengers'}_{required_range or 'Medium'}", # Modificare
             capacity=100,
             status='InFlight',
             speed=0.0,

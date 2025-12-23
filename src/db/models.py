@@ -47,7 +47,7 @@ class Airline(Base):
     flights = relationship("Flight", back_populates="airline")
 
 
-class Percorso(Base):
+class Path(Base):
     __tablename__ = "Percorso"
 
     id = Column("id", Integer, primary_key=True, autoincrement=True)

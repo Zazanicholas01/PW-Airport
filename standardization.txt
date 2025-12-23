@@ -3,3 +3,11 @@ Stand states
     - Reserved
     - Available
 
+Nationalities
+    - National
+    - European
+    - International
+
+Types
+    - Cargo
+    - Passengers

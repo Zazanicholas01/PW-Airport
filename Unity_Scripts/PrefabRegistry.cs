@@ -141,8 +141,8 @@ public class PrefabRegistry : MonoBehaviour
     public async Task SendPrefabNames()
     {
         var prefabs = new List<PrefabPayload>();
-        prefabs.AddRange(GetPrefabNames(aereiFolder).Select(name => new PrefabPayload { type = "aereo", name = name }));
-        prefabs.AddRange(GetPrefabNames(mezziFolder).Select(name => new PrefabPayload { type = "mezzo", name = name }));
+        prefabs.AddRange(GetPrefabNames(aereiFolder).Select(name => new PrefabPayload { type = "plane", name = name }));
+        prefabs.AddRange(GetPrefabNames(mezziFolder).Select(name => new PrefabPayload { type = "vehicle", name = name }));
 
         if (prefabs.Count == 0)
         {

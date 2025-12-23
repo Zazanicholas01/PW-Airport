@@ -41,12 +41,12 @@
         - Impostare in Unity la percorrenza all'indietro
         - Master Edges con t_start e t_end invertiti
 {
-    "name": "Path_AtterraggioLungo_O1",
-    "source": "AtterraggioLungo",
+    "name": "Path_LongLanding_O1",
+    "source": "LongLanding",
     "destination": "O1",
     "segments": [
         {
-            "name": "Spline_AtterraggioLungo",
+            "name": "Spline_LongLanding",
             "t_start", 0.0,
             "t_end", 1.0,
         },{
