@@ -41,7 +41,7 @@ async def incoming_dispatch_loop(bus: WsMessageBus, setup_bus: SetupBusHandler, 
             bus.incoming.task_done()
 
 
-async def flight_scheduler_loop(*, setup_bus, clock, airport_icao: str, poll_seconds: float = 30.0) -> None:
+async def flight_scheduler_loop(*, setup_bus, clock, airport_icao: str, poll_seconds: float = 30.0, pw_prefab_store) -> None:
     while not setup_bus.state.setup_completed:
         await asyncio.sleep(0.1)
 
@@ -104,7 +104,7 @@ async def flight_scheduler_loop(*, setup_bus, clock, airport_icao: str, poll_sec
             if scheduler.should_assign_landing_plane(flight=flight, now_utc=now):
                 logging.info("[flight_scheduler] landing_dep: due flight_id=%s dep=%s", flight_id, getattr(flight, "departure_time", None))
 
-                airplane_id = create_and_assign_airplane_for_landing_departure(flight_id=flight_id)
+                airplane_id = create_and_assign_airplane_for_landing_departure(flight_id=flight_id, prefab_picker=pw_prefab_store.pick_plane_prefab)
                 if airplane_id is None:
                     logging.info("[flight_scheduler] landing_dep: could not create/link airplane flight_id=%s", flight_id)
                     continue
@@ -140,7 +140,7 @@ async def clock_sync_loop(bus: WsMessageBus, clock: SimulationClock, *, hz: floa
         await asyncio.sleep(period)
 
 
-async def echo_handler(websocket, pw_simulator, pw_world_state, pw_graph) -> None:
+async def echo_handler(websocket, pw_prefab_store, pw_world_state, pw_graph) -> None:
     """Handle one WebSocket client: greet, log, and echo any text received."""
     
     if setup_bus is None:
@@ -149,7 +149,7 @@ async def echo_handler(websocket, pw_simulator, pw_world_state, pw_graph) -> Non
     peer = websocket.remote_address
     logging.info("Client connected: %s", peer)
 
-    runtime_bus = RuntimeBusHandler(pw_simulator)
+    runtime_bus = RuntimeBusHandler(pw_prefab_store)
     await runtime_bus.start()
 
     bus = WsMessageBus()
@@ -189,7 +189,7 @@ async def echo_handler(websocket, pw_simulator, pw_world_state, pw_graph) -> Non
     logging.info("Clock init: sim_start=%s time_scale=%.2f", clock.now().isoformat(), clock.time_scale)
 
     dispatch_task = asyncio.create_task(incoming_dispatch_loop(bus, setup_bus, runtime_bus))
-    spawn_task = asyncio.create_task(schedule_initial_spawns(bus, setup_bus, pw_simulator))
+    spawn_task = asyncio.create_task(schedule_initial_spawns(bus, setup_bus, pw_prefab_store))
     clock_task = asyncio.create_task(clock_sync_loop(bus, clock, hz=10.0))
     flight_task = asyncio.create_task(
         flight_scheduler_loop(
@@ -197,6 +197,7 @@ async def echo_handler(websocket, pw_simulator, pw_world_state, pw_graph) -> Non
             clock=clock,
             airport_icao=airport_icao,
             poll_seconds=30.0,
+            pw_prefab_store=pw_prefab_store,
         )
     )
 
@@ -220,14 +221,14 @@ async def echo_handler(websocket, pw_simulator, pw_world_state, pw_graph) -> Non
                 pass
 
 
-async def schedule_initial_spawns(bus: WsMessageBus, setup_bus: SetupBusHandler, simulator):
+async def schedule_initial_spawns(bus: WsMessageBus, setup_bus: SetupBusHandler, pw_prefab_store):
     
     """Attende fine setup, poi pianifica e invia i primi spawn verso Unity"""
 
     while not setup_bus.state.setup_completed:
         await asyncio.sleep(0.1)
     
-    scheduler = SpawnScheduler(simulator=simulator)
+    scheduler = SpawnScheduler(prefab_store=pw_prefab_store)
     commands = scheduler.plan_initial_spawns()
     if not commands:
         logging.info("No initial spawns commands generated")
@@ -239,11 +240,11 @@ async def schedule_initial_spawns(bus: WsMessageBus, setup_bus: SetupBusHandler,
     logging.info("Scheduled %d initial spawn commands", len(commands))
 
 
-async def main(host, port, pw_simulator, pw_graph, pw_world_state) -> None:
+async def main(host, port, pw_prefab_store, pw_graph, pw_world_state) -> None:
     """Start the WebSocket server and keep it running indefinitely."""
     # Initialize the setup bus handler inside the running event loop.
     global setup_bus
-    setup_bus = SetupBusHandler(pw_simulator, pw_graph)
+    setup_bus = SetupBusHandler(prefab_store=pw_prefab_store, init_graph=pw_graph)
     await setup_bus.start()
 
     # websockets.serve creates a server context manager; exiting it stops the server.
@@ -251,7 +252,7 @@ async def main(host, port, pw_simulator, pw_graph, pw_world_state) -> None:
     async def _ws_handler(websocket, path=None):
         await echo_handler(
             websocket, 
-            pw_simulator=pw_simulator, 
+            pw_prefab_store=pw_prefab_store, 
             pw_world_state=pw_world_state, 
             pw_graph=pw_graph
         )

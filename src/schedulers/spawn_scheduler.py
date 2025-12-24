@@ -23,10 +23,10 @@ class StandState:
 class SpawnScheduler:
     """Plan plane spawns and reserve stands during simulation bootstrap."""
 
-    def __init__(self, simulator, session_factory: sessionmaker | None = None,
+    def __init__(self, prefab_store, session_factory: sessionmaker | None = None,
                 free_status: str = "Available",occupied_status: str = "Occupied",) -> None:
         
-        self.simulator = simulator
+        self.prefab_store = prefab_store
         self.free_status = free_status
         self.occupied_status = occupied_status
         self.Session = session_factory or sessionmaker(bind=get_engine(), future=True)
@@ -110,12 +110,12 @@ class SpawnScheduler:
         logging.info("Loaded %d stands into scheduler cache", len(self._stand_state))
 
     def _pick_prefabs(self, count: int, *, allowed_type: str | None = None) -> list[dict]:
-        """Randomly sample prefabs from the simulator payloads."""
-        if not self.simulator.prefabs:
+        """Randomly sample prefabs from the prefab store payloads."""
+        if not self.prefab_store.prefabs:
             logging.warning("No prefabs available for spawning")
             return []
 
-        candidates = list(self.simulator.prefabs)
+        candidates = list(self.prefab_store.prefabs)
         if allowed_type is not None:
             candidates = [
                 p for p in candidates

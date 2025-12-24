@@ -1,9 +1,0 @@
-{
-    "splines": [
-        {
-            "name": "Spline_C2",
-            "closed": false,
-            "category": "STAND" # STAND / DEPARTURE / LAND / MASTER
-        }
-    ]
-}

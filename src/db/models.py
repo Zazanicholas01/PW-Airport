@@ -76,7 +76,7 @@ class Airplane(Base):
     route_id = Column("id_percorso", Integer, ForeignKey("Percorso.id"), nullable=True)
 
     airline = relationship("Airline", back_populates="airplanes")
-    route = relationship("Percorso", back_populates="airplanes")
+    route = relationship("Path", back_populates="airplanes")
     flights = relationship("Flight", back_populates="airplane")
     stands = relationship("Stand", back_populates="airplane")
     operations = relationship("Operation", back_populates="airplane")
@@ -154,7 +154,7 @@ class Vehicle(Base):
     route_id = Column("id_percorso", Integer, ForeignKey("Percorso.id"))
     flight_id = Column("id_viaggio", String, ForeignKey("Viaggio.id"))
 
-    route = relationship("Percorso", back_populates="vehicles")
+    route = relationship("Path", back_populates="vehicles")
     flight = relationship("Flight", back_populates="vehicles")
 
 

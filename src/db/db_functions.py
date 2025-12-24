@@ -1,5 +1,8 @@
 import logging
 from src.db import models
+from src.utils.mapping import range_for_airplane_model, type_for_airplane_model
+
+from collections.abc import Callable
 
 from src.db.engine import get_engine
 from sqlalchemy.orm import sessionmaker
@@ -188,11 +191,12 @@ def assign_airplane_to_departure_flight(*, flight_id: str, required_type: str | 
             return None
 
         airplane_id, stand_id = row
+        airline_code = getattr(flight, "airline_code", None)
 
         session.execute(
             update(models.Airplane)
             .where(models.Airplane.id == airplane_id)
-            .values(status="Reserved")
+            .values(status="Reserved", airline_code=airline_code)
         )
         session.execute(
             update(models.Flight)
@@ -202,17 +206,12 @@ def assign_airplane_to_departure_flight(*, flight_id: str, required_type: str | 
         session.commit()
         return airplane_id, stand_id
     
-def create_and_assign_airplane_for_landing_departure(*, flight_id: str) -> str | None:
+def create_and_assign_airplane_for_landing_departure(
+        *, flight_id: str,
+        prefab_picker: Callable[[str | None, str | None], str | None] | None = None) -> str | None:
     with Session() as session:
         flight = session.get(models.Flight, flight_id)
-        if flight is None:
-            logging.warning("[db] landing_dep: flight not found flight_id=%s", flight_id)
-            return None
-        if flight.airplane_id is not None:
-            logging.info("[db] landing_dep: already has airplane flight_id=%s airplane_id=%s", flight_id, flight.airplane_id)
-            return None
-        if getattr(flight, "status", None) != "Unscheduled":
-            logging.info("[db] landing_dep: skip status=%s flight_id=%s", getattr(flight, "status", None), flight_id)
+        if flight is None or flight.airplane_id is not None or getattr(flight, "status", None) != "Unscheduled":
             return None
         
         flight_type = normalize_flight_type(getattr(flight, "tipo", None))
@@ -224,18 +223,27 @@ def create_and_assign_airplane_for_landing_departure(*, flight_id: str) -> str |
             if origin_airport is not None:
                 required_range = normalize_distance(getattr(origin_airport, "distance", None))
         
+        prefab_name = prefab_picker(flight_type, required_range) if prefab_picker else None
+
+        if prefab_name:
+            try:
+                flight_type = type_for_airplane_model(prefab_name)
+                required_range = range_for_airplane_model(prefab_name)
+            except ValueError:
+                prefab_name = None
+
         airplane_id = str(uuid4())
         airplane = models.Airplane(
             id=airplane_id,
             type=flight_type or "Passengers",
             range=required_range or "Medium",
-            model=f"auto_{flight_type or 'Passengers'}_{required_range or 'Medium'}", # Modificare
+            model=prefab_name,
             capacity=100,
             status='InFlight',
             speed=0.0,
             fuel_level=1.0,
             maintenance=False,
-            airline_code=None,
+            airline_code=getattr(flight, "airline_code", None),
             route_id=None,
         )
         session.add(airplane)

@@ -1,6 +1,6 @@
 import asyncio, logging
 
-from src.domain.simulator import Simulator
+from src.domain.prefab_store import PrefabStore
 from src.init_graph import InitGraph
 from src.handlers.setup_bus import SetupBusHandler
 from src.handlers.runtime_bus import RuntimeBusHandler
@@ -19,7 +19,7 @@ logging.basicConfig(
 HOST = "0.0.0.0"
 PORT = 8765
 
-pw_simulator = Simulator()
+pw_prefab_store = PrefabStore()
 pw_graph = InitGraph("LIAG")
 pw_world_state = WorldState()
 #logging.getLogger().setLevel(logging.DEBUG)
@@ -33,6 +33,14 @@ runtime_bus: RuntimeBusHandler | None = None
 
 if __name__ == "__main__":
     try:
-        asyncio.run(main(host=HOST, port=PORT, pw_simulator=pw_simulator, pw_graph=pw_graph, pw_world_state=pw_world_state))
+        asyncio.run(
+            main(
+                host=HOST, 
+                port=PORT, 
+                pw_prefab_store=pw_prefab_store, 
+                pw_graph=pw_graph, 
+                pw_world_state=pw_world_state
+            )
+        )
     except KeyboardInterrupt:
         logging.info("Shutting down server")

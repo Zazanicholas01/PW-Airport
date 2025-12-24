@@ -24,8 +24,8 @@ class SetupState:
 class SetupBusHandler:
     """Handle setup / import events and batching via an async queue."""
 
-    def __init__(self, simulator, init_graph) -> None:
-        self.simulator = simulator
+    def __init__(self, prefab_store, init_graph) -> None:
+        self.prefab_store = prefab_store
         self.init_graph = init_graph
         self.state = SetupState()
         self.queue: asyncio.Queue = asyncio.Queue()
@@ -210,9 +210,9 @@ class SetupBusHandler:
             logging.info("No Prefabs to Commit")
             return
 
-        self.simulator.add_prefabs(self.state.pending_prefabs)
+        self.prefab_store.add_prefabs(self.state.pending_prefabs)
         logging.info("Committed %d Prefabs", len(self.state.pending_prefabs))
-        self.simulator.print_prefabs()
+        self.prefab_store.print_prefabs()
         self.state.prefabs_committed = True
         self._check_setup_completion()
 
@@ -231,7 +231,7 @@ class SetupBusHandler:
             if self.state.path_building:
                 paths = []
                 for path in self.init_graph.paths:
-                    path = models.Percorso(
+                    path = models.Path(
                         path_name=path["name"],
                         source=path["source"],
                         destination=path["destination"],
@@ -240,7 +240,7 @@ class SetupBusHandler:
                     paths.append(path)
 
                 with self.Session() as session:
-                    session.execute(delete(models.Percorso))
+                    session.execute(delete(models.Path))
                     session.execute(
                         text(
                             "SELECT setval(pg_get_serial_sequence('\"Percorso\"', 'id'), 1, false);"

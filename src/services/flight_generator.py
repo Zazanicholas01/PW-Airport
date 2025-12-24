@@ -191,10 +191,14 @@ class RandomFlightGenerator:
     def _pick_terminal_id(self, terminals: list[models.Terminal], flight_type: str) -> int:
 
         t_type = flight_type.lower()
+        if not terminals:
+            raise RuntimeError("No terminals available")
+
         if t_type == "passengers":
             candidates = [
                 t for t in terminals
-                if isinstance(t.type, str) and "passeg" in t.type.lower()
+                if isinstance(t.type, str)
+                and ("passeng" in t.type.lower())
             ]
         else:
             candidates = [
@@ -205,7 +209,6 @@ class RandomFlightGenerator:
         
         if not candidates:
             candidates = terminals
-            raise RuntimeError("No terminals available")
 
         return random.choice(candidates).id
     
@@ -352,4 +355,3 @@ class RandomFlightGenerator:
             session.commit()
         
         return flights
-

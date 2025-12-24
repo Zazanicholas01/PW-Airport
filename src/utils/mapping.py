@@ -6,7 +6,7 @@ def range_for_airplane_model(model: str) -> str:
         "jet",
         "b2_stealth",
         "aeroplanoleggendario",
-        "b737_cargo",
+        "turboelica_cargo",
     }
 
     medio = {
@@ -33,7 +33,7 @@ def range_for_airplane_model(model: str) -> str:
 def type_for_airplane_model(model: str) -> str:
     m = (model or "").strip().lower()
 
-    cargo = {"b737_cargo", "beluga"}
+    cargo = {"turboelica_cargo", "b737_cargo", "beluga"}
 
     if m in cargo:
         return "Cargo"
