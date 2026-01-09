@@ -18,7 +18,8 @@ from src.db.db_functions import (
     link_airplane_to_stand,
     list_flights_in_sliding_window,
     normalize_flight_type,
-    reserve_stand_and_link_airplane_for_landing_arrival
+    reserve_stand_and_link_airplane_for_landing_arrival,
+    mark_landing_departed
 )
 
 setup_bus: SetupBusHandler | None = None
@@ -109,6 +110,11 @@ async def flight_scheduler_loop(*, setup_bus, clock, airport_icao: str, poll_sec
                     logging.info("[flight_scheduler] landing_dep: could not create/link airplane flight_id=%s", flight_id)
                     continue
                 logging.info("[flight_scheduler] landing_dep: linked airplane_id=%s to flight_id=%s (Ongoing)", airplane_id, flight_id)
+                continue
+
+            if scheduler.should_mark_landing_departed(flight=flight, now_utc=now):
+                mark_landing_departed(flight_id=flight_id)
+                logging.info("[flight_scheduler] landing_dep: departed flight_id=%s -> Ongoing", flight_id)
                 continue
 
             # LANDING: arrival_time window -> reserve stand + link plane to stand + set Landing

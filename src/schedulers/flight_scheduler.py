@@ -87,3 +87,15 @@ class FlightSlidingWindowScheduler:
 
     def mark_scheduled(self, flight_id: str) -> None:
         self.scheduled_flight_ids.add(flight_id)
+    
+    def should_mark_landing_departed(self, *, flight, now_utc: datetime) -> bool:
+        if getattr(flight, "destination", None) != self.airport_icao:
+            return False
+        if getattr(flight, "status", None) != "Scheduled":
+            return False
+        
+        dep_utc = as_utc(getattr(flight, "departure_time", None))
+        if dep_utc is None or dep_utc > now_utc:
+            return False
+        
+        return self._once(flight, "landing_departed")

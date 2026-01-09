@@ -1,0 +1,33 @@
+
+    - Inserimento Automatico in DB di dati statici (Aeroporti / Terminal / Piazzole)
+    - Setup Automatico in Docker Compose
+            - Postgres con dati statici
+            - Metabase con connessione al DB
+    
+    - Comunicazione di Spline & Prefab da Unity a Python x setup dinamico
+
+    - Creazione dei Percorsi (Master Spline / Segmentazione x precedenze in futuro)
+    - Concatenazione di varie Spline x creare percorsi completi
+
+    - Definizione di Spawn iniziali per avere degli aerei subito a disposizione
+
+    - Nuova Architettura con Message Dispatchers separando comunicazione e interpretazione del messaggio
+
+    - Generazione Random dei Viaggi
+
+    - Finestra Temporale per iniziare a gestire dei viaggi fissa
+
+    - Gestione temporale della simulazione con server autoritario Python
+
+    - Collegamenti tra piazzole e aerei con prenotazioni per atterraggi
+
+    - Pulizia / Refactoring Directory / Standardizzazione
+
+INCREMENT FINALE
+
+    - Simulazione con setup funzionante (Spline / Prefab da Unity) + 3 spawn random
+    - Costruzione dinamica dei percorsi di atteraggio e decollo con salvataggio in DB
+    - Generazione random di 2 viaggi (decollo e atterraggio)
+        - Decollo --> Controlla se aerei in piazzole sono compatibili e se si li assegna
+        - Atterraggio --> Genera un aereo compatibile e lo assegna al viaggio e successivamente gli assegna una piazzola libera e compatibile
+    

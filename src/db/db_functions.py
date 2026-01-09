@@ -49,26 +49,35 @@ def list_flights_in_sliding_window(*, airport_icao: str, now_utc: datetime, wind
         q = (
             select(models.Flight)
             .where(models.Flight.airplane_id.is_(None))
+            .where(models.Flight.status == "Unscheduled")
             .where(
                 or_(
                     # DEPARTURE
                     and_(
                         models.Flight.origin == airport_icao,
-                        models.Flight.status == "Unscheduled",
                         models.Flight.departure_time.is_not(None),
                         models.Flight.departure_time <= upper,
                     ),
                     # ARRIVAL
                     and_(
                         models.Flight.destination == airport_icao,
-                        models.Flight.status == "Unscheduled",
                         models.Flight.departure_time.is_not(None),
-                        models.Flight.departure_time <= now_db,
+                        models.Flight.departure_time <= upper,
                     ),
                 )
             )
         )
         base = list(session.scalars(q))
+
+        q_sched = (
+            select(models.Flight)
+            .where(models.Flight.destination == airport_icao)
+            .where(models.Flight.status == "Scheduled")
+            .where(models.Flight.airplane_id.is_not(None))
+            .where(models.Flight.departure_time.is_not(None))
+            .where(models.Flight.departure_time <= upper)
+        )
+        base.extend(list(session.scalars(q_sched)))
 
         q2 = (
             select(models.Flight)
@@ -239,7 +248,7 @@ def create_and_assign_airplane_for_landing_departure(
             range=required_range or "Medium",
             model=prefab_name,
             capacity=100,
-            status='InFlight',
+            status='Scheduled',
             speed=0.0,
             fuel_level=1.0,
             maintenance=False,
@@ -251,7 +260,7 @@ def create_and_assign_airplane_for_landing_departure(
         session.execute(
             update(models.Flight)
             .where(models.Flight.id == flight_id)
-            .values(airplane_id=airplane_id, status="Ongoing")
+            .values(airplane_id=airplane_id, status="Scheduled")
         )
         session.commit()
 
@@ -309,3 +318,24 @@ def reserve_stand_and_link_airplane_for_landing_arrival(*, flight_id: str) -> st
         )
         session.commit()
         return chosen.id
+
+def mark_landing_departed(*, flight_id: str) -> None:
+    with Session() as session:
+        flight = session.get(models.Flight, flight_id)
+        if flight is None:
+            return
+
+        airplane_id = getattr(flight, "airplane_id", None)
+        session.execute(
+            update(models.Flight)
+            .where(models.Flight.id == flight_id)
+            .values(status="Ongoing")
+        )
+
+        if isinstance(airplane_id, str):
+            session.execute(
+                update(models.Airplane)
+                .where(models.Airplane.id == airplane_id)
+                .values(status="InFlight")
+            )
+        session.commit()
