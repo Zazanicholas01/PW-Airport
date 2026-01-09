@@ -339,3 +339,60 @@ def mark_landing_departed(*, flight_id: str) -> None:
                 .values(status="InFlight")
             )
         session.commit()
+
+
+def landing_source_for_range(range_value: str | None) -> str:
+    r = (range_value or "").lower()
+    if "long" in r:
+        return "LongLanding"
+    if "medium" in r:
+        return "MediumLanding"
+    return "ShortLanding"
+
+
+def assign_path_to_airplane(*, airplane_id: str, source: str, destination: str) -> int | None:
+    with Session() as session:
+        path_id = session.execute(
+            select(models.Path.id)
+            .where(models.Path.source == source)
+            .where(models.Path.destination == destination)
+        ).scalar_one_or_none()
+
+        if path_id is None:
+            logging.warning("[db] path not found")
+            return None
+        
+        session.execute(
+            update(models.Airplane)
+            .where(models.Airplane.id == airplane_id)
+            .values(route_id=path_id)
+        )
+        session.commit()
+        logging.info("[db] path assigned airplane_id=%s route_id=%s (%s -> %s)", airplane_id, path_id, source, destination)
+        return path_id
+
+def assign_landing_path_for_airplane(*, airplane_id: str, stand_id: str) -> int | None:
+    with Session() as session:
+        airplane = session.get(models.Airplane, airplane_id)
+        if airplane is None:
+            return None
+        
+        source = landing_source_for_range(getattr(airplane, "range", None))
+        path_id = session.execute(
+            select(models.Path.id)
+            .where(models.Path.source == source)
+            .where(models.Path.destination == stand_id)
+        ).scalar_one_or_none()
+
+        if path_id is None:
+            logging.warning("[db] landing path not found source=%s destination=%s", source, stand_id)
+            return None
+        
+        session.execute(
+            update(models.Airplane)
+            .where(models.Airplane.id == airplane_id)
+            .values(route_id=path_id)
+        )
+        session.commit()
+        logging.info("[db] landing path assigned airplane_id=%s route_id=%s (%s -> %s)", airplane_id, path_id, source, stand_id)
+        return path_id

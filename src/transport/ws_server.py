@@ -14,12 +14,14 @@ from src.utils.datetimes import as_utc
 from src.services.spawn_tracking import ensure_airplane_row
 from src.db.db_functions import (
     assign_airplane_to_departure_flight,
+    assign_landing_path_for_airplane,
+    assign_path_to_airplane,
     create_and_assign_airplane_for_landing_departure,
     link_airplane_to_stand,
     list_flights_in_sliding_window,
     normalize_flight_type,
     reserve_stand_and_link_airplane_for_landing_arrival,
-    mark_landing_departed
+    mark_landing_departed,
 )
 
 setup_bus: SetupBusHandler | None = None
@@ -97,7 +99,14 @@ async def flight_scheduler_loop(*, setup_bus, clock, airport_icao: str, poll_sec
                 if assignment is None:
                     logging.info("[flight_scheduler] no compatible parked airplane flight_id=%s", flight_id)
                     continue
+
                 airplane_id, stand_id = assignment
+                assign_path_to_airplane(
+                    airplane_id=airplane_id,
+                    source=stand_id,
+                    destination="Departure",
+                )
+
                 logging.info("[flight_scheduler] departure assigned airplane_id=%s stand_id=%s flight_id=%s", airplane_id, stand_id, flight_id)
                 continue
 
@@ -123,6 +132,14 @@ async def flight_scheduler_loop(*, setup_bus, clock, airport_icao: str, poll_sec
                 if stand_id is None:
                     logging.warning("[flight_scheduler] landing_arr: no available stands flight_id=%s", flight_id)
                     continue
+
+                airplane_id = getattr(flight, "airplane_id", None)
+                if isinstance(airplane_id, str):
+                    assign_landing_path_for_airplane(
+                        airplane_id=airplane_id,
+                        stand_id=stand_id,
+                    )
+
                 logging.info("[flight_scheduler] landing_arr: stand_id=%s reserved + plane linked flight_id=%s", stand_id, flight_id)
                 continue
 

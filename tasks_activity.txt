@@ -104,7 +104,7 @@ FLIGHT SCHEDULER
             - Priorità a P e C (Piazzola.tipo) dove P --> Passeggero e C --> Cargo
             - Se non disponibili, assegnare Piazzola.tipo --> PC
 
-PATH SCHEDULER
+PATH SCHEDULER -- (DONE)
 
     - Definire percorso per aerei una volta assegnato un viaggio
 
@@ -120,10 +120,7 @@ PATH SCHEDULER
 ANIMAZIONI
 
     - Definire metodi di animazioni dei game objects
-
-        - Game Object Registry in Unity collegato con world state in python
-            - Mapping Plane -> GameObject / Bus -> GameObject
-            - Lifecycle Spawn / Despawn
+        - Game Object Registry x mappare UUID Python con GameObject reali Unity
 
         - Arc Length Mapping per gestione velocità dinamiche
         - Gestione comandi di inizio percorrenza e comandi di cambio velocità
@@ -132,3 +129,18 @@ ANIMAZIONI
 
         - Gestione precedenze
         - Gestione rotazioni e tangenti
+
+    - Decollo
+        - Quando raggiunge l'orario di partenza Python invia comando Unity per iniziare a muovere
+            - A Unity serve:
+                - Che aereo muovere
+                - Che percorso seguire
+                - Velocita / Rotazioni / Tangenti...
+
+    - Atterraggio
+        - Quando l'aereo sta approciando l'aeroporto ed è abbastanza vicino (idealmente raggio torre radio)
+            - A Unity serve:
+                - Che aereo spawnare e muovere
+                - Che tipo di prefab e a che posizione
+                - Che percorso seguire
+                - Velocita / Rotazioni / Tangenti...
