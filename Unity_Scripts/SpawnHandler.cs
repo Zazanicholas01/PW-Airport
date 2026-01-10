@@ -6,15 +6,14 @@ public class SpawnHandler : MonoBehaviour
     [SerializeField] private MessageDispatcher dispatcher;
     [SerializeField] private PrefabRegistry prefabRegistry;
     [SerializeField] private Transform spawnParent;
+    [SerializeField] private GameObjectRegistry registry;
 
     private void Awake()
     {
         dispatcher = dispatcher ?? GetComponent<MessageDispatcher>();
 
-        if (prefabRegistry == null)
-        {
-            prefabRegistry = FindObjectOfType<PrefabRegistry>();
-        }
+        if (prefabRegistry == null) prefabRegistry = FindObjectOfType<PrefabRegistry>();
+        if (registry == null) registry = FindObjectOfType<GameObjectRegistry>();
     }
 
     private void OnEnable()
@@ -53,7 +52,11 @@ public class SpawnHandler : MonoBehaviour
             position = new Vector3(command.position.x, command.position.y, command.position.z);
         }
 
-        Instantiate(prefab, position, Quaternion.identity, spawnParent);
+        var instance = Instantiate(prefab, position, Quaternion.identity, spawnParent);
+
+        if (registry != null && !string.IsNullOrWhiteSpace(command.airplane_id))
+            registry.Register(command.airplane_id, instance);
+            
         Debug.Log($"[SpawnHandler] Spawned '{command.prefab}' at {position} (stand {command.stand_id}).");
     }
 }

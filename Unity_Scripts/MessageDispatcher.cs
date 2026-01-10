@@ -24,6 +24,7 @@ public class MessageDispatcher : MonoBehaviour
         public string command;
         public string prefab;
         public string stand_id;
+        public string airplane_id;
         public SerializableVector3 position;
     }
 
