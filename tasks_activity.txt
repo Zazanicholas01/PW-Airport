@@ -120,7 +120,7 @@ PATH SCHEDULER -- (DONE)
 ANIMAZIONI
 
     - Definire metodi di animazioni dei game objects
-        - Game Object Registry x mappare UUID Python con GameObject reali Unity
+        - Game Object Registry x mappare UUID Python con GameObject reali Unity -- (DONE)
 
         - Arc Length Mapping per gestione velocità dinamiche
         - Gestione comandi di inizio percorrenza e comandi di cambio velocità
@@ -144,3 +144,11 @@ ANIMAZIONI
                 - Che tipo di prefab e a che posizione
                 - Che percorso seguire
                 - Velocita / Rotazioni / Tangenti...
+
+NEXT TIME:
+
+    - Invertire nodi spline girate al contrario
+    - Iniziare a vedere delle tangenti e rotazioni
+    - Vedere dei problemi che salteranno
+    - Sta usando il deltatime di Unity, dovrebbe usare il clock ricevuto da Python
+    - Sistemare collegamenti di spline

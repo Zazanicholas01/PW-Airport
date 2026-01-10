@@ -69,6 +69,16 @@ def list_flights_in_sliding_window(*, airport_icao: str, now_utc: datetime, wind
         )
         base = list(session.scalars(q))
 
+        q_dep_sched = (
+            select(models.Flight)
+            .where(models.Flight.origin == airport_icao)
+            .where(models.Flight.status == "Scheduled")
+            .where(models.Flight.airplane_id.is_not(None))
+            .where(models.Flight.departure_time.is_not(None))
+            .where(models.Flight.departure_time <= upper)
+        )
+        base.extend(list(session.scalars(q_dep_sched)))
+
         q_sched = (
             select(models.Flight)
             .where(models.Flight.destination == airport_icao)
@@ -78,6 +88,16 @@ def list_flights_in_sliding_window(*, airport_icao: str, now_utc: datetime, wind
             .where(models.Flight.departure_time <= upper)
         )
         base.extend(list(session.scalars(q_sched)))
+
+        q_landing = (
+            select(models.Flight)
+            .where(models.Flight.destination == airport_icao)
+            .where(models.Flight.status == "Landing")
+            .where(models.Flight.airplane_id.is_not(None))
+            .where(models.Flight.arrival_time.is_not(None))
+            .where(models.Flight.arrival_time <= upper)
+        )
+        base.extend(list(session.scalars(q_landing)))
 
         q2 = (
             select(models.Flight)

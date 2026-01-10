@@ -324,7 +324,20 @@ class RandomFlightGenerator:
                 airline = self._pick_airline(airlines, flight_type, route_category)
                 
                 if ensure_in_window and idx == 0:
-                    departure_time, arrival_time = self._times_departure_within_window_today(window=window)
+                    # Debug-friendly deterministic departure: always 1 minute from "now" for LIAG departures.
+                    # (idx==0 is forced to be a departure from personal_airport above)
+                    departure_time = self._utc_now_naive() + timedelta(minutes=1)
+
+                    min_duration = timedelta(minutes=30)
+                    max_duration = timedelta(minutes=240)
+                    start_of_day = datetime(departure_time.year, departure_time.month, departure_time.day, tzinfo=timezone.utc)
+                    end_of_day = start_of_day + timedelta(days=1)
+                    max_allowed_seconds = int((end_of_day - departure_time).total_seconds())
+                    min_dur = int(min_duration.total_seconds())
+                    max_dur = min(int(max_duration.total_seconds()), max_allowed_seconds)
+
+                    duration_seconds = min_dur if max_dur < min_dur else random.randint(min_dur, max_dur)
+                    arrival_time = departure_time + timedelta(seconds=duration_seconds)
                 elif ensure_in_window and idx == 1:
                     departure_time, arrival_time = self._times_arrival_within_window_today(window=window)
                 else:

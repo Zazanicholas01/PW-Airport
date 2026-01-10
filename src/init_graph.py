@@ -202,7 +202,7 @@ class InitGraph:
                 })
             
             segments.append({
-                "name": "Departure",
+                "name": "Spline_Departure",
                 "t_start": 0.0,
                 "t_end": 1.0
             })

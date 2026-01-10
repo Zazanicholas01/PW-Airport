@@ -7,7 +7,7 @@ using UnityEngine.Splines;
 [RequireComponent(typeof(LocalWebSocketClient))]
 public class SplineRegistry : MonoBehaviour
 {
-    [SerializeField] private string rootObjectName = "Splines";
+    [SerializeField] private List<SplineContainer> registeredSplines = new();
     [SerializeField] private string masterSplineName = "MasterSpline";
     [SerializeField] private bool includeInactive = true;
 
@@ -75,24 +75,28 @@ public class SplineRegistry : MonoBehaviour
 
     private IEnumerable<SplineRecord> EnumerateSplines()
     {
-        Transform root = GameObject.Find(rootObjectName)?.transform;
-        var containers = root != null
-            ? root.GetComponentsInChildren<SplineContainer>(includeInactive)
-            : FindObjectsOfType<SplineContainer>(includeInactive);
+        IEnumerable<SplineContainer> containers =
+            (registeredSplines != null && registeredSplines.Count > 0)
+                ? registeredSplines
+                : FindObjectsOfType<SplineContainer>(includeInactive);
+
+        var seen = new HashSet<SplineContainer>();
 
         foreach (var container in containers)
         {
-            var spline = container.Spline;
-            if (spline == null) continue;
+            if (container == null || container.Spline == null) continue;
+            if (!seen.Add(container)) continue;
+            
+            string splineName = container.gameObject.name;
 
             bool isMaster = container.gameObject.name == masterSplineName;
-            List<KnotEntry> knotEntries = isMaster ? new List<KnotEntry()> : null;
+
+            List<KnotEntry> knotEntries = isMaster ? new List<KnotEntry>() : null;
             LastKnotPosition lastKnotPos = null;
 
-            var knotEntries = new List<KnotEntry>();
             int knotIndex = 0;
 
-            foreach (var knot in spline.Knots)
+            foreach (var knot in container.Spline.Knots)
             {
                 Vector3 pos = container.transform.TransformPoint(knot.Position);
 
@@ -119,9 +123,9 @@ public class SplineRegistry : MonoBehaviour
                 }
 
                 lastKnotPos = new LastKnotPosition {
-                    x = pos.x;
-                    y = pos.y;
-                    z = pos.z;
+                    x = pos.x,
+                    y = pos.y,
+                    z = pos.z
                 };
 
                 knotIndex++;
@@ -129,9 +133,10 @@ public class SplineRegistry : MonoBehaviour
 
             yield return new SplineRecord
             {
-                name = container.gameObject.name,
-                closed = spline.Closed,
-                knots = knotEntries
+                name = splineName,
+                closed = container.Spline.Closed,
+                knots = knotEntries,
+                lastKnotPos = lastKnotPos
             };
         }
     }

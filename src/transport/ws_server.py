@@ -10,6 +10,7 @@ from src.domain.sim_clock import SimulationClock
 from src.schedulers.spawn_scheduler import SpawnScheduler
 from src.schedulers.flight_scheduler import FlightSlidingWindowScheduler
 from src.utils.datetimes import as_utc
+from src.path_commands import make_start_path_command
 
 from src.services.spawn_tracking import ensure_airplane_row
 from src.db.db_functions import (
@@ -44,7 +45,7 @@ async def incoming_dispatch_loop(bus: WsMessageBus, setup_bus: SetupBusHandler, 
             bus.incoming.task_done()
 
 
-async def flight_scheduler_loop(*, setup_bus, clock, airport_icao: str, poll_seconds: float = 30.0, pw_prefab_store) -> None:
+async def flight_scheduler_loop(*, setup_bus, clock, airport_icao: str, poll_seconds: float = 30.0, pw_prefab_store, bus) -> None:
     while not setup_bus.state.setup_completed:
         await asyncio.sleep(0.1)
 
@@ -143,6 +144,30 @@ async def flight_scheduler_loop(*, setup_bus, clock, airport_icao: str, poll_sec
                 logging.info("[flight_scheduler] landing_arr: stand_id=%s reserved + plane linked flight_id=%s", stand_id, flight_id)
                 continue
 
+            # START DEPARTURE MOVEMENT
+            if scheduler.should_start_departure_movement(flight=flight, now_utc=now):
+                airplane_id = getattr(flight, "airplane_id", None)
+                if isinstance(airplane_id, str):
+                    cmd = make_start_path_command(airplane_id=airplane_id)
+                    logging.info("[start_path][OUT] flight_id=%s airplane_id=%s route_id=%s segments=%d now=%s",
+                        flight_id, cmd["airplane_id"], cmd["route_id"], len(cmd["segments"]), now.isoformat())
+                    if cmd is not None:
+                        await bus.send_command(cmd)
+                        logging.info("[flight_scheduler] start_path departure airplane_id=%s flight_id=%s", airplane_id, flight_id)
+                continue
+
+            # START LANDING MOVEMENT
+            if scheduler.should_start_landing_approach(flight=flight, now_utc=now):
+                airplane_id = getattr(flight, "airplane_id", None)
+                if isinstance(airplane_id, str):
+                    cmd = make_start_path_command(airplane_id=airplane_id)
+                    logging.info("[start_path][OUT] flight_id=%s airplane_id=%s route_id=%s segments=%d now=%s",
+             flight_id, cmd["airplane_id"], cmd["route_id"], len(cmd["segments"]), now.isoformat())
+                    if cmd is not None:
+                        await bus.send_command(cmd)
+                        logging.info("[flight_scheduler] start_path landing airplane_id=%s flight_id=%s", airplane_id, flight_id)
+                continue            
+
         next_tick += poll_seconds
         await asyncio.sleep(max(0.0, next_tick - time.monotonic()))
 
@@ -200,7 +225,7 @@ async def echo_handler(websocket, pw_prefab_store, pw_world_state, pw_graph) -> 
             prefab = prefab,
             position = payload.get("position"),
         )
-
+    
     bus.add_outgoing_hook(_track_spawns)
 
     clock = SimulationClock(sim_start=datetime.now(timezone.utc), time_scale=1.0)
@@ -221,6 +246,7 @@ async def echo_handler(websocket, pw_prefab_store, pw_world_state, pw_graph) -> 
             airport_icao=airport_icao,
             poll_seconds=30.0,
             pw_prefab_store=pw_prefab_store,
+            bus=bus,
         )
     )
 

@@ -99,3 +99,30 @@ class FlightSlidingWindowScheduler:
             return False
         
         return self._once(flight, "landing_departed")
+
+    def should_start_departure_movement(self, *, flight, now_utc: datetime) -> bool:
+        if getattr(flight, "origin", None) != self.airport_icao:
+            return False
+        if getattr(flight, "status", None) != "Scheduled":
+            return False
+        
+        dep_utc = as_utc(getattr(flight, "departure_time", None))
+        if dep_utc is None or dep_utc > now_utc:
+            return False
+        
+        return self._once(flight, "dep_start")
+    
+    def should_start_landing_approach(self, *, flight, now_utc: datetime) -> bool:
+        if getattr(flight, "destination", None) != self.airport_icao:
+            return False
+        if getattr(flight, "status", None) != "Landing":
+            return False
+        
+        arr_utc = as_utc(getattr(flight, "arrival_time", None))
+        if arr_utc is None:
+            return False
+        
+        if (arr_utc - now_utc) > timedelta(minutes=1):
+            return False
+        
+        return self._once(flight, "landing_start")
