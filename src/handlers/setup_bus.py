@@ -1,7 +1,7 @@
 import logging, asyncio
 
 from sqlalchemy.orm import sessionmaker
-from sqlalchemy import delete, text
+from sqlalchemy import delete, text, update
 
 from src.db.engine import get_engine
 from src.db import models
@@ -240,6 +240,10 @@ class SetupBusHandler:
                     paths.append(path)
 
                 with self.Session() as session:
+                    # Paths are rebuilt on every Unity setup. If existing airplanes/vehicles still
+                    # reference old path ids, deleting Percorso will fail with FK violations.
+                    session.execute(update(models.Airplane).values(route_id=None))
+                    session.execute(update(models.Vehicle).values(route_id=None))
                     session.execute(delete(models.Path))
                     session.execute(
                         text(

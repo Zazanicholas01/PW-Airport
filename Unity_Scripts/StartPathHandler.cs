@@ -9,7 +9,6 @@ public class StartPathHandler : MonoBehaviour {
     [SerializeField] private MessageDispatcher dispatcher;
     [SerializeField] private GameObjectRegistry registry;
 
-    private readonly Dictionary<string, Coroutine> runningByPlaneId = new(StringComparer.OrdinalIgnoreCase);
     private Dictionary<string, SplineContainer> splineByName;
 
     private void Awake() {
@@ -41,12 +40,13 @@ public class StartPathHandler : MonoBehaviour {
             return;
         }
 
-        if (runningByPlaneId.TryGetValue(cmd.airplane_id, out var existing) && existing != null) {
-            StopCoroutine(existing);
-        }
+        var follower = plane.GetComponent<SplineFollower>();
+        if (follower == null) follower = plane.AddComponent<SplineFollower>();
+
+        follower.ResolveSplineByName = FindSpline;
 
         var speed = cmd.speed > 0f ? cmd.speed : 5f;
-        runningByPlaneId[cmd.airplane_id] = StartCoroutine(FollowSegments(plane.transform, cmd.segments, speed));
+        follower.SetPath(cmd.segments, speed);
     }
 
     private SplineContainer FindSpline(string name) {
@@ -55,52 +55,6 @@ public class StartPathHandler : MonoBehaviour {
         if (string.IsNullOrWhiteSpace(name)) return null;
 
         return splineByName.TryGetValue(name, out var container) ? container : null;
-    }
-
-    private IEnumerator FollowSegments(Transform target, MessageDispatcher.PathSegment[] segments, float speed) {
-
-        foreach (var seg in segments) {
-
-            var container = FindSpline(seg.name);
-            if (container == null || container.Spline == null) {
-                Debug.LogWarning($"[StartPathHandler] Missing spline '{seg.name}'");
-                continue;
-            }
-
-            float t0 = Mathf.Clamp01(seg.t_start);
-            float t1 = Mathf.Clamp01(seg.t_end);
-            float dir = t1 >= t0 ? 1f : -1f;
-            float range = Mathf.Abs(t1 - t0);
-
-            if (range <= 0.0001f) {
-                target.position = EvalWorld(container, t1);
-                continue;
-            }
-
-            float length = ApproxSegmentLength(container, t0, t1, 30);
-            if (length <= 0.0001f) length = 0.0001f;
-
-            float t = t0;
-            target.position = EvalWorld(container, t);
-
-            while ((dir > 0f && t < t1) || (dir < 0f && t > t1)) {
-
-                float ft = Time.deltaTime;
-                float deltaT = (speed * dt / length) * range;
-                t = Mathf.Clamp01(t + dir * deltaT);
-
-                if (dir > 0f && t > t1) t = t1;
-                if (dir < 0f && t < t1) t = t1;
-
-                target.position = EvalWorld(container, t);
-                yield return null;
-            }
-        }
-    }
-
-    private static Vector3 EvalWorld(SplineContainer container, float t) {
-        var local = SplineUtility.EvaluatePosition(container.Spline, t);
-        return container.transform.TransformPoint((Vector3)local);
     }
 
     private static float ApproxSegmentLength(SplineContainer container, float t0, float t1, int samples) {

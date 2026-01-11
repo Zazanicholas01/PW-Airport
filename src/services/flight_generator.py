@@ -7,6 +7,7 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy import delete
 
 from src.db.engine import get_engine
+from src.db.db_functions import normalize_distance
 
 class RandomFlightGenerator:
     def __init__(self, session_factory):
@@ -288,6 +289,15 @@ class RandomFlightGenerator:
             session.commit()
 
             airports, terminals, airlines = self.load_metadata(session)
+            parked_pairs = list(
+                {
+                    (t, r)
+                    for (t, r) in session.query(models.Airplane.type, models.Airplane.range)
+                    .filter(models.Airplane.status == "Parked")
+                    .all()
+                    if isinstance(t, str) and isinstance(r, str)
+                }
+            )
 
             if not airports:
                 raise RuntimeError("No remote airports available")
@@ -309,9 +319,26 @@ class RandomFlightGenerator:
                     is_departure_from_personal = random.choice([True, False])
 
                 flight_type = random.choice(["Cargo", "Passengers"])
-                terminal_id = self._pick_terminal_id(terminals, flight_type)
-
                 remote_airport = random.choice(airports)
+
+                # Debug: ensure the first LIAG departure (idx==0) is compatible with at least
+                # one of the initially spawned parked planes (type + range).
+                if ensure_in_window and idx == 0 and is_departure_from_personal and parked_pairs:
+                    def airports_for_range(rng: str) -> list[models.Airport]:
+                        return [
+                            a for a in airports
+                            if normalize_distance(getattr(a, "distance", None)) == rng
+                        ]
+
+                    viable = [(t, r) for (t, r) in parked_pairs if airports_for_range(r)]
+                    chosen_type, chosen_range = random.choice(viable or parked_pairs)
+
+                    matching_airports = airports_for_range(chosen_range)
+                    if matching_airports:
+                        remote_airport = random.choice(matching_airports)
+                    flight_type = chosen_type
+
+                terminal_id = self._pick_terminal_id(terminals, flight_type)
 
                 if is_departure_from_personal:
                     origin = self.personal_airport

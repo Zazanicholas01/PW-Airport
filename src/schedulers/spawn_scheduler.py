@@ -43,9 +43,14 @@ class SpawnScheduler:
             return
         
         with self.Session() as session:
+            # Stands/Flights/Operations can reference airplanes via FKs; clear dependents first
+            # so we can safely wipe airplanes for a clean bootstrap.
             session.execute(
                 update(models.Stand).values(status=self.free_status, airplane_id=None,)
             )
+            session.execute(update(models.Flight).values(airplane_id=None))
+            session.execute(delete(models.Operation))
+            session.execute(delete(models.ParkingSpot))
             session.execute(delete(models.Airplane))
             session.commit()
         

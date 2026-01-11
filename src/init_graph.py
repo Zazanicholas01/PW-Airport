@@ -78,7 +78,6 @@ class InitGraph:
             return
         
         t_values = [(x - x_coords[0]) / ms_length for x in x_coords]
-        t_values = [round(t, 2) for t in t_values]
         
         for i, (t_start, t_end) in enumerate(zip(t_values, t_values[1:]), start=1):
             self.master_edges.append(

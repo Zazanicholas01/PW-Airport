@@ -33,7 +33,7 @@ public class SimClockClient : MonoBehaviour {
     }
 
     private void OnClockSync(MessageDispatcher.ClockSyncCommand cmd) {
-        lastUnixMs = cmd.sim_unix_ms;
+        lastSimUnixMs = cmd.sim_unix_ms;
         timeScale = cmd.time_scale;
         lastSyncId = cmd.sync_id;
         lastSyncRealtime = Time.realtimeSinceStartup;

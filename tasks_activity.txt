@@ -149,6 +149,9 @@ NEXT TIME:
 
     - Invertire nodi spline girate al contrario
     - Iniziare a vedere delle tangenti e rotazioni
+        - Prima gestire rotazioni lungo la spline
+        - Poi gestire rotazioni iniziali in modo efficiente e scalabile
     - Vedere dei problemi che salteranno
     - Sta usando il deltatime di Unity, dovrebbe usare il clock ricevuto da Python
     - Sistemare collegamenti di spline
+    - Sistemare Spike di Master Spline 

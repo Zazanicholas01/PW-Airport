@@ -11,6 +11,12 @@ from src.schedulers.spawn_scheduler import SpawnScheduler
 from src.schedulers.flight_scheduler import FlightSlidingWindowScheduler
 from src.utils.datetimes import as_utc
 from src.path_commands import make_start_path_command
+from src.services.flight_generator import RandomFlightGenerator
+from src.db.engine import get_engine
+from src.db import models
+
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy import select, func
 
 from src.services.spawn_tracking import ensure_airplane_row
 from src.db.db_functions import (
@@ -53,6 +59,28 @@ async def flight_scheduler_loop(*, setup_bus, clock, airport_icao: str, poll_sec
         airport_icao=airport_icao,
         window=timedelta(hours=1),
     )
+
+    # Debug: generate flights only after initial spawns created at least one parked airplane,
+    # so the first LIAG departure can be made compatible with spawned planes.
+    Session = sessionmaker(bind=get_engine(), future=True)
+    timeout_s = 10.0
+    start_wait = time.monotonic()
+    while True:
+        with Session() as session:
+            parked_count = session.execute(
+                select(func.count())
+                .select_from(models.Airplane)
+                .where(models.Airplane.status == "Parked")
+            ).scalar_one()
+        if parked_count and parked_count > 0:
+            break
+        if (time.monotonic() - start_wait) > timeout_s:
+            logging.warning("[flight_scheduler] no parked airplanes after %.1fs; generating flights anyway", timeout_s)
+            break
+        await asyncio.sleep(0.1)
+
+    RandomFlightGenerator(Session).generate_flights(2, ensure_in_window=True, window=scheduler.window)
+    logging.info("[flight_scheduler] generated debug flights (n=2)")
 
     next_tick = time.monotonic()
     last_window_log = 0.0

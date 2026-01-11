@@ -22,8 +22,6 @@ class RuntimeBusHandler:
 
     async def start(self):
         if self._task is None or self._task_done():
-            self._flight_generator.generate_flights(2)
-            logging.info("Generated Random Flights")
             self._task = asyncio.create_task(self._event_loop())
     
 
@@ -71,4 +69,3 @@ class RuntimeBusHandler:
             stand.airplane_id = None
             session.commit()
             return
-
