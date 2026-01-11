@@ -64,7 +64,7 @@ public class SplineRegistry : MonoBehaviour
             var payload = new SplineEvent { spline = splineRecord };
             var json = JsonUtility.ToJson(payload, true);
             await ws.Send(json);
-            int knotCount = splineRecord.knots != null ? splineRecord.knots.Count : 0;
+            int knotCount = splineRecord.knotEntries != null ? splineRecord.knotEntries.Count : 0;
             Debug.Log($"[SplineRegistry] Sent spline '{splineRecord.name}' with {knotCount} knots.");
             await Task.Yield(); // avoid flooding in one frame
         }
@@ -92,7 +92,9 @@ public class SplineRegistry : MonoBehaviour
             bool isMaster = container.gameObject.name == masterSplineName;
 
             List<KnotEntry> knotEntries = isMaster ? new List<KnotEntry>() : null;
-            LastKnotPosition lastKnotPos = null;
+
+            KnotPosition firstKnotPos = null;
+            KnotPosition lastKnotPos = null;
 
             int knotIndex = 0;
 
@@ -122,7 +124,15 @@ public class SplineRegistry : MonoBehaviour
                     });
                 }
 
-                lastKnotPos = new LastKnotPosition {
+                if (knotIndex == 0) {
+                    firstKnotPos = new KnotPosition {
+                        x = pos.x,
+                        y = pos.y,
+                        z = pos.z
+                    };
+                }
+
+                lastKnotPos = new KnotPosition {
                     x = pos.x,
                     y = pos.y,
                     z = pos.z
@@ -135,7 +145,8 @@ public class SplineRegistry : MonoBehaviour
             {
                 name = splineName,
                 closed = container.Spline.Closed,
-                knots = knotEntries,
+                knotEntries = knotEntries,
+                firstKnotPos = firstKnotPos,
                 lastKnotPos = lastKnotPos
             };
         }
@@ -150,8 +161,9 @@ public class SplineRegistry : MonoBehaviour
     private class SplineRecord { 
         public string name; 
         public bool closed; 
-        public List<KnotEntry> knots; 
-        public LastKnotPosition lastKnotPosition;
+        public List<KnotEntry> knotEntries; 
+        public KnotPosition firstKnotPos;
+        public KnotPosition lastKnotPos;
     }
 
     [Serializable] 
@@ -169,7 +181,7 @@ public class SplineRegistry : MonoBehaviour
     }
 
     [Serializable]
-    private class LastKnotPosition {
+    private class KnotPosition {
         public float x, y, z;
     }
 }

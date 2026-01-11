@@ -65,7 +65,7 @@ class InitGraph:
     def extract_t_master_edges(self) -> None:
         """Extract the t parameters for master edges from the master spline."""
 
-        knots = self.master_spline.get("knots", [])
+        knots = self.master_spline.get("knotEntries", [])
         if not knots or len(knots) < 2:
             return None, None
         try:
@@ -219,4 +219,3 @@ class InitGraph:
 
         self.departing_paths = paths
         self.paths = self.landing_paths + self.departing_paths
-

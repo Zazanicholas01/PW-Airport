@@ -156,17 +156,17 @@ class SetupBusHandler:
             else:
                 self.init_graph.add_spline(spline)
 
-                last = spline.get("lastKnotPosition")
+                first = spline.get("firstKnotPos")
                 if (
-                    isinstance(last, dict)
+                    isinstance(first, dict)
                     and name.startswith("Spline_")
-                    and all(k in last for k in ("x", "y", "z"))
+                    and all(k in first for k in ("x", "y", "z"))
                 ):
                     stand_id = name.removeprefix("Spline_")
                     stand_positions[stand_id] = {
-                        "x": last.get("x"),
-                        "y": last.get("y"),
-                        "z": last.get("z"),
+                        "x": first.get("x"),
+                        "y": first.get("y"),
+                        "z": first.get("z"),
                     }
 
         logging.info("Committed Splines")
