@@ -34,14 +34,17 @@ from src.db.db_functions import (
 setup_bus: SetupBusHandler | None = None
 
 
-async def incoming_dispatch_loop(bus: WsMessageBus, setup_bus: SetupBusHandler, runtime_bus: RuntimeBusHandler):
+async def incoming_dispatch_loop(bus: WsMessageBus, setup_bus: SetupBusHandler, runtime_bus: RuntimeBusHandler, *, clock, clock_lock=None):
 
     """Smista i messaggi in entrata verso i vari handler"""
 
     while True:
         payload = await bus.incoming.get()
         try:
-            # Switch tra Setup Bus e Runtime Bus
+            if isinstance(payload, dict) and await handle_clock_control(
+                payload, clock=clock, bus=bus, clock_lock=clock_lock
+            ):
+                continue
 
             if not setup_bus.setup_finished:
                 await setup_bus.enqueue(payload)
@@ -200,6 +203,57 @@ async def flight_scheduler_loop(*, setup_bus, clock, airport_icao: str, poll_sec
         await asyncio.sleep(max(0.0, next_tick - time.monotonic()))
 
 
+async def handle_clock_control(payload: dict, *, clock, bus, clock_lock: asyncio.Lock | None = None) -> bool:
+
+    cmd = payload.get("command")
+    if not isinstance(cmd, str):
+        return False
+    cmd = cmd.strip().lower()
+
+    if cmd == "set_time_scale":
+        raw = payload.get("time_scale")
+        try:
+            scale = float(raw)
+        except (TypeError, ValueError):
+            return True
+        
+        if not math.isfinite(scale) or scale < 0.0:
+            return True
+        
+        if clock_lock:
+            async with clock_lock:
+                clock.set_time_scale(scale)
+                sync = clock.make_sync()
+        else:
+            clock.set_time_scale(scale)
+            sync = clock.make_sync()
+        
+        await bus.send_command({
+            "command": "clock_sync",
+            "sync_id": sync.sync_id,
+            "sim_unix_ms": sync.sim_unix_ms,
+            "time_scale": sync.time_scale,
+        })
+        return True
+
+    if cmd == "set_sim_time":
+        raw_ms = payload.get("sim_unix_ms")
+        try:
+            sim_unix_ms = int(raw_ms)
+        except (TypeError, ValueError):
+            return True
+        
+        new_sim = datetime.fromtimestamp(sim_unix_ms / 1000.0, tz=timezone.utc)
+        if clock_lock:
+            async with clock_lock:
+                clock.set_sim_time(new_sim)
+        else:
+            clock.set_sim_time(new_sim)
+        return True
+    
+    return False
+
+
 async def clock_sync_loop(bus: WsMessageBus, clock: SimulationClock, *, hz: float = 10.0):
     period = 1.0 / hz
     logging.info("Clock sync loop started: hz=%.1f", hz)
@@ -257,6 +311,7 @@ async def echo_handler(websocket, pw_prefab_store, pw_world_state, pw_graph) -> 
     bus.add_outgoing_hook(_track_spawns)
 
     clock = SimulationClock(sim_start=datetime.now(timezone.utc), time_scale=1.0)
+    clock_lock = asyncio.Lock()
 
     airport_icao = getattr(pw_graph, "airport_id", None)
     if not isinstance(airport_icao, str) or not airport_icao:
@@ -264,7 +319,7 @@ async def echo_handler(websocket, pw_prefab_store, pw_world_state, pw_graph) -> 
 
     logging.info("Clock init: sim_start=%s time_scale=%.2f", clock.now().isoformat(), clock.time_scale)
 
-    dispatch_task = asyncio.create_task(incoming_dispatch_loop(bus, setup_bus, runtime_bus))
+    dispatch_task = asyncio.create_task(incoming_dispatch_loop(bus, setup_bus, runtime_bus, clock=clock, clock_lock=clock_lock))
     spawn_task = asyncio.create_task(schedule_initial_spawns(bus, setup_bus, pw_prefab_store))
     clock_task = asyncio.create_task(clock_sync_loop(bus, clock, hz=10.0))
     flight_task = asyncio.create_task(
