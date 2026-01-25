@@ -169,6 +169,11 @@ NEXT REAL TIME:
         - Passeggeri & Merci & Bagagli
         - Metrics Monitoring & Plots
             - Timelines & Progress Bars for Flights
+            - Simulation Time
+        - Date & Day of Time display on Unity UI
+
+        TESTING
+            - Test App in AR
 
 
         - Valutare Opzioni x Decolli troppo difficili da allocare 

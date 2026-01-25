@@ -1,7 +1,7 @@
 import logging, asyncio
 import websockets
 from datetime import datetime, timezone, timedelta
-import time
+import time, math
 
 from src.handlers.runtime_bus import RuntimeBusHandler
 from src.handlers.setup_bus import SetupBusHandler
@@ -117,7 +117,7 @@ async def flight_scheduler_loop(*, setup_bus, clock, airport_icao: str, poll_sec
                 now.isoformat(),
                 len(items),
                 items,
-                )
+            )
         for flight in flights:
 
             flight_id = getattr(flight, "id", None)
@@ -212,6 +212,17 @@ async def handle_clock_control(payload: dict, *, clock, bus, clock_lock: asyncio
 
     if cmd == "set_time_scale":
         raw = payload.get("time_scale")
+        req_id = payload.get("request_id")
+        before_scale = clock.time_scale
+        before_now = clock.now().astimezone(timezone.utc)
+
+        logging.info("[clock][IN] set_time_scale requested=%r request_id=%r before_scale=%.3f before_now=%s",
+            payload.get("time_scale"),
+            req_id,
+            before_scale,
+            before_now.isoformat(),
+        )
+
         try:
             scale = float(raw)
         except (TypeError, ValueError):
@@ -227,6 +238,17 @@ async def handle_clock_control(payload: dict, *, clock, bus, clock_lock: asyncio
         else:
             clock.set_time_scale(scale)
             sync = clock.make_sync()
+
+        after_scale = clock.time_scale
+        after_now = clock.now().astimezone(timezone.utc)
+
+        logging.info(
+            "[clock][APPLIED] set_time_scale applied=%.3f request_id=%r after_scale=%.3f after_now=%s",
+            scale,
+            req_id,
+            after_scale,
+            after_now.isoformat(),
+        )
         
         await bus.send_command({
             "command": "clock_sync",
@@ -254,18 +276,38 @@ async def handle_clock_control(payload: dict, *, clock, bus, clock_lock: asyncio
     return False
 
 
-async def clock_sync_loop(bus: WsMessageBus, clock: SimulationClock, *, hz: float = 10.0):
+async def clock_sync_loop(bus: WsMessageBus, clock: SimulationClock, *, hz: float = 10.0, clock_lock=None):
     period = 1.0 / hz
     logging.info("Clock sync loop started: hz=%.1f", hz)
+    last_log_t = 0.0
+    log_every_s = 10.0
 
     while True:
-        sync = clock.make_sync()
+        if clock_lock is None:
+            sync = clock.make_sync()
+            sim_now = clock.now()
+        else:
+            async with clock_lock:
+                sync = clock.make_sync()
+                sim_now = clock.now()
+                
         await bus.send_command({
             "command": "clock_sync",
             "sync_id": sync.sync_id,
             "sim_unix_ms": sync.sim_unix_ms,
             "time_scale": sync.time_scale,
         })
+
+        t = time.monotonic()
+        if (t - last_log_t) >= log_every_s:
+            last_log_t = t
+            logging.info(
+                "[clock_sync] sim_now=%s sim_unix_ms=%d time_scale=%.2f sync_id=%d",
+                sim_now.astimezone(timezone.utc).isoformat(timespec="seconds"),
+                sync.sim_unix_ms,
+                sync.time_scale,
+                sync.sync_id,
+            )
 
         await asyncio.sleep(period)
 
