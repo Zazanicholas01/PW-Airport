@@ -58,6 +58,10 @@ async def flight_scheduler_loop(*, setup_bus, clock, airport_icao: str, poll_sec
     while not setup_bus.state.setup_completed:
         await asyncio.sleep(0.1)
 
+    global landing_spawn_position
+    landing_spawn_position = setup_bus.state.landing_spawn_position
+    logging.info("[spawn_scheduler] landing_spawn_position=%s", landing_spawn_position)
+
     scheduler = FlightSlidingWindowScheduler(
         airport_icao=airport_icao,
         window=timedelta(hours=1),
@@ -290,7 +294,7 @@ async def clock_sync_loop(bus: WsMessageBus, clock: SimulationClock, *, hz: floa
             async with clock_lock:
                 sync = clock.make_sync()
                 sim_now = clock.now()
-                
+
         await bus.send_command({
             "command": "clock_sync",
             "sync_id": sync.sync_id,

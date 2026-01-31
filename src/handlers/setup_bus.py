@@ -19,6 +19,7 @@ class SetupState:
         self.prefabs_committed = False
         self.setup_completed = False
         self.path_building = False
+        self.landing_spawn_position = None
 
 
 class SetupBusHandler:
@@ -157,6 +158,21 @@ class SetupBusHandler:
                 self.init_graph.add_spline(spline)
 
                 first = spline.get("firstKnotPos")
+
+                # Save Landing Spawn Position
+                if (
+                    self.state_landing_spawn_position is None
+                    and name == "Spline_LongLanding"
+                    and isinstance(first, dict)
+                    and all(k in first for k in("x", "y", "z"))
+                ):
+                    self.state.landing_spawn_position = {
+                        "x": first.get("x"),
+                        "y": first.get("y"),
+                        "z": first.get("z"),
+                    }
+                    logging.info("[setup] captured landing_spawn_position=%s", self.state.landing_spawn_position)
+
                 if (
                     isinstance(first, dict)
                     and name.startswith("Spline_")
