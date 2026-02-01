@@ -152,8 +152,8 @@ class InitGraph:
                 
                 segments.append({
                     "name": stand_spline,
-                    "t_start": 0.0,
-                    "t_end": 1.0,
+                    "t_start": 1.0,
+                    "t_end": 0.0,
                 })
 
                 landing_id = landing_spline.replace("Spline_", "")

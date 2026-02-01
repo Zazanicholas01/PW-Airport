@@ -15,6 +15,12 @@ from uuid import uuid4
 _engine = get_engine()
 Session = sessionmaker(bind=_engine, future=True)
 
+def get_airplane_prefab(*, airplane_id: str) -> str | None:
+    with Session() as session:
+        return session.execute(
+            select(models.Airplane.model).where(models.Airplane.id == airplane_id)
+        ).scalar_one_or_none()
+
 def link_airplane_to_stand(*, stand_id: str, airplane_id: str) -> None:
     with Session() as session:
         stand = session.get(models.Stand, stand_id)

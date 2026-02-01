@@ -58,5 +58,9 @@ public class SpawnHandler : MonoBehaviour
             registry.Register(command.airplane_id, instance);
             
         Debug.Log($"[SpawnHandler] Spawned '{command.prefab}' at {position} (stand {command.stand_id}).");
+        Debug.Log($"[SpawnHandler] spawn '{command.prefab}' airplane_id={command.airplane_id} " +
+          $"pos={(command.position == null ? "NULL" : $"{command.position.x},{command.position.y},{command.position.z}")} " +
+          $"spawnParent={(spawnParent == null ? "null" : spawnParent.position.ToString())}");
+
     }
 }

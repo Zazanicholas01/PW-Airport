@@ -161,7 +161,7 @@ class SetupBusHandler:
 
                 # Save Landing Spawn Position
                 if (
-                    self.state_landing_spawn_position is None
+                    self.state.landing_spawn_position is None
                     and name == "Spline_LongLanding"
                     and isinstance(first, dict)
                     and all(k in first for k in("x", "y", "z"))

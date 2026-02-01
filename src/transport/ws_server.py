@@ -9,7 +9,7 @@ from src.transport.message_bus import WsMessageBus
 from src.domain.sim_clock import SimulationClock
 from src.schedulers.spawn_scheduler import SpawnScheduler
 from src.schedulers.flight_scheduler import FlightSlidingWindowScheduler
-from src.utils.datetimes import as_utc
+from src.utils.datetimes import as_utc, isoformat_utc_plus1
 from src.path_commands import make_start_path_command
 from src.services.flight_generator import RandomFlightGenerator
 from src.db.engine import get_engine
@@ -24,6 +24,7 @@ from src.db.db_functions import (
     assign_landing_path_for_airplane,
     assign_path_to_airplane,
     create_and_assign_airplane_for_landing_departure,
+    get_airplane_prefab,
     link_airplane_to_stand,
     list_flights_in_sliding_window,
     normalize_flight_type,
@@ -54,7 +55,7 @@ async def incoming_dispatch_loop(bus: WsMessageBus, setup_bus: SetupBusHandler, 
             bus.incoming.task_done()
 
 
-async def flight_scheduler_loop(*, setup_bus, clock, airport_icao: str, poll_seconds: float = 30.0, pw_prefab_store, bus) -> None:
+async def flight_scheduler_loop(*, setup_bus, clock, airport_icao: str, poll_seconds: float = 30.0, pw_prefab_store, bus, clock_lock: asyncio.Lock | None = None,) -> None:
     while not setup_bus.state.setup_completed:
         await asyncio.sleep(0.1)
 
@@ -92,8 +93,16 @@ async def flight_scheduler_loop(*, setup_bus, clock, airport_icao: str, poll_sec
     next_tick = time.monotonic()
     last_window_log = 0.0
 
+    min_poll_real_s = 0.05
+
     while True:
-        now = as_utc(clock.now())
+        if clock_lock is None:
+            now = as_utc(clock.now())
+            time_scale = float(getattr(clock, "time_scale", 1.0))
+        else:
+            async with clock_lock:
+                now = as_utc(clock.now())
+                time_scale = float(getattr(clock, "time_scale", 1.0))
 
         flights = list_flights_in_sliding_window(
             airport_icao=airport_icao,
@@ -117,8 +126,9 @@ async def flight_scheduler_loop(*, setup_bus, clock, airport_icao: str, poll_sec
                 }
                 for f in flights
             ]
-            logging.info("[flight_scheduler] window now=%s flights_in_window=%d flights=%s",
+            logging.info("[flight_scheduler] window now=%s time_scale=%.2f flights_in_window=%d flights=%s",
                 now.isoformat(),
+                time_scale,
                 len(items),
                 items,
             )
@@ -128,7 +138,7 @@ async def flight_scheduler_loop(*, setup_bus, clock, airport_icao: str, poll_sec
             if not isinstance(flight_id, str) or not flight_id:
                 continue
 
-            # DEPARTURE
+            # DEPARTURE - In Window from Departure Time
             if scheduler.should_schedule_departure(flight=flight, now_utc=now):
                 required_type = normalize_flight_type(getattr(flight, "tipo", None))
                 assignment = assign_airplane_to_departure_flight(flight_id=flight_id, required_type=required_type)
@@ -146,7 +156,7 @@ async def flight_scheduler_loop(*, setup_bus, clock, airport_icao: str, poll_sec
                 logging.info("[flight_scheduler] departure assigned airplane_id=%s stand_id=%s flight_id=%s", airplane_id, stand_id, flight_id)
                 continue
 
-            # LANDING
+            # LANDING - In Window for Landing Flights on Departure Time
             if scheduler.should_assign_landing_plane(flight=flight, now_utc=now):
                 logging.info("[flight_scheduler] landing_dep: due flight_id=%s dep=%s", flight_id, getattr(flight, "departure_time", None))
 
@@ -162,7 +172,7 @@ async def flight_scheduler_loop(*, setup_bus, clock, airport_icao: str, poll_sec
                 logging.info("[flight_scheduler] landing_dep: departed flight_id=%s -> Ongoing", flight_id)
                 continue
 
-            # LANDING: arrival_time window -> reserve stand + link plane to stand + set Landing
+            # LANDING RESERVATION - In Window on Arrival Time for Landing 
             if scheduler.should_reserve_landing_stand(flight=flight, now_utc=now):
                 stand_id = reserve_stand_and_link_airplane_for_landing_arrival(flight_id=flight_id)
                 if stand_id is None:
@@ -179,7 +189,7 @@ async def flight_scheduler_loop(*, setup_bus, clock, airport_icao: str, poll_sec
                 logging.info("[flight_scheduler] landing_arr: stand_id=%s reserved + plane linked flight_id=%s", stand_id, flight_id)
                 continue
 
-            # START DEPARTURE MOVEMENT
+            # START DEPARTURE MOVEMENT - Departure Time > Now
             if scheduler.should_start_departure_movement(flight=flight, now_utc=now):
                 airplane_id = getattr(flight, "airplane_id", None)
                 if isinstance(airplane_id, str):
@@ -191,19 +201,45 @@ async def flight_scheduler_loop(*, setup_bus, clock, airport_icao: str, poll_sec
                         logging.info("[flight_scheduler] start_path departure airplane_id=%s flight_id=%s", airplane_id, flight_id)
                 continue
 
+            # SPAWN LANDING PLANE - 1 Minute Before Arrival Time
+            if scheduler.should_spawn_landing_plane(flight=flight, now_utc=now):
+                airplane_id = getattr(flight, "airplane_id", None)
+                if not isinstance(airplane_id, str) or not airplane_id:
+                    continue
+
+                prefab = get_airplane_prefab(airplane_id=airplane_id)
+                if not isinstance(prefab, str) or not prefab:
+                    logging.warning("[flight_scheduler] Landing spawn: missing prefab airplane_id=%s flight_id=%s", airplane_id, flight_id)
+                elif not isinstance(landing_spawn_position, dict):
+                    logging.warning("[flight_scheduler] landing_spawn: landing_spawn_position not set; cannot spawn flight_id=%s", flight_id)
+                else:
+                    logging.info(
+                        "[landing_spawn][OUT] flight_id=%s airplane_id=%s prefab=%s pos=%s",
+                        flight_id, airplane_id, prefab, landing_spawn_position,
+                    )
+
+                    await bus.send_command({
+                        "command": "spawn_plane",
+                        "prefab": prefab,
+                        "stand_id": f"landing:{flight_id}",
+                        "position": landing_spawn_position,
+                        "airplane_id": airplane_id,
+                        "spawn_context": "landing",
+                    })
+                    logging.info("[flight_scheduler] landing_spawn: spawned airplane_id=%s flight_id=%s", airplane_id, flight_id)
+
             # START LANDING MOVEMENT
             if scheduler.should_start_landing_approach(flight=flight, now_utc=now):
                 airplane_id = getattr(flight, "airplane_id", None)
                 if isinstance(airplane_id, str):
                     cmd = make_start_path_command(airplane_id=airplane_id)
-                    logging.info("[start_path][OUT] flight_id=%s airplane_id=%s route_id=%s segments=%d now=%s",
-             flight_id, cmd["airplane_id"], cmd["route_id"], len(cmd["segments"]), now.isoformat())
                     if cmd is not None:
                         await bus.send_command(cmd)
-                        logging.info("[flight_scheduler] start_path landing airplane_id=%s flight_id=%s", airplane_id, flight_id)
-                continue            
 
-        next_tick += poll_seconds
+        poll_real_s = poll_seconds / max(time_scale, 1.0)
+        poll_real_s = max(min_poll_real_s, poll_real_s)
+
+        next_tick += poll_real_s
         await asyncio.sleep(max(0.0, next_tick - time.monotonic()))
 
 
@@ -224,7 +260,7 @@ async def handle_clock_control(payload: dict, *, clock, bus, clock_lock: asyncio
             payload.get("time_scale"),
             req_id,
             before_scale,
-            before_now.isoformat(),
+            isoformat_utc_plus1(before_now, timespec="seconds"),
         )
 
         try:
@@ -251,7 +287,7 @@ async def handle_clock_control(payload: dict, *, clock, bus, clock_lock: asyncio
             scale,
             req_id,
             after_scale,
-            after_now.isoformat(),
+            isoformat_utc_plus1(after_now, timespec="seconds"),
         )
         
         await bus.send_command({
@@ -307,7 +343,7 @@ async def clock_sync_loop(bus: WsMessageBus, clock: SimulationClock, *, hz: floa
             last_log_t = t
             logging.info(
                 "[clock_sync] sim_now=%s sim_unix_ms=%d time_scale=%.2f sync_id=%d",
-                sim_now.astimezone(timezone.utc).isoformat(timespec="seconds"),
+                isoformat_utc_plus1(sim_now, timespec="seconds"),
                 sync.sim_unix_ms,
                 sync.time_scale,
                 sync.sync_id,
@@ -376,6 +412,7 @@ async def echo_handler(websocket, pw_prefab_store, pw_world_state, pw_graph) -> 
             poll_seconds=30.0,
             pw_prefab_store=pw_prefab_store,
             bus=bus,
+            clock_lock=clock_lock,
         )
     )
 
