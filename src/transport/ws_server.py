@@ -14,6 +14,7 @@ from src.path_commands import make_start_path_command
 from src.services.flight_generator import RandomFlightGenerator
 from src.db.engine import get_engine
 from src.db import models
+from src.utils.event_log import append_event
 
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy import select, func
@@ -442,6 +443,11 @@ async def schedule_initial_spawns(bus: WsMessageBus, setup_bus: SetupBusHandler,
 
     while not setup_bus.state.setup_completed:
         await asyncio.sleep(0.1)
+
+    append_event({
+        "type": "simulation_start",
+        "message": "hello",
+    })
     
     scheduler = SpawnScheduler(prefab_store=pw_prefab_store)
     commands = scheduler.plan_initial_spawns()

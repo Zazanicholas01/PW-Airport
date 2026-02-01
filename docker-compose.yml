@@ -134,6 +134,7 @@ services:
     working_dir: /app
     volumes:
       - ./:/app:ro
+      - ./data/logs:/logs
     environment:
       POSTGRES_HOST: postgres
       POSTGRES_PORT: 5432
@@ -141,6 +142,7 @@ services:
       POSTGRES_USER: airport
       POSTGRES_PASSWORD: airport
       PYTHONPATH: /app
+      LOG_DIR: /logs
     entrypoint: >
       sh -c "pip install --no-cache-dir -r /app/requirements.txt && python /app/scripts/startup.py"
     restart: on-failure
@@ -148,3 +150,9 @@ services:
 volumes:
   postgres-data:
   metabase-data:
+  logs:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ./data/logs
