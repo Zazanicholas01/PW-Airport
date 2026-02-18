@@ -36,7 +36,7 @@ from src.db.db_functions import (
 setup_bus: SetupBusHandler | None = None
 
 
-async def incoming_dispatch_loop(bus: WsMessageBus, setup_bus: SetupBusHandler, runtime_bus: RuntimeBusHandler, *, clock, clock_lock=None):
+async def incoming_dispatch_loop(bus: WsMessageBus, setup_bus: SetupBusHandler, runtime_bus: RuntimeBusHandler, *, clock, clock_lock=None, clock_changed: asyncio.Event | None = None):
 
     """Smista i messaggi in entrata verso i vari handler"""
 
@@ -44,7 +44,7 @@ async def incoming_dispatch_loop(bus: WsMessageBus, setup_bus: SetupBusHandler, 
         payload = await bus.incoming.get()
         try:
             if isinstance(payload, dict) and await handle_clock_control(
-                payload, clock=clock, bus=bus, clock_lock=clock_lock
+                payload, clock=clock, bus=bus, clock_lock=clock_lock, wake_event=clock_changed
             ):
                 continue
 
@@ -56,7 +56,17 @@ async def incoming_dispatch_loop(bus: WsMessageBus, setup_bus: SetupBusHandler, 
             bus.incoming.task_done()
 
 
-async def flight_scheduler_loop(*, setup_bus, clock, airport_icao: str, poll_seconds: float = 30.0, pw_prefab_store, bus, clock_lock: asyncio.Lock | None = None,) -> None:
+async def flight_scheduler_loop(
+    *, 
+    setup_bus, 
+    clock, 
+    airport_icao: str, 
+    poll_seconds: float = 30.0, 
+    pw_prefab_store, 
+    bus, 
+    clock_lock: asyncio.Lock | None = None,
+    wake_event: asyncio.Event | None = None) -> None:
+
     while not setup_bus.state.setup_completed:
         await asyncio.sleep(0.1)
 
@@ -91,9 +101,7 @@ async def flight_scheduler_loop(*, setup_bus, clock, airport_icao: str, poll_sec
     RandomFlightGenerator(Session).generate_flights(2, ensure_in_window=True, window=scheduler.window)
     logging.info("[flight_scheduler] generated debug flights (n=2)")
 
-    next_tick = time.monotonic()
     last_window_log = 0.0
-
     min_poll_real_s = 0.05
 
     while True:
@@ -240,11 +248,23 @@ async def flight_scheduler_loop(*, setup_bus, clock, airport_icao: str, poll_sec
         poll_real_s = poll_seconds / max(time_scale, 1.0)
         poll_real_s = max(min_poll_real_s, poll_real_s)
 
-        next_tick += poll_real_s
-        await asyncio.sleep(max(0.0, next_tick - time.monotonic()))
+        if wake_event is None:
+            await asyncio.sleep(poll_real_s)
+        else:
+            try:
+                await asyncio.wait_for(wake_event.wait(), timeout=poll_real_s)
+                wake_event.clear()
+            except asyncio.TimeoutError:
+                pass
 
 
-async def handle_clock_control(payload: dict, *, clock, bus, clock_lock: asyncio.Lock | None = None) -> bool:
+async def handle_clock_control(
+    payload: dict, 
+    *, 
+    clock, 
+    bus, 
+    clock_lock: asyncio.Lock | None = None, 
+    wake_event: asyncio.Event | None = None) -> bool:
 
     cmd = payload.get("command")
     if not isinstance(cmd, str):
@@ -280,6 +300,9 @@ async def handle_clock_control(payload: dict, *, clock, bus, clock_lock: asyncio
             clock.set_time_scale(scale)
             sync = clock.make_sync()
 
+        if wake_event is not None:
+            wake_event.set()
+
         after_scale = clock.time_scale
         after_now = clock.now().astimezone(timezone.utc)
 
@@ -312,6 +335,10 @@ async def handle_clock_control(payload: dict, *, clock, bus, clock_lock: asyncio
                 clock.set_sim_time(new_sim)
         else:
             clock.set_sim_time(new_sim)
+
+        if wake_event is not None:
+            wake_event.set()
+
         return True
     
     return False
@@ -362,9 +389,6 @@ async def echo_handler(websocket, pw_prefab_store, pw_world_state, pw_graph) -> 
     peer = websocket.remote_address
     logging.info("Client connected: %s", peer)
 
-    runtime_bus = RuntimeBusHandler(pw_prefab_store)
-    await runtime_bus.start()
-
     bus = WsMessageBus()
     await bus.start(websocket=websocket)
 
@@ -396,15 +420,36 @@ async def echo_handler(websocket, pw_prefab_store, pw_world_state, pw_graph) -> 
     clock = SimulationClock(sim_start=datetime.now(timezone.utc), time_scale=1.0)
     clock_lock = asyncio.Lock()
 
+    clock_changed = asyncio.Event()
+
+    runtime_bus = RuntimeBusHandler(
+        pw_prefab_store,
+        clock=clock,
+        clock_lock=clock_lock,
+        clock_changed=clock_changed,
+    )
+    await runtime_bus.start()
+
     airport_icao = getattr(pw_graph, "airport_id", None)
     if not isinstance(airport_icao, str) or not airport_icao:
         raise RuntimeError("InitGraph airport_id missing / invalid")
 
     logging.info("Clock init: sim_start=%s time_scale=%.2f", clock.now().isoformat(), clock.time_scale)
 
-    dispatch_task = asyncio.create_task(incoming_dispatch_loop(bus, setup_bus, runtime_bus, clock=clock, clock_lock=clock_lock))
+    dispatch_task = asyncio.create_task(
+        incoming_dispatch_loop(
+            bus, 
+            setup_bus, 
+            runtime_bus, 
+            clock=clock, 
+            clock_lock=clock_lock,
+            clock_changed=clock_changed,
+        )
+    )
+
     spawn_task = asyncio.create_task(schedule_initial_spawns(bus, setup_bus, pw_prefab_store))
     clock_task = asyncio.create_task(clock_sync_loop(bus, clock, hz=10.0))
+
     flight_task = asyncio.create_task(
         flight_scheduler_loop(
             setup_bus=setup_bus,
@@ -414,6 +459,7 @@ async def echo_handler(websocket, pw_prefab_store, pw_world_state, pw_graph) -> 
             pw_prefab_store=pw_prefab_store,
             bus=bus,
             clock_lock=clock_lock,
+            wake_event=clock_changed,
         )
     )
 

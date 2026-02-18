@@ -5,9 +5,13 @@ using UnityEngine.Splines;
 public class SplineFollower : MonoBehaviour {
 
     [SerializeField] private SimClockClient clock;
-    [SerializeField] private bool orientToSpline = false;
+    [SerializeField] private bool orientToSpline = true;
     [SerializeField] private Vector3 up = default;
     [SerializeField] private int arcSamples = 200;
+
+    public event Action<string, int> OnPathCompleted;
+    private string airplaneId;
+    private int routeId;
 
     private MessageDispatcher.PathSegment[] segments;
     private float speed;
@@ -31,7 +35,11 @@ public class SplineFollower : MonoBehaviour {
         if (up == default) up = Vector3.up;
     }
 
-    public void SetPath(MessageDispatcher.PathSegment[] newSegments, float newSpeed) {
+    public void SetPath(MessageDispatcher.PathSegment[] newSegments, float newSpeed, string newAirplaneId, int newRouteId) {
+        
+        airplaneId = newAirplaneId;
+        routeId = newRouteId;
+        
         segments = newSegments;
         speed = Mathf.Max(0f, newSpeed);
         segIndex = -1;
@@ -53,7 +61,10 @@ public class SplineFollower : MonoBehaviour {
         hasPrevEnd = false;
         prevSplineName = null;
         prevEndT = 0f;
-        hasLastSim = false;        
+        hasLastSim = false;
+
+        airplaneId = null;
+        routeId = 0;     
     }
 
     public Func<string, SplineContainer> ResolveSplineByName { get; set; }
@@ -65,8 +76,10 @@ public class SplineFollower : MonoBehaviour {
         float dt = GetSimDeltaSeconds();
         if (dt <= 0f) return;
 
-        if (segIndex < 0 || currentContainer == null) {
+        if (segIndex < 0 || currentContainer == null || currentTable.Equals(default(ArcLengthTable))) {
+
             if (!BeginSegment(0)) { Stop(); return; }
+
         }
 
         float reaminingDt = dt;
@@ -91,7 +104,17 @@ public class SplineFollower : MonoBehaviour {
                 float usedDt = reaminingDist / Mathf.Max(0.0001f, speed);
                 reaminingDt = Mathf.Max(0f, reaminingDt - usedDt);
 
-                if (!BeginSegment(segIndex + 1)) {
+                int next = segIndex + 1;
+
+                if (segments == null || next >= segments.Length) {
+                    var doneAirplaneId = airplaneId;
+                    var doneRouteId = routeId;
+                    Stop();
+                    OnPathCompleted?.Invoke(doneAirplaneId, doneRouteId);
+                    return;
+                }
+
+                if (!BeginSegment(next)) {
                     Stop();
                     return;
                 }

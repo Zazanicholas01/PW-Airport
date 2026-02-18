@@ -45,8 +45,12 @@ public class StartPathHandler : MonoBehaviour {
 
         follower.ResolveSplineByName = FindSpline;
 
+        var reporter = plane.GetComponent<PathCompletionReporter>();
+        if (reporter == null) reporter = plane.AddComponent<PathCompletionReporter>();
+        reporter.Attach(follower);
+
         var speed = cmd.speed > 0f ? cmd.speed : 5f;
-        follower.SetPath(cmd.segments, speed);
+        follower.SetPath(cmd.segments, speed, cmd.airplane_id, cmd.route_id);
     }
 
     private SplineContainer FindSpline(string name) {
@@ -75,5 +79,12 @@ public class StartPathHandler : MonoBehaviour {
         }
 
         return total;
+    }
+
+    private static Vector3 EvalWorld(SplineContainer container, float t)
+    {
+        if (container == null || container.Spline == null) return Vector3.zero;
+        var local = SplineUtility.EvaluatePosition(container.Spline, t);
+        return container.transform.TransformPoint((Vector3)local);
     }
 }
