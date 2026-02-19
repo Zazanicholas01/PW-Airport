@@ -98,7 +98,7 @@ async def flight_scheduler_loop(
             break
         await asyncio.sleep(0.1)
 
-    RandomFlightGenerator(Session).generate_flights(2, ensure_in_window=True, window=scheduler.window)
+    RandomFlightGenerator(Session).generate_flights(20, ensure_in_window=True, window=scheduler.window)
     logging.info("[flight_scheduler] generated debug flights (n=2)")
 
     last_window_log = 0.0
@@ -345,10 +345,15 @@ async def handle_clock_control(
 
 
 async def clock_sync_loop(bus: WsMessageBus, clock: SimulationClock, *, hz: float = 10.0, clock_lock=None):
+    
     period = 1.0 / hz
     logging.info("Clock sync loop started: hz=%.1f", hz)
+
     last_log_t = 0.0
     log_every_s = 10.0
+
+    last_evt_t = 0.0
+    evt_every_s = 0.5
 
     while True:
         if clock_lock is None:
@@ -367,6 +372,8 @@ async def clock_sync_loop(bus: WsMessageBus, clock: SimulationClock, *, hz: floa
         })
 
         t = time.monotonic()
+
+        # Clock Sync Logging in the CLI
         if (t - last_log_t) >= log_every_s:
             last_log_t = t
             logging.info(
@@ -376,6 +383,16 @@ async def clock_sync_loop(bus: WsMessageBus, clock: SimulationClock, *, hz: floa
                 sync.time_scale,
                 sync.sync_id,
             )
+
+        # Event Sync Logging in the Web UI
+        if (t - last_evt_t) >= evt_every_s:
+            last_evt_t = t
+            append_event({
+                "type": "clock",
+                "sim_unix_ms": sync.sim_unix_ms,
+                "time_scale": sync.time_scale,
+                "sync_id": sync.sync_id,
+            })
 
         await asyncio.sleep(period)
 

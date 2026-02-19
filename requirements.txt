@@ -3,3 +3,5 @@ websockets
 sqlalchemy
 psycopg2-binary
 uuid
+fastapi
+uvicorn

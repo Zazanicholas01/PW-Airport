@@ -160,9 +160,12 @@ NEXT REAL TIME:
     - COSA MANCA
         - Arc Length Mapping & Starting Rotation Mapping
         - Allungare Piste di Atterraggio
-        - Reset Aerei Parcheggiati
+        - Reset Aerei Parcheggiati -- (DONE)
         - Release della piazzola dopo il decollo dell'aereo
-        
+
+        - Generazione dei viaggi dovrebbe essere esempio (24 ore da adesso)
+        e non nel giorno stesso (Problemi con cambio della giornata dopo mezzanotte)
+
         - RADAR
             - Parcheggi
             - Torre Radio e gestione Radar
@@ -170,7 +173,7 @@ NEXT REAL TIME:
         - BUS
             - Spline & Animazioni & Gestione Veicoli di terra all'interno del Workflow
             - Gestione precedenze lungo Master Spline (Riservazioni e priorità)
-            - Implementare Time Lapse & Pausa soprattutto x Debug
+            - Implementare Time Lapse & Pausa soprattutto x Debug -- (DONE)
             - Passeggeri & Merci & Bagagli
         - Metrics Monitoring & Plots
             - Timelines & Progress Bars for Flights
