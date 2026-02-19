@@ -1,8 +1,28 @@
+"""
+init_graph.py
+
+Purpose:
+  - Build "path recipes" (ordered spline segments) that Unity can follow to move planes:
+      * Landing spline -> MasterSpline slice -> Stand spline
+      * Stand spline -> MasterSpline slice -> Departure spline
+
+Inputs:
+  - `schema_nodi.json` (node/link schema) defines which stand spline is reachable at each master-knot index.
+  - `master_spline` payload (Unity spline export) provides knot "x" parameters used to compute normalized t-ranges.
+
+Output:
+  - `self.paths`: list of dicts {name, source, destination, segments[]} where segments are Unity spline + t ranges.
+"""
+
+import logging
 import json
 from pathlib import Path
 
+logger = logging.getLogger(__name__)
+
 class InitGraph:
     def __init__(self, airport_id: str = "LIAG"):
+
         self.master_nodes = []
         self.master_edges = []
         self.master_spline = []
@@ -10,32 +30,39 @@ class InitGraph:
         self.airport_id = airport_id
         self.master_links = {}
 
-    # Parsing splines without nodes
-    # Constructing master nodes and edges from master spline
+    # ==================================================================================================================
+    #
+    #  HIGH - LEVEL FLOW
+    #   1) Add Master Spline --> Stores the master spline payload
+    #   2) Construct Master Links --> Loads JSON schema and builds master links mapping
+    #   3) Extract T Master Edges --> Converts master spline knot positions into T intermediate ranges
+    #   4) Build Paths --> Combines Landing / Stand / Departure splines with Master Spline edges into full route segments
+    # 
+    # ==================================================================================================================
 
     def add_splines(self, payload) -> None:
         """Add many splines from the given payload."""
-
         self.splines.extend(payload)
     
+
     def add_spline(self, spline) -> None:
         """Add a single spline payload."""
-
         self.splines.append(spline)
     
+
     def print_splines(self) -> None:
         """Print current splines for debugging."""
+        logger.info("Graph splines: %s", self.splines)
+    
 
-        print("Graph splines:")
-        print(self.splines)
-    
     def print_master_spline(self) -> None:
-        print("Master Spline Knots: ")
-        print(self.master_spline)
+        logger.info("Master Spline Knots: %s", self.master_spline)
     
+
     def add_master_spline(self, spline) -> None:
         """Add the master spline payload."""
 
+        # Store master spline payload from Unity and build data structures for master links and master edges
         self.master_spline = spline
         self.construct_master_links()
         self.extract_t_master_edges()
@@ -43,42 +70,53 @@ class InitGraph:
     def construct_master_links(self) -> None:
         """Construct a list of links between nodes and other splines"""
 
+        # Locate and load the JSON schema that describes links between master knots and stand splines
         schema_path = Path(__file__).resolve().parent.parent / "schema_nodi.json"
         try:
             with schema_path.open('r', encoding='utf-8') as f:
                 links_schema = json.load(f)
+
         except FileNotFoundError as e:
-            print("Schema file not found:", e)
-            return
-        except json.JSONDecodeError as e:
-            print("Error decoding JSON schema:", e)
+            logger.warning("Schema file not found: %s", schema_path, exc_info=True)
             return
         
+        except json.JSONDecodeError as e:
+            logger.warning("Error decoding JSON schema: %s", schema_path, exc_info=True)
+            return
+        
+        # Transform schema links into Unity spline names and store them by node index.
+        # Schema links: [ "O1", "P3" ] -> stored as [ "Spline_O1", "Spline_P3" ]
         for i, node in enumerate(links_schema.get('nodes', [])):
             links = node.get('links', [])
             links = [f"Spline_{link}" for link in links]
             self.master_links[i] = links
 
-        print("Master Links Constructed: ", self.master_links)
+        logger.info("Master Links Constructed: %s", self.master_links)
 
 
     def extract_t_master_edges(self) -> None:
         """Extract the t parameters for master edges from the master spline."""
 
+        # Read knot entries from the master spline payload.
         knots = self.master_spline.get("knotEntries", [])
         if not knots or len(knots) < 2:
             return None, None
         try:
+            # Extract X coordinates used to calculate master spline lengths
             x_coords = [knot.get("parameters", [])[0]["x"] for knot in knots]
         except (KeyError, IndexError, TypeError):
             return
 
+        # Compute master spline length based on X coords
         ms_length = x_coords[-1] - x_coords[0]
         if ms_length <= 0:
             return
         
+        # Calculate intermediate T values along the master spline
         t_values = [(x - x_coords[0]) / ms_length for x in x_coords]
         
+        # Convert T steps into sliced edges of the master spline
+        # Example --> Edge 2-3 --> T_start 0.1 / T_end 0.25
         for i, (t_start, t_end) in enumerate(zip(t_values, t_values[1:]), start=1):
             self.master_edges.append(
                 {
@@ -88,7 +126,7 @@ class InitGraph:
                 }
             )
         
-        print("Master Edges: ", self.master_edges)
+        logger.info("Master Edges: %s", self.master_edges)
 
 
     def build_paths(self) -> None:
@@ -97,24 +135,33 @@ class InitGraph:
         def find_master_edges(start_link, end_link):
             """Returns the slicing of master edges between start link and end link"""
 
+            # Substring master spline based on start and end knot
+            # Example --> Start 3 - End 6 --> Return master spline [3:6]
             if end_link == len(self.master_edges):
                 return self.master_edges[start_link:]
             
             return self.master_edges[start_link:end_link]
 
-        # Loop Atterraggio Lungo / Medio / Corto
+        # Define available stands / landing splines / departure splines
         available_stands = ["O1", "O2", "O3", "O4", "O5", "P1", "P2", "P3", "C1", "C2", "C3"]
         available_landings = ["LongLanding", "MediumLanding", "ShortLanding"]
         available_departing = "Departure"
 
+        # Convert logical IDs into Unity naming conventions.
         available_stands = [f"Spline_{x}" for x in available_stands]
         available_landings = [f"Spline_{x}" for x in available_landings]
         available_departing = [f"Spline_Departure"]
 
+        # Build all landing paths:
+        # LandingSpline -> MasterSpline slice -> StandSpline (reversed)
         paths = []
         start_link = 0
         for landing_spline in available_landings:
+
+            # For each landing spline, create a path to every available stand.
             for stand_spline in available_stands:
+                
+                # Find which master knot index connects to this stand spline via schema links.
                 end_link = None
                 for n, link in self.master_links.items():
                     if stand_spline in link:
@@ -124,11 +171,17 @@ class InitGraph:
                 if end_link is None:
                     continue
                 
+                # Compute the master spline slice between the landing index and the stand index.
+                # !!! EDGE CASE !!! - Spline C3 needs to be reversed
                 if stand_spline == "Spline_C3":
                     master_edges = find_master_edges(start_link=end_link, end_link=start_link)
                 else:
                     master_edges = find_master_edges(start_link=start_link, end_link=end_link)
 
+                # Build final path
+                # - Landing Spline Full (0 --> 1)
+                # - Master Spline Edges
+                # - Stand Spline Reversed (1 --> 0)
                 segments = []
                 segments.append({
                     "name": landing_spline,
@@ -156,10 +209,12 @@ class InitGraph:
                     "t_end": 0.0,
                 })
 
+                # Remove prefixes to build path naming convention
                 landing_id = landing_spline.replace("Spline_", "")
                 stand_id = stand_spline.replace("Spline_", "")
                 path_name = f"Path_{landing_id}_{stand_id}"
                 
+                # Append to paths list
                 paths.append({
                     "name": path_name,
                     "source": landing_id,
@@ -167,16 +222,19 @@ class InitGraph:
                     "segments": segments,
                 })
             
+            # Advance the next landing spline index
             start_link += 1
 
         self.landing_paths = paths
         paths = []
 
-        # Loop Decollo
+        # Build all departing paths:
+        #   StandSpline -> MasterSpline slice -> DepartureSpline
         for stand_spline in available_stands:
             start_link = None
             end_link = len(self.master_edges)
 
+            # Find the master knot index that connects to this stand spline.
             for n, link in self.master_links.items():
                 if stand_spline in link:
                     start_link = int(n)
@@ -184,15 +242,18 @@ class InitGraph:
                 if start_link is None:
                     continue
                     
+            # Slice the master spline from the stand index to the end (towards Departure).
             master_edges = find_master_edges(start_link=start_link, end_link=end_link)
             segments = []
 
+            # Stand spline (0 --> 1)
             segments.append({
                 "name": stand_spline,
                 "t_start": 0.0,
                 "t_end": 1.0
             })
 
+            # Append the master spline slice
             if master_edges:
                 segments.append({
                     "name": "MasterSpline",
@@ -200,12 +261,14 @@ class InitGraph:
                     "t_end": master_edges[-1]["t_end"]
                 })
             
+            # Departure Spline (0 --> 1)
             segments.append({
                 "name": "Spline_Departure",
                 "t_start": 0.0,
                 "t_end": 1.0
             })
 
+            # Remove prefixes for path naming convention
             departing_id = "Departure"
             stand_id = stand_spline.replace("Spline_", "")
             path_name = f"Path_{stand_id}_{departing_id}"
@@ -217,5 +280,6 @@ class InitGraph:
                 "segments": segments
             })
 
+        # Expose the final combined path list
         self.departing_paths = paths
         self.paths = self.landing_paths + self.departing_paths
