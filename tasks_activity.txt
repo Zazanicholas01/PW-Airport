@@ -190,3 +190,5 @@ NEXT REAL TIME:
         - JSON Backups & Snapshots del World State
         - Multi-Client Architecture Switch
         - Richieste Viaggi Dinamici
+
+uvicorn src.web.dashboard_app:app --reload --host 0.0.0.0 --port 8000

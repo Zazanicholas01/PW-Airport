@@ -14,16 +14,35 @@ _engine = get_engine()
 SessionLocal = sessionmaker(bind=_engine, future=True)
 
 def ensure_airplane_row(*, airplane_id: str | None, prefab: str) -> str:
+    
+    # Apre sessione DB e la chiude automaticamente alla fine
     with SessionLocal() as session:
+
+        # Check su DB se esiste già l'aereo, se si ritorna l'ID stesso 
+        # altrimenti lo crea tramite UUID
         if airplane_id:
             existing = session.get(models.Airplane, airplane_id)
+
             if existing is not None:
                 return airplane_id
         else:
             airplane_id = str(uuid4())
 
-        range_value = range_for_airplane_model(prefab)
-        airplane_type = type_for_airplane_model(prefab)
+        # Utilizza funzioni da utils/mapping per range e tipo dell'aereo in base al prefab
+        try:
+            range_value = range_for_airplane_model(prefab)
+            airplane_type = type_for_airplane_model(prefab)
+        except ValueError:
+            logging.warning("Unknown prefab=%r; using defaults", prefab)
+
+            # FALLBACK
+            range_value, airplane_type = "Medium", "Passengers"
+
+
+        # Crea il record per creare un aereo basato sui models
+            #  ID --> Esistente o generato
+            #  type, range, model --> Derivati da prefab e mapping
+            #  Other fields --> DEFAULT
 
         airplane = models.Airplane(
             id=airplane_id,
@@ -38,6 +57,8 @@ def ensure_airplane_row(*, airplane_id: str | None, prefab: str) -> str:
             airline_code=None,
             route_id=None,
         )
+
+        # Aggiunge in DB, log e ritorna l'ID dell'aereo creato
         session.add(airplane)
         session.commit()
         logging.info("[db] Airplane created id=%s prefab=%s", airplane_id, prefab)

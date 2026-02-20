@@ -1,40 +1,33 @@
-def range_for_airplane_model(model: str) -> str:
-    m = (model or "").strip().lower()
 
-    corto = {
-        "turboelica",
-        "jet",
-        "b2_stealth",
-        "aeroplanoleggendario",
-        "turboelica_cargo",
-    }
+def _norm(model: str | None) -> str:
+    return (model or "").strip().lower()
 
-    medio = {
-        "e190",
-        "a320",
-        "b737",
-        "b737_cargo",
-    }
+_MODEL_INFO: dict[str, tuple[str, str]] = {
+    "turboelica": ("Passengers", "Short"),
+    "jet": ("Passengers", "Short"),
+    "b2_stealth": ("Passengers", "Short"),
+    "aeroplanoleggendario": ("Passengers", "Short"),
+    "turboelica_cargo": ("Cargo", "Short"),
+    "e190": ("Passengers", "Medium"),
+    "a320": ("Passengers", "Medium"),
+    "b737": ("Passengers", "Medium"),
+    "b737_cargo": ("Cargo", "Medium"),
+    "b787": ("Passengers", "Long"),
+    "beluga": ("Cargo", "Long"),
+}
 
-    lungo = {
-        "b787",
-        "beluga",
-    }
+def range_for_airplane_model(model: str | None) -> str:
 
-    if m in corto:
-        return "Short"
-    if m in medio:
-        return "Medium"
-    if m in lungo:
-        return "Long"
-    
-    raise ValueError("Unknown airplane model for range mapping")
+    model = _norm(model)
+    try:
+        return _MODEL_INFO[model][1]
+    except KeyError:
+        raise ValueError(f"Unknown airplane model: {model!r}") from None
 
-def type_for_airplane_model(model: str) -> str:
-    m = (model or "").strip().lower()
+def type_for_airplane_model(model: str | None) -> str:
 
-    cargo = {"turboelica_cargo", "b737_cargo", "beluga"}
-
-    if m in cargo:
-        return "Cargo"
-    return "Passengers"
+    model = _norm(model)
+    try:
+        return _MODEL_INFO[model][0]
+    except KeyError:
+        raise ValueError(f"Unknown airplane model: {model!r}") from None
