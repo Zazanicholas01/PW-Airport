@@ -24,13 +24,15 @@ class RandomFlightGenerator:
     """
 
     def __init__(self, session_factory, *, rng: random.Random | None = None):
-        #self.flights = []
         self.personal_airport = PERSONAL_AIRPORT
         self.Session = session_factory or sessionmaker(bind=get_engine(), future=True)
         self.rng = rng or random.Random()
         # self._airports = []
         # self._airlines = []
         # self._terminals = []
+        # self.flights = []
+        
+        # CACHING with these lists
     
 
     def load_metadata(self, session):

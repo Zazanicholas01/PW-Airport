@@ -67,9 +67,14 @@ def list_flights_in_sliding_window(*, airport_icao: str, now_utc: datetime, wind
                     # ARRIVAL
                     and_(
                         models.Flight.destination == airport_icao,
+                        models.Flight.arrival_time.is_not(None),
+                        models.Flight.arrival_time <= upper,
+                    ),
+                    and_(
+                        models.Flight.destination == airport_icao,
                         models.Flight.departure_time.is_not(None),
                         models.Flight.departure_time <= upper,
-                    ),
+                    )
                 )
             )
         )
@@ -85,7 +90,7 @@ def list_flights_in_sliding_window(*, airport_icao: str, now_utc: datetime, wind
         )
         base.extend(list(session.scalars(q_dep_sched)))
 
-        q_sched = (
+        q_arrival_scheduled = (
             select(models.Flight)
             .where(models.Flight.destination == airport_icao)
             .where(models.Flight.status == "Scheduled")
@@ -93,27 +98,18 @@ def list_flights_in_sliding_window(*, airport_icao: str, now_utc: datetime, wind
             .where(models.Flight.departure_time.is_not(None))
             .where(models.Flight.departure_time <= upper)
         )
-        base.extend(list(session.scalars(q_sched)))
+        base.extend(list(session.scalars(q_arrival_scheduled)))
 
-        q_landing = (
+        q_arrival = (
             select(models.Flight)
             .where(models.Flight.destination == airport_icao)
-            .where(models.Flight.status == "Landing")
+            .where(models.Flight.status.in_(("Landing", "Ongoing", "Scheduled", "Disembarking")))
             .where(models.Flight.airplane_id.is_not(None))
             .where(models.Flight.arrival_time.is_not(None))
             .where(models.Flight.arrival_time <= upper)
         )
-        base.extend(list(session.scalars(q_landing)))
+        base.extend(list(session.scalars(q_arrival)))
 
-        q2 = (
-            select(models.Flight)
-            .where(models.Flight.destination == airport_icao)
-            .where(models.Flight.status == "Ongoing")
-            .where(models.Flight.airplane_id.is_not(None))
-            .where(models.Flight.arrival_time.is_not(None))
-            .where(models.Flight.arrival_time <= upper)
-        )
-        base.extend(list(session.scalars(q2)))
         return base
 
 def normalize_flight_type(value: str | None) -> str | None:

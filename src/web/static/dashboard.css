@@ -1,0 +1,250 @@
+body {
+  font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto;
+  margin: 0;
+  background: url("/static/background-airport.png") no-repeat center center fixed;
+  background-size: cover;
+  color: #0b1220;
+  position: relative;
+}
+
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.38);
+  pointer-events: none;
+  z-index: 0;
+}
+
+.shell {
+  min-height: 100vh;
+  padding: 16px;
+  background: transparent;
+  position: relative;
+  z-index: 1;
+}
+
+.panel {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 14px 14px 16px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.8);
+  border: 1px solid rgba(17, 24, 39, 0.1);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.08);
+}
+
+.row {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+input {
+  padding: 6px 8px;
+}
+
+button {
+  padding: 6px 10px;
+  cursor: pointer;
+}
+
+table {
+  border-collapse: collapse;
+  width: 100%;
+  margin-top: 12px;
+}
+
+th,
+td {
+  border-bottom: 1px solid #eee;
+  padding: 8px;
+  text-align: left;
+  font-size: 14px;
+}
+
+tr:hover {
+  background: #fafafa;
+}
+
+.pill {
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  background: #f3f4f6;
+  display: inline-block;
+}
+
+.muted {
+  color: #6b7280;
+}
+
+#events {
+  margin-top: 8px;
+  border: 1px solid #111827;
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.logline {
+  display: flex;
+  gap: 10px;
+  padding: 6px 10px;
+  font: 12px ui-monospace, SFMono-Regular, Menlo, monospace;
+  border-top: 1px solid #0f172a;
+  background: #0b1020;
+  color: #d1d5db;
+}
+
+.logline:first-child {
+  border-top: 0;
+}
+
+.logline .ts {
+  color: #93c5fd;
+  width: 92px;
+  flex: 0 0 auto;
+}
+
+.logline .lvl {
+  width: 64px;
+  flex: 0 0 auto;
+}
+
+.logline .sub {
+  color: #a7f3d0;
+  width: 140px;
+  flex: 0 0 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.logline .msg {
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.logline .fields {
+  color: #9ca3af;
+  white-space: nowrap;
+  flex: 0 0 auto;
+  max-width: 40%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.lvl-DEBUG .lvl {
+  color: #c4b5fd;
+}
+
+.lvl-INFO .lvl {
+  color: #93c5fd;
+}
+
+.lvl-WARNING .lvl {
+  color: #fbbf24;
+}
+
+.lvl-ERROR .lvl,
+.lvl-CRITICAL .lvl {
+  color: #fb7185;
+}
+
+.flight-progress {
+  height: 10px;
+  background: rgba(15, 23, 42, 0.12);
+  border-radius: 999px;
+  overflow: hidden;
+  border: 1px solid rgba(15, 23, 42, 0.18);
+}
+
+.flight-progress-bar {
+  height: 100%;
+  width: 0%;
+  background: linear-gradient(90deg, #60a5fa, #34d399);
+  border-radius: 999px;
+  transition: width 250ms ease;
+}
+
+.flight-progress.indeterminate .flight-progress-bar {
+  width: 30%;
+  animation: flight-progress 1.1s linear infinite;
+  transform: translateX(-100%);
+  will-change: transform;
+}
+
+@keyframes flight-progress {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(350%);
+  }
+}
+
+.hidden { display: none !important; }
+
+.flight-completed-banner {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 20px;
+  border-radius: 12px;
+  background: #ecfdf3;
+  border: 2px solid #16a34a;
+  margin: 12px 0;
+}
+
+.flight-completed-check {
+  width: 56px;
+  height: 56px;
+  border-radius: 999px;
+  background: #16a34a;
+  color: #fff;
+  display: grid;
+  place-items: center;
+  font-size: 34px;
+  font-weight: 800;
+  line-height: 1;
+  flex: 0 0 auto;
+}
+
+.flight-completed-text {
+  font-size: 22px;
+  font-weight: 700;
+  color: #14532d;
+}
+
+.plane-layout {
+  display: flex;
+  gap: 16px;
+  margin-top: 12px;
+  align-items: flex-start;
+}
+
+.plane-media {
+  flex: 0 0 420px;
+  max-width: 420px;
+}
+
+.plane-media img {
+  width: 100%;
+  height: auto;
+  border-radius: 14px;
+  border: 1px solid rgba(17, 24, 39, 0.10);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.08);
+  background: rgba(255, 255, 255, 0.7);
+}
+
+.plane-data { flex: 1 1 auto; min-width: 260px; }
+
+.clickable-row { cursor: pointer; }
+
+@media (max-width: 900px) {
+  .plane-layout { flex-direction: column; }
+  .plane-media { flex-basis: auto; max-width: 100%; }
+}
