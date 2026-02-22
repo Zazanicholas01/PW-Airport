@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 from src.utils.datetimes import as_utc
 
 SLIDING_WINDOW = timedelta(hours=1)
-LANDING_NEAR_DELTA = timedelta(minutes=10)
+LANDING_NEAR_DELTA = timedelta(minutes=1)
 
 @dataclass
 class FlightSlidingWindowScheduler:

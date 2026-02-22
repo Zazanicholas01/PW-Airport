@@ -1,5 +1,4 @@
-import logging
-import random
+import logging, random
 from dataclasses import dataclass
 from typing import Iterable
 from uuid import uuid4
@@ -9,6 +8,10 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from src.db.engine import get_engine
 from src.db import models
+
+
+FREE_STATUS = "Available"
+OCCUPIED_STATUS = "Occupied"
 
 
 @dataclass
@@ -23,12 +26,9 @@ class StandState:
 class SpawnScheduler:
     """Plan plane spawns and reserve stands during simulation bootstrap."""
 
-    def __init__(self, prefab_store, session_factory: sessionmaker | None = None,
-                free_status: str = "Available",occupied_status: str = "Occupied",) -> None:
+    def __init__(self, prefab_store, session_factory: sessionmaker | None = None) -> None:
         
         self.prefab_store = prefab_store
-        self.free_status = free_status
-        self.occupied_status = occupied_status
         self.Session = session_factory or sessionmaker(bind=get_engine(), future=True)
         self._stands_loaded = False
         self._stand_state: dict[str, StandState] = {}
@@ -39,14 +39,15 @@ class SpawnScheduler:
     def _reset_all_stands_once(self) -> None:
         """Set all stands to free_status once at simulation start"""
 
+        # Check flag of stands reset for idempotency
         if self._stands_reset:
             return
         
         with self.Session() as session:
-            # Stands/Flights/Operations can reference airplanes via FKs; clear dependents first
-            # so we can safely wipe airplanes for a clean bootstrap.
+
+            # Cleanup in FK safe order. Reset stands / flights links, the delete dependent tables
             session.execute(
-                update(models.Stand).values(status=self.free_status, airplane_id=None,)
+                update(models.Stand).values(status=FREE_STATUS, airplane_id=None,)
             )
             session.execute(update(models.Flight).values(airplane_id=None))
             session.execute(delete(models.Operation))
@@ -54,16 +55,19 @@ class SpawnScheduler:
             session.execute(delete(models.Airplane))
             session.commit()
         
+        # Set the flag for stands reset to avoid future executions
         self._stands_reset = True
-        logging.info("All stands reset to free status")
+        logging.info("[spawn scheduler] All stands reset to free status")
 
 
     def plan_initial_spawns(self) -> list[dict]:
         """Pick stands and prefabs for the initial spawn batch."""
 
+        # Reset all stands once and ensure stand cache execution
         self._reset_all_stands_once()
         self._ensure_stand_cache()
 
+        # Get random free stands and random plane prefabs
         stand_ids = self._pick_available_stand_ids(self.starting_n_prefabs)
         prefabs = self._pick_prefabs(count=self.starting_n_prefabs, allowed_type="plane")
 
@@ -72,13 +76,23 @@ class SpawnScheduler:
 
         with self.Session() as session:
             spawn_commands = []
+
+            # Loop over each stand / prefab pair
             for stand_id, prefab in zip(stand_ids, prefabs):
+
+                # Reserve a stand
                 self._reserve_stand(session, stand_id)
+
+                # Get stand position from cached stand state
                 position = None
                 if stand_id in self._stand_state:
                     position = self._stand_state[stand_id].position
                 
+                # Generate random UUID string for the airplane
                 airplane_id = str(uuid4())
+
+                # Create spawn command with prefab / stand / position / airplane
+                # Spawns with context of bootstrap
                 spawn_commands.append(
                     {
                         "command": "spawn_plane",
@@ -93,13 +107,20 @@ class SpawnScheduler:
             session.commit()
             return spawn_commands
 
+
     def _ensure_stand_cache(self) -> None:
         """Load stand state once and keep it in memory."""
+        
+        # Check for stands loaded flag for idempotency
         if self._stands_loaded:
             return
 
         with self.Session() as session:
+
+            # Get all stands from DB
             stands: Iterable[models.Stand] = session.scalars(select(models.Stand))
+            
+            # Create a snapshot of the stand following StandState structure
             snapshot = {
                 stand.id: StandState(
                     id=stand.id,
@@ -110,57 +131,75 @@ class SpawnScheduler:
                 for stand in stands
             }
 
+        # Load snapshots and set idempotency flag
         self._stand_state = snapshot
         self._stands_loaded = True
-        logging.info("Loaded %d stands into scheduler cache", len(self._stand_state))
+        logging.info("[spawn scheduler] Loaded %d stands into scheduler cache", len(self._stand_state))
+
 
     def _pick_prefabs(self, count: int, *, allowed_type: str | None = None) -> list[dict]:
         """Randomly sample prefabs from the prefab store payloads."""
+
+        # Check whether prefabs have been sent from Unity and saved
         if not self.prefab_store.prefabs:
-            logging.warning("No prefabs available for spawning")
+            logging.warning("[spawn scheduler] No prefabs available for spawning")
             return []
 
+        # Filter to match allowed type (Remove ground vehicles from candidates)
         candidates = list(self.prefab_store.prefabs)
         if allowed_type is not None:
             candidates = [
-                p for p in candidates
-                if str(p.get("type", "")).lower() == allowed_type
+                prefab for prefab in candidates
+                if str(prefab.get("type", "")).lower() == allowed_type
             ]
         
+        # Sanity check for candidates to exist
         if not candidates:
             logging.warning("No prefabs available for spawning")
             return []
 
+        # If candidates are less than the count needed, return all candidates
         if len(candidates) <= count:
             return candidates
 
+        # If candidates more than count needed, random sample
         return random.sample(candidates, k=count)
+
 
     def _pick_available_stand_ids(self, count: int) -> list[str]:
         """Return a sample of stand IDs that are currently marked as free in cache."""
-        free_stands = [
+
+        # Filter only available stands
+        candidates = [
             stand_id
             for stand_id, state in self._stand_state.items()
-            if state.status == self.free_status
+            if state.status == FREE_STATUS
         ]
 
-        if not free_stands:
-            logging.warning("No free stands available")
+        # If no free stands, return empty and log warning
+        if not candidates:
+            logging.warning("[spawn scheduler] No free stands available")
             return []
 
-        if len(free_stands) <= count:
-            return free_stands
+        # If candidates less than count, return all
+        if len(candidates) <= count:
+            return candidates
 
-        return random.sample(free_stands, k=count)
+        # If candidates more than count, random sample
+        return random.sample(candidates, k=count)
+
 
     def _reserve_stand(self, session: Session, stand_id: str) -> None:
         """Mark a stand as occupied in cache and persist the change."""
+
+        # Update stand status to Occupied in cache
         state = self._stand_state.get(stand_id)
         if state is not None:
-            state.status = self.occupied_status
+            state.status = OCCUPIED_STATUS
 
+        # Update stand status to Occupied in DB
         session.execute(
             update(models.Stand)
             .where(models.Stand.id == stand_id)
-            .values(status=self.occupied_status)
+            .values(status=OCCUPIED_STATUS)
         )

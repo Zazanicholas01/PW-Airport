@@ -98,8 +98,9 @@ async def flight_scheduler_loop(
             break
         await asyncio.sleep(0.1)
 
-    RandomFlightGenerator(Session).generate_flights(20, ensure_in_window=True, window=scheduler.window)
-    logging.info("[flight_scheduler] generated debug flights (n=2)")
+    RANDOM_FLIGHTS_COUNT = 20
+    RandomFlightGenerator(Session).generate_flights(RANDOM_FLIGHTS_COUNT, ensure_in_window=True, window=scheduler.window)
+    logging.info(f"[flight_scheduler] generated debug flights (n={RANDOM_FLIGHTS_COUNT})")
 
     last_window_log = 0.0
     min_poll_real_s = 0.05
