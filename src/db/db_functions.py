@@ -70,6 +70,7 @@ def list_flights_in_sliding_window(*, airport_icao: str, now_utc: datetime, wind
                         models.Flight.arrival_time.is_not(None),
                         models.Flight.arrival_time <= upper,
                     ),
+                    # DEPARTURE FROM REMOTE AIRPORT
                     and_(
                         models.Flight.destination == airport_icao,
                         models.Flight.departure_time.is_not(None),

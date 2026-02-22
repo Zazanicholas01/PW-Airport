@@ -162,9 +162,10 @@ NEXT REAL TIME:
         - Allungare Piste di Atterraggio
         - Reset Aerei Parcheggiati -- (DONE)
         - Release della piazzola dopo il decollo dell'aereo
+        - Flow del decollo
 
         - Generazione dei viaggi dovrebbe essere esempio (24 ore da adesso)
-        e non nel giorno stesso (Problemi con cambio della giornata dopo mezzanotte)
+        e non nel giorno stesso (Problemi con cambio della giornata dopo mezzanotte) -- (DONE)
 
         - RADAR
             - Parcheggi
