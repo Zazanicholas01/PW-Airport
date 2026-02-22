@@ -210,12 +210,3 @@ python -m src.server
 ```bash
 uvicorn src.web.dashboard_app:app --reload --host 0.0.0.0 --port 8000
 ```
-
-## Notes from project docs
-
-Supporting notes in `tasks_activity.txt`, `prefab_update.txt`, `riassunto_mungherli.txt`, and `text_study/script_summary.txt` align with the implemented architecture:
-
-- split setup/runtime dispatch
-- sliding-window scheduling
-- Python authoritative time
-- spline-based path generation and Unity movement commands
