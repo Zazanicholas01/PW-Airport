@@ -28,31 +28,55 @@ class SimulationClock:
     
     @property
     def time_scale(self) -> float:
+        """Expose the current time scale"""
         return self._time_scale
     
     def now(self) -> datetime:
+        """Computes the current simulated datetime"""
+        # Get current time
         mono_now = time.monotonic()
+
+        # Calculate time elapsed since simulation real time start and apply time scale
         dt_real = mono_now - self._mono_base
         dt_sim = dt_real * self._time_scale
+
+        # Add to sim base and return current simulated time
         return self._sim_base + timedelta(seconds=dt_sim)
     
+
     def set_time_scale(self, new_scale: float) -> None:
+        """Set Time Scale"""
+
         new_scale = float(new_scale)
 
+        # Get current datetime
         current_sim = self.now()
         self._sim_base = current_sim
+
+        # Get current real time and apply timescale
         self._mono_base = time.monotonic()
         self._time_scale = new_scale
     
+
     def set_sim_time(self, new_sim: datetime) -> None:
+        """Set simulation time for time jumps - TODO"""
+
+        # Sanity check on timezone awareness of the datetime
         if new_sim.tzinfo is None:
             raise ValueError("New sim must be timezone aware")
         
+        # Reset monotonic base so that the new set time becomes now
         self._sim_base = new_sim
         self._mono_base = time.monotonic()
     
+
     def make_sync(self) -> ClockSync:
+        """Increment Sync ID to return a ClockSync object"""
+
+        # Increment sync ID
         self._sync_id += 1
+
+        # Read current sim time and convert to unix milliseconds
         sim = self.now()
         sim_unix_ms = int(sim.timestamp() * 1000)
 

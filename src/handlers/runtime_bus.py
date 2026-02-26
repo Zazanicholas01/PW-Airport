@@ -41,21 +41,31 @@ class RuntimeBusHandler:
 
     
     def _start_disembark_timer(self, airplane_id: str) -> None:
+        """Reset and start Disembarking Timer"""
+
+        # Ensures only one timer per airplane, cleaning up eventual old ones
         old = self._disembark_tasks.pop(airplane_id, None)
         if old is not None:
             old.cancel()
         
+        # Starts the async timer that will change status Disembarking --> Parked / Completed
         self._disembark_tasks[airplane_id] = asyncio.create_task(self._finish_disembark(airplane_id))
     
+
     async def _sleep_sim_seconds(self, seconds: float) -> None:
+        """Sleep timer in simulated time"""
+
+        # Validation only for positive time
         if seconds <= 0:
             return
 
+        # Get clock if available, FALLBACK to simple asyncio sleep
         clock = self._clock
         if clock is None:
             await asyncio.sleep(seconds)
             return
 
+        # Set the wake up target, starting by now
         if self._clock_lock is None:
             target = clock.now() + timedelta(seconds=seconds)
         else:
@@ -63,6 +73,8 @@ class RuntimeBusHandler:
                 target = clock.now() + timedelta(seconds=seconds)
 
         while True:
+
+            # Read current time and time scale
             if self._clock_lock is None:
                 now = clock.now()
                 time_scale = float(getattr(clock, "time_scale", 1.0))
@@ -71,21 +83,23 @@ class RuntimeBusHandler:
                     now = clock.now()
                     time_scale = float(getattr(clock, "time_scale", 1.0))
 
+            # Convert to seconds and exit when simulated target is reached
             remaining_sim_s = (target - now).total_seconds()
             if remaining_sim_s <= 0:
                 return
 
+            # Sleep timeout (10ms - 1s)
             if (not math.isfinite(time_scale)) or time_scale <= 0.0:
                 timeout = 1.0
             else:
                 timeout = min(1.0, max(0.01, remaining_sim_s / time_scale))
 
-            # `clock_changed` is shared with other loops (e.g. flight scheduler). Do not clear it here.
-            # If it's already set, just sleep/poll; if it's not set, we can use it as an early wake-up.
+            # If there is no event to wait on, use normal sleeping
             if self._clock_changed is None or self._clock_changed.is_set():
                 await asyncio.sleep(timeout)
                 continue
 
+            # Wait for clock changed events or sleep timeout to trigger another poll
             try:
                 await asyncio.wait_for(self._clock_changed.wait(), timeout=timeout)
             except asyncio.TimeoutError:
@@ -93,18 +107,25 @@ class RuntimeBusHandler:
 
 
     async def _finish_disembark(self, airplane_id: str) -> None:
+        """Completing disembarking task Disembarking --> Completed"""
+
         try:
+            # Wait the configured disembark seconds
             await self._sleep_sim_seconds(self._disembark_sim_seconds)
 
             with self.Session() as session:
+
+                # Get airplane and ensure status is Disembarking
                 airplane = session.get(models.Airplane, airplane_id)
                 if airplane is None:
                     return
                 if getattr(airplane, "status", None) != "Disembarking":
                     return
                 
+                # Update status from Disembarking to Parked
                 airplane.status = "Parked"
 
+                # Update also the flight linked to that airplane from Disembarking to Completed
                 flight = session.scalars(
                     select(models.Flight)
                     .where(models.Flight.airplane_id == airplane_id)
@@ -117,6 +138,8 @@ class RuntimeBusHandler:
 
                 session.commit()
             
+            # Final logging and exception handling
+
             logging.info("[runtime] disembark complete airplane_id=%s -> Parked", airplane_id)
         except asyncio.CancelledError:
             return
@@ -125,15 +148,18 @@ class RuntimeBusHandler:
 
 
     async def start(self):
+        """Launch the background consumer task"""
         if self._task is None or self._task.done():
             self._task = asyncio.create_task(self._event_loop())
     
 
     async def enqueue(self, payload: dict):
+        """Entrypoint to push a payload into the async queue"""
         await self.queue.put(payload)
     
 
     async def _event_loop(self):
+        """Consume forever loop"""
         while True:
             payload = await self.queue.get()
             try:
@@ -143,12 +169,13 @@ class RuntimeBusHandler:
     
 
     def _find_stand_id_by_airplane_id(self, session, airplane_id: str) -> str | None:
-        return session.execute(
-            select(models.Stand.id).where(models.Stand.airplane_id == airplane_id)
-        ).scalar_one_or_none()
+        """Helper DB Function to lookup at which stand currently references this airplane"""
+
+        return session.execute(select(models.Stand.id).where(models.Stand.airplane_id == airplane_id)).scalar_one_or_none()
 
 
     async def handle_payload(self, payload: dict):
+        """Payload Handling event router"""
 
         # Sanity check on payload to be of type event
         if payload.get("type") != "event":
@@ -161,52 +188,71 @@ class RuntimeBusHandler:
             return
 
         with self.Session() as session:
+
+            # Get stand linked to the airplane
             stand_id = self._find_stand_id_by_airplane_id(session, airplane_id)
 
+            # Path Completed Event Handling
             if evt == "path_completed":
+
+                # Get airplane by ID and sanity check on route exists
                 airplane = session.get(models.Airplane, airplane_id)
                 if airplane is None or getattr(airplane, "route_id", None) is None:
                     return
                 
+                # Get path by route linked to the airplane
                 path = session.get(models.Path, airplane.route_id)
                 if path is None:
                     return
                 
+                # Get destination of the path
                 destination = getattr(path, "destination", None)
                 
+                # DEPARTURE LOGIC - TODO
                 if destination == "Departure":
                     logging.info("[runtime] path_completed (departure) airplane_id=%s route_id=%s", airplane_id, airplane.route_id)
                     return
                 
-                airplane.status = "Disembarking"
+                # ARRIVAL LOGIC
+                else:
+                    # Update airplane status from Landing --> Disembarking
+                    airplane.status = "Disembarking"
 
-                flight = session.scalars(
-                    select(models.Flight)
-                    .where(models.Flight.airplane_id == airplane_id)
-                    .where(models.Flight.status.in_(("Landing", "Disembarking")))
-                    .order_by(models.Flight.arrival_time.desc())
-                ).first()
-                if flight is not None:
-                    flight.status = "Disembarking"
+                    # Get flight linked to the airplane and change from Landing --> Disembarking
+                    flight = session.scalars(
+                        select(models.Flight)
+                        .where(models.Flight.airplane_id == airplane_id)
+                        .where(models.Flight.status.in_(("Landing", "Disembarking")))
+                        .order_by(models.Flight.arrival_time.desc())
+                    ).first()
+                    if flight is not None:
+                        flight.status = "Disembarking"
 
-                if stand_id is not None:
-                    stand = session.get(models.Stand, stand_id)
-                    if stand is not None and stand.airplane_id == airplane_id:
-                        stand.status = "Occupied"
-                
-                session.commit()
-                
-                logging.info("[runtime] path_completed (landing) airplane_id=%s -> Disembarking (timer started)", airplane_id)
-                self._start_disembark_timer(airplane_id)
-                return
+                    # Update stand status from Reserved --> Occupied
+                    if stand_id is not None:
+                        stand = session.get(models.Stand, stand_id)
+                        if stand is not None and stand.airplane_id == airplane_id:
+                            stand.status = "Occupied"
+                    
+                    # Commit session, Logging and Start disembarking timer
+                    session.commit()
+                    
+                    logging.info("[runtime] path_completed (landing) airplane_id=%s -> Disembarking (timer started)", airplane_id)
+                    self._start_disembark_timer(airplane_id)
+                    return
 
+            # Plane Left Stand Event Handling
             if evt == "plane_left_stand":
+
+                # Sanity check on stand to be linked to the right airplane and to exist
                 if stand_id is None:
                     return
+                
                 stand = session.get(models.Stand, stand_id)
                 if stand is None or stand.airplane_id != airplane_id:
                     return
 
+                # Release stand and set status from Occupied --> Available
                 stand.airplane_id = None
                 stand.status = "Available"
                 session.commit()
