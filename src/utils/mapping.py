@@ -31,3 +31,17 @@ def type_for_airplane_model(model: str | None) -> str:
         return _MODEL_INFO[model][0]
     except KeyError:
         raise ValueError(f"Unknown airplane model: {model!r}") from None
+
+
+def landing_source_for_range(range_value: str | None) -> str:
+    """Map an airplane range string into a path source spline name"""
+
+    # Normalize range string
+    r = (range_value or "").lower()
+
+    # Map for naming conventions
+    if "long" in r:
+        return "LongLanding"
+    if "medium" in r:
+        return "MediumLanding"
+    return "ShortLanding"

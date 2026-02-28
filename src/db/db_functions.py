@@ -1,6 +1,8 @@
 import logging
 from src.db import models
-from src.utils.mapping import range_for_airplane_model, type_for_airplane_model
+from src.utils.mapping import range_for_airplane_model, type_for_airplane_model, landing_source_for_range
+from src.utils.datetimes import as_utc
+from src.utils.standard import normalize_distance, normalize_flight_type, stand_category
 
 from collections.abc import Callable
 
@@ -12,65 +14,90 @@ from datetime import datetime, timedelta, timezone
 
 from uuid import uuid4
 
+
+# Create engine and Session factory used in each function
 _engine = get_engine()
 Session = sessionmaker(bind=_engine, future=True)
 
+
+UNAVAILABLE_STATUSES = {"Occupied", "Reserved"}
+
+
 def get_airplane_prefab(*, airplane_id: str) -> str | None:
+    """Open session and run query to retrieve the model of an airplane"""
+
     with Session() as session:
         return session.execute(
             select(models.Airplane.model).where(models.Airplane.id == airplane_id)
         ).scalar_one_or_none()
 
+
 def link_airplane_to_stand(*, stand_id: str, airplane_id: str) -> None:
+    """Link and airplane to a stand"""
+
     with Session() as session:
+
+        # Get stand from DB
         stand = session.get(models.Stand, stand_id)
         if stand is None:
-            logging.warning("[db] Stand not found: %s", stand_id)
+            logging.warning(f"[db] Stand not found: {stand_id}")
             return
+        
+        # Link airplane to Stand - airplane_id
         stand.airplane_id = airplane_id
         session.commit()
-        logging.info("[db] Linked stand %s -> airplane %s", stand_id, airplane_id)
+        logging.info(f"[db] Linked stand {stand_id} -> airplane {airplane_id}")
+
 
 def unlink_airplane_from_stand(*, stand_id: str, airplane_id: str | None = None) -> None:
+    """Unlink an airplane from the stand"""
+
     with Session() as session:
+
+        # Get stand from DB with sanity check on the airplane to be the same linked
         stand = session.get(models.Stand, stand_id)
         if stand is None:
             logging.warning("[db] Stand not found: %s", stand_id)
             return
         if airplane_id is not None and stand.airplane_id != airplane_id:
             return
+
+        # Release the Stand - airplane_id field
         stand.airplane_id = None
         session.commit()
-        logging.info("[db] Unlinked stand %s", stand_id)
+        logging.info(f"[db] Unlinked stand {stand_id}")
 
-def _as_utc(dt: datetime) -> datetime:
-    return dt.replace(tzinfo=timezone.utc) if dt.tzinfo is None else dt.astimezone(timezone.utc)
 
 def list_flights_in_sliding_window(*, airport_icao: str, now_utc: datetime, window: timedelta):
-    now_utc = _as_utc(now_utc)
+    """List all the flights inside the scheduling window"""
+
+    # Get current time and compute the window's upper bound
+    now_utc = as_utc(now_utc)
     now_db = now_utc.astimezone(timezone.utc)
     upper = now_db + window
 
     with Session() as session:
+
+        # Base Query to retrieve only Unscheduled flights with no airplane assigned yet
         q = (
             select(models.Flight)
             .where(models.Flight.airplane_id.is_(None))
             .where(models.Flight.status == "Unscheduled")
             .where(
                 or_(
-                    # DEPARTURE
+                    # DEPARTURE on departure_time
                     and_(
                         models.Flight.origin == airport_icao,
                         models.Flight.departure_time.is_not(None),
                         models.Flight.departure_time <= upper,
                     ),
-                    # ARRIVAL
+                    # ARRIVAL on arrival_time
                     and_(
                         models.Flight.destination == airport_icao,
                         models.Flight.arrival_time.is_not(None),
                         models.Flight.arrival_time <= upper,
                     ),
-                    # DEPARTURE FROM REMOTE AIRPORT
+                    # DEPARTURE FROM REMOTE AIRPORT on departure_time
                     and_(
                         models.Flight.destination == airport_icao,
                         models.Flight.departure_time.is_not(None),
@@ -81,6 +108,7 @@ def list_flights_in_sliding_window(*, airport_icao: str, now_utc: datetime, wind
         )
         base = list(session.scalars(q))
 
+        # Second query for Scheduled departures with assigned airplane
         q_dep_sched = (
             select(models.Flight)
             .where(models.Flight.origin == airport_icao)
@@ -91,6 +119,7 @@ def list_flights_in_sliding_window(*, airport_icao: str, now_utc: datetime, wind
         )
         base.extend(list(session.scalars(q_dep_sched)))
 
+        # Third query for landing flights that still have to depart from the remote airport
         q_arrival_scheduled = (
             select(models.Flight)
             .where(models.Flight.destination == airport_icao)
@@ -101,6 +130,7 @@ def list_flights_in_sliding_window(*, airport_icao: str, now_utc: datetime, wind
         )
         base.extend(list(session.scalars(q_arrival_scheduled)))
 
+        # Fourth query for landing flights that are approaching the personal airport
         q_arrival = (
             select(models.Flight)
             .where(models.Flight.destination == airport_icao)
@@ -113,66 +143,33 @@ def list_flights_in_sliding_window(*, airport_icao: str, now_utc: datetime, wind
 
         return base
 
-def normalize_flight_type(value: str | None) -> str | None:
-    if value is None:
-        return None
-    v = value.strip().lower()
-    if not v:
-        return None
-    if "cargo" in v or "merce" in v:
-        return "Cargo"
-    if "passeg" in v:
-        return "Passengers"
-    return value
-
-def normalize_distance(value: str | None) -> str | None:
-    if value is None:
-        return None
-    
-    v = value.strip().lower()
-    if not v:
-        return None
-    if "cort" in v:
-        return "Short"
-    if "medi" in v:
-        return "Medium"
-    if "lung" in v:
-        return "Long"
-    return value
-
-def stand_category(value: str | None) -> str | None:
-    if value is None:
-        return None
-    v = value.strip().lower()
-    if not v:
-        return None
-    if v.startswith("p") or "passeg" in v:
-        return "P"
-    if v.startswith("c") or "cargo" in v or "merce" in v:
-        return "C"
-    if v.startswith("o") or "other" in v or "altro" in v:
-        return "O"
-    return None
 
 def reserve_stand_for_arrival_flight(*, flight_id: str, flight_type: str | None, free_status: str = "Available", reserved_status: str = "Reserved") -> str | None:
+    """Reserve stand for arrival flight based on stand type and plane type"""
+
+    # Set preferences for Cargo flights to prefer C and Passegners flights to prefer P
     preferred = "C" if flight_type == "Cargo" else "P"
     
     with Session() as session:
+
+        # Get flight and sanity check
         flight = session.get(models.Flight, flight_id)
         if flight is None:
             return None
-        
-        unavailable_statuses = {"Occupied", "Reserved"}
 
+        # Get all stands and filter candidates to only available stands
         stands = list(session.scalars(select(models.Stand)))
         candidates = [
             s for s in stands
-            if getattr(s, "status", None) not in unavailable_statuses
+            if getattr(s, "status", None) not in UNAVAILABLE_STATUSES
         ]
         if not candidates:
             return None
 
+        # Filter also candidates with the preferred type
         preferred_stands = [s for s in candidates if stand_category(getattr(s, "id", None)) == preferred]
+
+        # Choose first stand with preferred type if present, FALLBACK to 'O' stands
         if preferred_stands:
             chosen = preferred_stands[0]
         else:
@@ -181,6 +178,7 @@ def reserve_stand_for_arrival_flight(*, flight_id: str, flight_type: str | None,
                 return None
             chosen = o_stands[0]
         
+        # Update stand and flight to status Reserved
         session.execute(
             update(models.Stand)
             .where(models.Stand.id == chosen.id)
@@ -196,11 +194,16 @@ def reserve_stand_for_arrival_flight(*, flight_id: str, flight_type: str | None,
         
 
 def assign_airplane_to_departure_flight(*, flight_id: str, required_type: str | None) -> tuple[str, str] | None:
+    """Assign airplane to departure flight"""
+
     with Session() as session:
+
+        # Get flight from ID and sanity check
         flight = session.get(models.Flight, flight_id)
         if flight is None or flight.airplane_id is not None:
             return None
         
+        # Derive required range from destination Airport's distance field
         required_range: str | None = None
         destination_icao = getattr(flight, "destination", None)
         if isinstance(destination_icao, str) and destination_icao:
@@ -208,6 +211,7 @@ def assign_airplane_to_departure_flight(*, flight_id: str, required_type: str | 
             if dest_airport is not None:
                 required_range = normalize_distance(getattr(dest_airport, "distance", None))
 
+        # Query for Parked airplanes that are currently linked to a stand
         q = (
             select(models.Airplane.id, models.Stand.id)
             .join(models.Stand, models.Stand.airplane_id == models.Airplane.id)
@@ -218,13 +222,16 @@ def assign_airplane_to_departure_flight(*, flight_id: str, required_type: str | 
         if required_range is not None:
             q = q.where(models.Airplane.range == required_range)
 
+        # Execute the query
         row = session.execute(q).first()
         if row is None:
             return None
 
+        # Derive airplane, stand and airline code
         airplane_id, stand_id = row
         airline_code = getattr(flight, "airline_code", None)
 
+        # Update airplane to Reserved and flight to Scheduled
         session.execute(
             update(models.Airplane)
             .where(models.Airplane.id == airplane_id)
@@ -237,17 +244,24 @@ def assign_airplane_to_departure_flight(*, flight_id: str, required_type: str | 
         )
         session.commit()
         return airplane_id, stand_id
-    
+
+
 def create_and_assign_airplane_for_landing_departure(
         *, flight_id: str,
         prefab_picker: Callable[[str | None, str | None], str | None] | None = None) -> str | None:
+    """Create and assign airplane for landing departure"""
+
     with Session() as session:
+
+        # Get flight and sanity check (Unscheduled and not an airplane already linked)
         flight = session.get(models.Flight, flight_id)
         if flight is None or flight.airplane_id is not None or getattr(flight, "status", None) != "Unscheduled":
             return None
         
+        # Get flight type with naming convention enforcing
         flight_type = normalize_flight_type(getattr(flight, "tipo", None))
 
+        # Derive required range from Airport's distance field
         required_range: str | None = None
         origin_icao = getattr(flight, "origin", None)
         if isinstance(origin_icao, str) and origin_icao:
@@ -255,8 +269,10 @@ def create_and_assign_airplane_for_landing_departure(
             if origin_airport is not None:
                 required_range = normalize_distance(getattr(origin_airport, "distance", None))
         
+        # Call Prefab Picker function to retrieve a prefab name
         prefab_name = prefab_picker(flight_type, required_range) if prefab_picker else None
 
+        # If a prefab is chosen, use mapping helpers to find type & range of the model
         if prefab_name:
             try:
                 flight_type = type_for_airplane_model(prefab_name)
@@ -264,6 +280,7 @@ def create_and_assign_airplane_for_landing_departure(
             except ValueError:
                 prefab_name = None
 
+        # Generate random UUID string and create record of the Airplane following models.Airplane
         airplane_id = str(uuid4())
         airplane = models.Airplane(
             id=airplane_id,
@@ -280,6 +297,7 @@ def create_and_assign_airplane_for_landing_departure(
         )
         session.add(airplane)
 
+        # Update flight to Scheduled status
         session.execute(
             update(models.Flight)
             .where(models.Flight.id == flight_id)
@@ -287,35 +305,44 @@ def create_and_assign_airplane_for_landing_departure(
         )
         session.commit()
 
+        # Logging and return
         logging.info(
             "[db] landing_dep: created airplane_id=%s type=%s range=%s and linked to flight_id=%s (status=Ongoing)",
             airplane_id, airplane.type, airplane.range, flight_id
         )
         return airplane_id
     
+
 def reserve_stand_and_link_airplane_for_landing_arrival(*, flight_id: str) -> str | None:
+    """Reserve stand and link airplane for landing arrival"""
+
     with Session() as session:
+
+        # Get flight from DB
         flight = session.get(models.Flight, flight_id)
         if flight is None:
             logging.warning("[db] landing_arr: flight not found flight_id=%s", flight_id)
-
             return None
+        
+        # Get airplane_id from Flight and check status equal to Ongoing
         airplane_id = getattr(flight, "airplane_id", None)
         if not isinstance(airplane_id, str) or not airplane_id:
             return None
         if getattr(flight, "status", None) != "Ongoing":
             return None
         
+        # Determine preferred stand category and filter to currently available stands
         flight_type = normalize_flight_type(getattr(flight, "tipo", None))
         preferred = "C" if flight_type == "Cargo" else "P"
-        unavailable_statuses = {"Occupied","Reserved"}
 
         stands = list(session.scalars(select(models.Stand)))
-        candidates = [s for s in stands if getattr(s, "status", None) not in unavailable_statuses]
+        candidates = [s for s in stands if getattr(s, "status", None) not in UNAVAILABLE_STATUSES]
 
+        # Small helper to apply stand category retrieving function
         def cat(s) -> str | None:
             return stand_category(getattr(s, "type", None))
 
+        # Filter candidates on preferred stands and choose first, FALLABCK to 'O' stands if none available
         preferred_stands = [s for s in candidates if cat(s) == preferred]
         chosen = preferred_stands[0] if preferred_stands else None
         if chosen is None:
@@ -324,16 +351,21 @@ def reserve_stand_and_link_airplane_for_landing_arrival(*, flight_id: str) -> st
                 return None
             chosen = o_stands[0]
         
+        # Update stand to status Reserved
         session.execute(
             update(models.Stand)
             .where(models.Stand.id == chosen.id)
             .values(status="Reserved", airplane_id=airplane_id)
         )
+
+        # Update Flight to status Landing
         session.execute(
             update(models.Flight)
             .where(models.Flight.id == flight_id)
             .values(status="Landing")
         )
+
+        # Update Airplane to status Reserved
         session.execute(
             update(models.Airplane)
             .where(models.Airplane.id == airplane_id)
@@ -342,12 +374,18 @@ def reserve_stand_and_link_airplane_for_landing_arrival(*, flight_id: str) -> st
         session.commit()
         return chosen.id
 
+
 def mark_landing_departed(*, flight_id: str) -> None:
+    """Mark landing departed"""
+
     with Session() as session:
+
+        # Get flight from DB
         flight = session.get(models.Flight, flight_id)
         if flight is None:
             return
 
+        # Get airplane_id from flight and update flight status to Ongoing
         airplane_id = getattr(flight, "airplane_id", None)
         session.execute(
             update(models.Flight)
@@ -355,6 +393,7 @@ def mark_landing_departed(*, flight_id: str) -> None:
             .values(status="Ongoing")
         )
 
+        # If airplane exists, update status to InFlight
         if isinstance(airplane_id, str):
             session.execute(
                 update(models.Airplane)
@@ -364,58 +403,69 @@ def mark_landing_departed(*, flight_id: str) -> None:
         session.commit()
 
 
-def landing_source_for_range(range_value: str | None) -> str:
-    r = (range_value or "").lower()
-    if "long" in r:
-        return "LongLanding"
-    if "medium" in r:
-        return "MediumLanding"
-    return "ShortLanding"
-
-
 def assign_path_to_airplane(*, airplane_id: str, source: str, destination: str) -> int | None:
+    """Assign path to airplane"""
+
     with Session() as session:
+
+        # Retrieve path ID by source and destination
         path_id = session.execute(
             select(models.Path.id)
             .where(models.Path.source == source)
             .where(models.Path.destination == destination)
         ).scalar_one_or_none()
 
+        # Sanity check on path ID
         if path_id is None:
             logging.warning("[db] path not found")
             return None
         
+        # Update airplane's route_id field with the path
         session.execute(
             update(models.Airplane)
             .where(models.Airplane.id == airplane_id)
             .values(route_id=path_id)
         )
         session.commit()
+
+        # Logging and return
         logging.info("[db] path assigned airplane_id=%s route_id=%s (%s -> %s)", airplane_id, path_id, source, destination)
         return path_id
 
+
 def assign_landing_path_for_airplane(*, airplane_id: str, stand_id: str) -> int | None:
+    """Assign landing path for airplane"""
+
     with Session() as session:
+
+        # Get airplane and sanity check
         airplane = session.get(models.Airplane, airplane_id)
         if airplane is None:
             return None
         
+        # Get landing spline based on airplane range
         source = landing_source_for_range(getattr(airplane, "range", None))
+
+        # Get path ID based on source and destination
         path_id = session.execute(
             select(models.Path.id)
             .where(models.Path.source == source)
             .where(models.Path.destination == stand_id)
         ).scalar_one_or_none()
 
+        # Sanity check on path ID
         if path_id is None:
             logging.warning("[db] landing path not found source=%s destination=%s", source, stand_id)
             return None
         
+        # Update airplane's route_id based on range
         session.execute(
             update(models.Airplane)
             .where(models.Airplane.id == airplane_id)
             .values(route_id=path_id)
         )
         session.commit()
+
+        # Logging and return
         logging.info("[db] landing path assigned airplane_id=%s route_id=%s (%s -> %s)", airplane_id, path_id, source, stand_id)
         return path_id
