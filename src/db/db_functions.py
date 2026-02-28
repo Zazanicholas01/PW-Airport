@@ -3,6 +3,7 @@ from src.db import models
 from src.utils.mapping import range_for_airplane_model, type_for_airplane_model, landing_source_for_range
 from src.utils.datetimes import as_utc
 from src.utils.standard import normalize_distance, normalize_flight_type, stand_category
+from src.domain.status_constants import *
 
 from collections.abc import Callable
 
@@ -18,9 +19,6 @@ from uuid import uuid4
 # Create engine and Session factory used in each function
 _engine = get_engine()
 Session = sessionmaker(bind=_engine, future=True)
-
-
-UNAVAILABLE_STATUSES = {"Occupied", "Reserved"}
 
 
 def get_airplane_prefab(*, airplane_id: str) -> str | None:
@@ -82,7 +80,7 @@ def list_flights_in_sliding_window(*, airport_icao: str, now_utc: datetime, wind
         q = (
             select(models.Flight)
             .where(models.Flight.airplane_id.is_(None))
-            .where(models.Flight.status == "Unscheduled")
+            .where(models.Flight.status == FLIGHT_STATUS.UNSCHEDULED)
             .where(
                 or_(
                     # DEPARTURE on departure_time
@@ -112,7 +110,7 @@ def list_flights_in_sliding_window(*, airport_icao: str, now_utc: datetime, wind
         q_dep_sched = (
             select(models.Flight)
             .where(models.Flight.origin == airport_icao)
-            .where(models.Flight.status == "Scheduled")
+            .where(models.Flight.status == FLIGHT_STATUS.SCHEDULED)
             .where(models.Flight.airplane_id.is_not(None))
             .where(models.Flight.departure_time.is_not(None))
             .where(models.Flight.departure_time <= upper)
@@ -123,7 +121,7 @@ def list_flights_in_sliding_window(*, airport_icao: str, now_utc: datetime, wind
         q_arrival_scheduled = (
             select(models.Flight)
             .where(models.Flight.destination == airport_icao)
-            .where(models.Flight.status == "Scheduled")
+            .where(models.Flight.status == FLIGHT_STATUS.SCHEDULED)
             .where(models.Flight.airplane_id.is_not(None))
             .where(models.Flight.departure_time.is_not(None))
             .where(models.Flight.departure_time <= upper)
@@ -134,7 +132,7 @@ def list_flights_in_sliding_window(*, airport_icao: str, now_utc: datetime, wind
         q_arrival = (
             select(models.Flight)
             .where(models.Flight.destination == airport_icao)
-            .where(models.Flight.status.in_(("Landing", "Ongoing", "Scheduled", "Disembarking")))
+            .where(models.Flight.status.in_(FLIGHT_STATUS.LANDING_INBOUND))
             .where(models.Flight.airplane_id.is_not(None))
             .where(models.Flight.arrival_time.is_not(None))
             .where(models.Flight.arrival_time <= upper)
@@ -144,11 +142,11 @@ def list_flights_in_sliding_window(*, airport_icao: str, now_utc: datetime, wind
         return base
 
 
-def reserve_stand_for_arrival_flight(*, flight_id: str, flight_type: str | None, free_status: str = "Available", reserved_status: str = "Reserved") -> str | None:
+def reserve_stand_for_arrival_flight(*, flight_id: str, flight_type: str | None) -> str | None:
     """Reserve stand for arrival flight based on stand type and plane type"""
 
     # Set preferences for Cargo flights to prefer C and Passegners flights to prefer P
-    preferred = "C" if flight_type == "Cargo" else "P"
+    preferred = STAND_STATUS.CARGO_CATEGORY if flight_type == FLIGHT_STATUS.CARGO_TYPE else STAND_STATUS.PASSENGERS_CATEGORY
     
     with Session() as session:
 
@@ -161,7 +159,7 @@ def reserve_stand_for_arrival_flight(*, flight_id: str, flight_type: str | None,
         stands = list(session.scalars(select(models.Stand)))
         candidates = [
             s for s in stands
-            if getattr(s, "status", None) not in UNAVAILABLE_STATUSES
+            if getattr(s, "status", None) not in STAND_STATUS.UNAVAILABLE
         ]
         if not candidates:
             return None
@@ -182,12 +180,12 @@ def reserve_stand_for_arrival_flight(*, flight_id: str, flight_type: str | None,
         session.execute(
             update(models.Stand)
             .where(models.Stand.id == chosen.id)
-            .values(status=reserved_status)
+            .values(status=FLIGHT_STATUS.STAND_RESERVED)
         )
         session.execute(
             update(models.Flight)
             .where(models.Flight.id == flight_id)
-            .values(status="StandReserved")
+            .values(status=STAND_STATUS.RESERVED)
         )
         session.commit()
         return chosen.id
@@ -215,7 +213,7 @@ def assign_airplane_to_departure_flight(*, flight_id: str, required_type: str | 
         q = (
             select(models.Airplane.id, models.Stand.id)
             .join(models.Stand, models.Stand.airplane_id == models.Airplane.id)
-            .where(models.Airplane.status == "Parked")
+            .where(models.Airplane.status == AIRPLANE_STATUS.PARKED)
         )
         if required_type is not None:
             q = q.where(models.Airplane.type == required_type)
@@ -235,12 +233,12 @@ def assign_airplane_to_departure_flight(*, flight_id: str, required_type: str | 
         session.execute(
             update(models.Airplane)
             .where(models.Airplane.id == airplane_id)
-            .values(status="Reserved", airline_code=airline_code)
+            .values(status=AIRPLANE_STATUS.RESERVED, airline_code=airline_code)
         )
         session.execute(
             update(models.Flight)
             .where(models.Flight.id == flight_id)
-            .values(airplane_id=airplane_id, status="Scheduled")
+            .values(airplane_id=airplane_id, status=FLIGHT_STATUS.SCHEDULED)
         )
         session.commit()
         return airplane_id, stand_id
@@ -255,7 +253,7 @@ def create_and_assign_airplane_for_landing_departure(
 
         # Get flight and sanity check (Unscheduled and not an airplane already linked)
         flight = session.get(models.Flight, flight_id)
-        if flight is None or flight.airplane_id is not None or getattr(flight, "status", None) != "Unscheduled":
+        if flight is None or flight.airplane_id is not None or getattr(flight, "status", None) != FLIGHT_STATUS.UNSCHEDULED:
             return None
         
         # Get flight type with naming convention enforcing
@@ -284,11 +282,11 @@ def create_and_assign_airplane_for_landing_departure(
         airplane_id = str(uuid4())
         airplane = models.Airplane(
             id=airplane_id,
-            type=flight_type or "Passengers",
-            range=required_range or "Medium",
+            type=flight_type or AIRPLANE_STATUS.PASSEGNERS_TYPE,
+            range=required_range or AIRPLANE_STATUS.RANGE_MEDIUM,
             model=prefab_name,
             capacity=100,
-            status='Scheduled',
+            status=AIRPLANE_STATUS.SCHEDULED,
             speed=0.0,
             fuel_level=1.0,
             maintenance=False,
@@ -301,7 +299,7 @@ def create_and_assign_airplane_for_landing_departure(
         session.execute(
             update(models.Flight)
             .where(models.Flight.id == flight_id)
-            .values(airplane_id=airplane_id, status="Scheduled")
+            .values(airplane_id=airplane_id, status=FLIGHT_STATUS.SCHEDULED)
         )
         session.commit()
 
@@ -328,15 +326,15 @@ def reserve_stand_and_link_airplane_for_landing_arrival(*, flight_id: str) -> st
         airplane_id = getattr(flight, "airplane_id", None)
         if not isinstance(airplane_id, str) or not airplane_id:
             return None
-        if getattr(flight, "status", None) != "Ongoing":
+        if getattr(flight, "status", None) != FLIGHT_STATUS.ONGOING:
             return None
         
         # Determine preferred stand category and filter to currently available stands
         flight_type = normalize_flight_type(getattr(flight, "tipo", None))
-        preferred = "C" if flight_type == "Cargo" else "P"
+        preferred = STAND_STATUS.CARGO_CATEGORY if flight_type == FLIGHT_STATUS.CARGO_TYPE else STAND_STATUS.PASSENGERS_CATEGORY
 
         stands = list(session.scalars(select(models.Stand)))
-        candidates = [s for s in stands if getattr(s, "status", None) not in UNAVAILABLE_STATUSES]
+        candidates = [s for s in stands if getattr(s, "status", None) not in STAND_STATUS.UNAVAILABLE]
 
         # Small helper to apply stand category retrieving function
         def cat(s) -> str | None:
@@ -355,21 +353,21 @@ def reserve_stand_and_link_airplane_for_landing_arrival(*, flight_id: str) -> st
         session.execute(
             update(models.Stand)
             .where(models.Stand.id == chosen.id)
-            .values(status="Reserved", airplane_id=airplane_id)
+            .values(status=STAND_STATUS.RESERVED, airplane_id=airplane_id)
         )
 
         # Update Flight to status Landing
         session.execute(
             update(models.Flight)
             .where(models.Flight.id == flight_id)
-            .values(status="Landing")
+            .values(status=FLIGHT_STATUS.LANDING)
         )
 
         # Update Airplane to status Reserved
         session.execute(
             update(models.Airplane)
             .where(models.Airplane.id == airplane_id)
-            .values(status="Reserved")
+            .values(status=AIRPLANE_STATUS.RESERVED)
         )
         session.commit()
         return chosen.id
@@ -390,7 +388,7 @@ def mark_landing_departed(*, flight_id: str) -> None:
         session.execute(
             update(models.Flight)
             .where(models.Flight.id == flight_id)
-            .values(status="Ongoing")
+            .values(status=FLIGHT_STATUS.ONGOING)
         )
 
         # If airplane exists, update status to InFlight
@@ -398,7 +396,7 @@ def mark_landing_departed(*, flight_id: str) -> None:
             session.execute(
                 update(models.Airplane)
                 .where(models.Airplane.id == airplane_id)
-                .values(status="InFlight")
+                .values(status=AIRPLANE_STATUS.IN_FLIGHT)
             )
         session.commit()
 

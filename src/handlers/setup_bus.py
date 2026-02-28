@@ -8,17 +8,7 @@ from sqlalchemy import delete, text, update
 
 from src.db.engine import get_engine
 from src.db import models
-
-
-EXCLUDED_STAND_IDS: set[str] = {
-    "LongLanding",
-    "MediumLanding",
-    "ShortLanding",
-    "Departure",
-    "Parking1",
-    "Parking2",
-    "Parking3",
-}
+from src.domain.status_constants import *
 
 
 @dataclass
@@ -288,7 +278,7 @@ class SetupBusHandler:
             name = spline.get("name", "<unnamed>")
 
             # Route to specific handler for Master Spline only
-            if name == "MasterSpline":
+            if name == MASTER_SPLINE:
                 self.init_graph.add_master_spline(spline)
                 logging.info("[setup bus] Committed Master Spline")
                 continue
@@ -300,7 +290,7 @@ class SetupBusHandler:
             # Get and save landing spawn position from Spline_LongLanding (same position for every landing spline)
             if (
                 self.state.landing_spawn_position is None
-                and name == "Spline_LongLanding"
+                and name == f"Spline_{LONG_LANDING_SPLINE}"
                 and self._is_vec3(first)
             ):
                 self.state.landing_spawn_position = self._vec3(first)

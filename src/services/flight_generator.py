@@ -9,10 +9,8 @@ from sqlalchemy import delete
 from src.db.engine import get_engine
 from src.db.db_functions import normalize_distance
 
-PERSONAL_AIRPORT = "LIAG"
-STATUS_UNSCHEDULED = "Unscheduled"
-FLIGHT_TYPES = ("Cargo", "Passengers")
-ALLOWED_AIRLINES = ("LUN", "UMB", "JAE", "ALI")
+from src.domain.status_constants import *
+
 
 class RandomFlightGenerator:
     """
@@ -209,22 +207,22 @@ class RandomFlightGenerator:
         """Sceglie terminal compatibile con il volo"""
 
         # Normalizzazione e controllo coerenza del tipo di volo (Cargo / Passengers)
-        t_type = flight_type.lower()
+        flight_type = flight_type.lower()
         if not terminals:
             raise RuntimeError("No terminals available")
 
         # Build lista di candidati in base al tipo
-        if t_type == "passengers":
+        if flight_type == FLIGHT_STATUS.PASSEGNERS_TYPE:
             candidates = [
-                t for t in terminals
-                if isinstance(t.type, str)
-                and ("passeng" in t.type.lower())
+                terminal for terminal in terminals
+                if isinstance(terminal.type, str)
+                and ("passeng" in terminal.type.lower())
             ]
         else:
             candidates = [
-                t for t in terminals
-                if isinstance(t.type, str)
-                and ("cargo" in t.type.lower())
+                terminal for terminal in terminals
+                if isinstance(terminal.type, str)
+                and ("cargo" in terminal.type.lower())
             ]
         
         # FALLBACK tutti i terminal
@@ -246,57 +244,49 @@ class RandomFlightGenerator:
         country = (remote_airport.country or "").lower()
 
         if country == "italia":
-            return "National"
-        
-        european_countries = {
-            "francia",
-            "germania",
-            "paesi bassi",
-            "spagna",
-            "regno unito",
-            "turchia",
-        }
+            return AIRLINE_CATEGORIES.NATIONAL
 
-        if country in european_countries:
-            return "European"
+        if country in EUROPEAN_COUNTRIES:
+            return AIRLINE_CATEGORIES.EUROPEAN
         
-        return "International"
+        return AIRLINE_CATEGORIES.INTERNATIONAL
 
 
     def _pick_airline(self, airlines: list[models.Airline], flight_type: str, route_category: str) -> models.Airline:
         """Seleziona una compagnia aerea"""
 
-        def type_matches(a: models.Airline) -> bool:
+        def type_matches(airline: models.Airline) -> bool:
             """Check sul tipo di viaggio Cargo / Passengers"""
 
-            at = (a.type or "").lower()
-            if flight_type == "Cargo":
-                return "cargo" in at
+            airline_type = (airline.type or "").lower()
+            if flight_type == FLIGHT_STATUS.CARGO_TYPE:
+                return "cargo" in airline_type
             
-            return "cargo" not in at
+            return "cargo" not in airline_type
 
         # N --> National
         # EU --> European
         # I --> International
         # NI-EU --> Everywhere
 
-        allowed_nationalities = {"NI-EU"}
-        if route_category == "National":
-            allowed_nationalities.add("N")
-        elif route_category == "European":
-            allowed_nationalities.add("EU")
-        elif route_category == "International":
-            allowed_nationalities.add("I")
+        if route_category == AIRLINE_CATEGORIES.NATIONAL:
+            ALLOWED_NATIONALITIES.add(AIRLINE_CATEGORIES.NATIONAL_CODE)
+
+        elif route_category == AIRLINE_CATEGORIES.EUROPEAN:
+            ALLOWED_NATIONALITIES.add(AIRLINE_CATEGORIES.EUROPEAN_CODE)
+
+        elif route_category == AIRLINE_CATEGORIES.INTERNATIONAL:
+            ALLOWED_NATIONALITIES.add(AIRLINE_CATEGORIES.INTERNATIONAL_CODE)
         
         # Costruisce lista di candidati per compagnie aeree
         candidates = [
-            a for a in airlines
-            if type_matches(a) and (a.nationality in allowed_nationalities)
+            airline for airline in airlines
+            if type_matches(airline) and (airline.nationality in ALLOWED_NATIONALITIES)
         ]
 
         # FALLBACK --> Match solo tipo
         if not candidates:
-            candidates = [a for a in airlines if type_matches(a)]
+            candidates = [airline for airline in airlines if type_matches(airline)]
         
         # FALLBACK --> Tutte
         if not candidates:
@@ -327,8 +317,8 @@ class RandomFlightGenerator:
 
         def airports_for_range(rng: str) -> list[models.Airport]:
             return [
-                a for a in airports
-                if normalize_distance(getattr(a, "distance", None)) == rng
+                airport for airport in airports
+                if normalize_distance(getattr(airport, "distance", None)) == rng
             ]
 
         viable: list[tuple[str, str, list[models.Airport]]] = [
@@ -342,7 +332,6 @@ class RandomFlightGenerator:
 
         chosen_type, chosen_range, matching_airports = self.rng.choice(viable)
         return self.rng.choice(matching_airports), chosen_type
-
 
 
     def _build_flight(
@@ -367,7 +356,7 @@ class RandomFlightGenerator:
         )
 
         # Random tipo e aeroporto remoto
-        flight_type = self.rng.choice(FLIGHT_TYPES)
+        flight_type = self.rng.choice(FLIGHT_STATUS.AVAILABLE_TYPES)
         remote_airport = self.rng.choice(airports)
 
         # DEBUG - Forza decollo compatibile con aerei spawnati
@@ -418,7 +407,7 @@ class RandomFlightGenerator:
             terminal_id=terminal_id,
             origin=origin,
             destination=destination,
-            status=STATUS_UNSCHEDULED,
+            status=FLIGHT_STATUS.UNSCHEDULED,
             icao=full_icao,
             date=flight_date,
             tipo=flight_type,
@@ -452,7 +441,7 @@ class RandomFlightGenerator:
                 {
                     (t, r)
                     for (t, r) in session.query(models.Airplane.type, models.Airplane.range)
-                    .filter(models.Airplane.status == "Parked")
+                    .filter(models.Airplane.status == AIRPLANE_STATUS.PARKED)
                     .all()
                     if isinstance(t, str) and isinstance(r, str)
                 }
