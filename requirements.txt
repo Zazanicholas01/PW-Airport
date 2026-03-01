@@ -1,7 +1,6 @@
 psycopg[binary]
 websockets
 sqlalchemy
-psycopg2-binary
-uuid
+psycopg2-binary    # legacy — valutare rimozione, psycopg3 già presente
 fastapi
 uvicorn
