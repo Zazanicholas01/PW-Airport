@@ -56,6 +56,8 @@ EVT_EVERY_S = 0.5
 WINDOW_TIMEDELTA_HOURS = 1
 WAIT_FOR_PARKED_TIMEOUT_S = 10
 
+DEFAULT_PLANE_SPEED = 0.2
+
 # File constants
 NODE_SCHEMA_JSON_PATH = "schema_nodi.json"
 
@@ -81,7 +83,7 @@ class FLIGHT_STATUS:
     DISEMBARKING = "Disembarking"
     COMPLETED = "Completed"
     LANDING_INBOUND = (LANDING, ONGOING, SCHEDULED, DISEMBARKING)
-    NEEDS_AIRPLANE = (UNSCHEDULED)
+    NEEDS_AIRPLANE = (UNSCHEDULED,)
 
     CARGO_TYPE = "Cargo"
     PASSEGNERS_TYPE = "Passengers"
@@ -110,7 +112,7 @@ class AIRPLANE_STATUS:
     SCHEDULED = "Scheduled"
     IN_FLIGHT = "InFlight"
     DISEMBARKING = "Disembarking"
-    AVAILABLE_FOR_DEPARTURE = (PARKED)
+    AVAILABLE_FOR_DEPARTURE = (PARKED,)
 
     RANGE_SHORT = "Short"
     RANGE_MEDIUM = "Medium"
@@ -136,6 +138,7 @@ class BUS_COMMANDS:
     SET_SIM_TIME = "set_sim_time"
     CLOCK_SYNC = "clock_sync"
     WELCOME = "welcome"
+    START_PATH = "start_path"
 
 # Websocket configuration
 @dataclass

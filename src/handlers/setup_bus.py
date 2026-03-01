@@ -322,6 +322,7 @@ class SetupBusHandler:
                     stand = session.get(models.Stand, stand_id)
                     if stand is None:
                         logging.warning(f"[setup bus] Stand not found: {stand_id}")
+                        continue
                     
                     stand.position = pos
                     updated += 1

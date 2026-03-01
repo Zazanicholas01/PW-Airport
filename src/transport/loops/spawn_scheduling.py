@@ -7,6 +7,7 @@ from src.schedulers.spawn_scheduler import SpawnScheduler
 from src.utils.event_log import append_event
 
 from src.transport.session import SessionContext
+from src.transport.command_builders import build_spawn_plane
 
 async def schedule_initial_spawns(ctx: SessionContext) -> None:
     
@@ -23,7 +24,7 @@ async def schedule_initial_spawns(ctx: SessionContext) -> None:
     })
     
     # Initialize Spawn Scheduler instance and build initial spawn commands
-    scheduler = SpawnScheduler(prefab_store=ctx.prefab_store, session_factory=ctx.Session)
+    scheduler = SpawnScheduler(prefab_store=ctx.prefab_store, commands=ctx.commands, session_factory=ctx.Session)
     commands = scheduler.plan_initial_spawns()
     if not commands:
         logging.info("No initial spawns commands generated")

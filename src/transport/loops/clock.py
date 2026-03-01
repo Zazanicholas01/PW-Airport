@@ -11,6 +11,7 @@ from src.utils.datetimes import isoformat_utc_plus1
 from src.utils.event_log import append_event
 
 from src.transport.session import SessionContext
+from src.transport.command_builders import build_clock_sync
 
 async def handle_clock_control(ctx: SessionContext, payload: dict) -> bool:
 
@@ -67,12 +68,13 @@ async def handle_clock_control(ctx: SessionContext, payload: dict) -> bool:
         )
         
         # Send Clock Sync command to Unity
-        await ctx.bus.send_command({
-            "command": BUS_COMMANDS.CLOCK_SYNC,
-            "sync_id": sync.sync_id,
-            "sim_unix_ms": sync.sim_unix_ms,
-            "time_scale": sync.time_scale,
-        })
+        await ctx.bus.send_command(
+            ctx.commands.clock_sync(
+                sync_id=sync.sync_id,
+                sim_unix_ms=sync.sim_unix_ms,
+                time_scale=sync.time_scale
+            )
+        )
         return True
 
     # Handle Set Sim Time command
@@ -115,12 +117,13 @@ async def clock_sync_loop(ctx: SessionContext) -> None:
             sim_now = ctx.clock.now()
 
         # Send Clock Sync command to Unity
-        await ctx.bus.send_command({
-            "command": BUS_COMMANDS.CLOCK_SYNC,
-            "sync_id": sync.sync_id,
-            "sim_unix_ms": sync.sim_unix_ms,
-            "time_scale": sync.time_scale,
-        })
+        await ctx.bus.send_command(
+            ctx.commands.clock_sync(
+                sync_id=sync.sync_id,
+                sim_unix_ms=sync.sim_unix_ms,
+                time_scale=sync.time_scale,
+            )
+        )
 
         t = time.monotonic()
 

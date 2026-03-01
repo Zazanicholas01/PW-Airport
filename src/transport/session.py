@@ -5,6 +5,7 @@ import asyncio
 from typing import Any
 
 from src.transport.loops.flight_actions import FlightActions
+from src.transport.command_builders import CommandBuilders
 
 @dataclass(frozen=True)
 class SessionContext:
@@ -24,3 +25,4 @@ class SessionContext:
     airport_icao: str
 
     flight_actions: FlightActions
+    commands: CommandBuilders

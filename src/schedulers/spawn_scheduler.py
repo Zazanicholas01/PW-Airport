@@ -9,9 +9,9 @@ from sqlalchemy.orm import Session, sessionmaker
 from src.db.engine import get_engine
 from src.db import models
 
+from src.transport.command_builders import build_spawn_plane
 
-FREE_STATUS = "Available"
-OCCUPIED_STATUS = "Occupied"
+from src.domain.status_constants import STAND_STATUS
 
 
 @dataclass
@@ -26,10 +26,12 @@ class StandState:
 class SpawnScheduler:
     """Plan plane spawns and reserve stands during simulation bootstrap."""
 
-    def __init__(self, prefab_store, session_factory: sessionmaker | None = None) -> None:
+    def __init__(self, prefab_store, commands, session_factory: sessionmaker | None = None) -> None:
         
         self.prefab_store = prefab_store
-        self.Session = session_factory or sessionmaker(bind=get_engine(), future=True)
+        self.Session = session_factory
+        self.commands = commands
+
         self._stands_loaded = False
         self._stand_state: dict[str, StandState] = {}
         self.starting_n_prefabs = 3
@@ -47,7 +49,7 @@ class SpawnScheduler:
 
             # Cleanup in FK safe order. Reset stands / flights links, the delete dependent tables
             session.execute(
-                update(models.Stand).values(status=FREE_STATUS, airplane_id=None,)
+                update(models.Stand).values(status=STAND_STATUS.AVAILABLE, airplane_id=None,)
             )
             session.execute(update(models.Flight).values(airplane_id=None))
             session.execute(delete(models.Operation))
@@ -93,16 +95,13 @@ class SpawnScheduler:
 
                 # Create spawn command with prefab / stand / position / airplane
                 # Spawns with context of bootstrap
-                spawn_commands.append(
-                    {
-                        "command": "spawn_plane",
-                        "prefab": prefab["name"],
-                        "stand_id": stand_id,
-                        "position": position,
-                        "airplane_id": airplane_id,
-                        "spawn_context": "bootstrap",
-                    }
-                )
+                spawn_commands.append(self.commands.spawn_plane(
+                    prefab=prefab["name"],
+                    stand_id=stand_id,
+                    position=position,
+                    airplane_id=airplane_id,
+                    spawn_context="bootstrap",
+                ))
 
             session.commit()
             return spawn_commands
@@ -173,7 +172,7 @@ class SpawnScheduler:
         candidates = [
             stand_id
             for stand_id, state in self._stand_state.items()
-            if state.status == FREE_STATUS
+            if state.status == STAND_STATUS.AVAILABLE
         ]
 
         # If no free stands, return empty and log warning
@@ -195,11 +194,11 @@ class SpawnScheduler:
         # Update stand status to Occupied in cache
         state = self._stand_state.get(stand_id)
         if state is not None:
-            state.status = OCCUPIED_STATUS
+            state.status = STAND_STATUS.OCCUPIED
 
         # Update stand status to Occupied in DB
         session.execute(
             update(models.Stand)
             .where(models.Stand.id == stand_id)
-            .values(status=OCCUPIED_STATUS)
+            .values(status=STAND_STATUS.OCCUPIED)
         )

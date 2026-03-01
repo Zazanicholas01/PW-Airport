@@ -17,6 +17,7 @@ from src.utils.datetimes import as_utc
 from src.path_commands import make_start_path_command
 
 from src.transport.session import SessionContext
+from src.transport.command_builders import build_spawn_plane
 
 async def flight_scheduler_loop(
     ctx: SessionContext,
@@ -187,9 +188,17 @@ async def flight_scheduler_loop(
                 # Make start path command for the airplane and send through bus to Unity
                 if isinstance(airplane_id, str):
                     cmd = make_start_path_command(airplane_id=airplane_id, Session=ctx.Session)
-                    logging.info("[start_path][OUT] flight_id=%s airplane_id=%s route_id=%s segments=%d now=%s",
-                        flight_id, cmd["airplane_id"], cmd["route_id"], len(cmd["segments"]), now.isoformat())
-                    if cmd is not None:
+                    if cmd is None:
+                        logging.warning("[start_path][SKIP] flight_id=%s airplane_id=%s (no route/segments)", flight_id, airplane_id)
+                    else:
+                        logging.info("[start_path][OUT] flight_id=%s airplane_id=%s route_id=%s segments=%d now=%s",
+                            flight_id, 
+                            cmd["airplane_id"], 
+                            cmd["route_id"], 
+                            len(cmd["segments"]), 
+                            now.isoformat()
+                        )
+                        
                         await ctx.bus.send_command(cmd)
                         logging.info("[flight_scheduler] start_path departure airplane_id=%s flight_id=%s", airplane_id, flight_id)
                 continue
@@ -217,14 +226,13 @@ async def flight_scheduler_loop(
                     )
 
                     # Send Spawn Plane command through bus to Unity
-                    await ctx.bus.send_command({
-                        "command": BUS_COMMANDS.SPAWN_PLANE,
-                        "prefab": prefab,
-                        "stand_id": f"landing:{flight_id}",
-                        "position": landing_spawn_position,
-                        "airplane_id": airplane_id,
-                        "spawn_context": "landing",
-                    })
+                    await ctx.bus.send_command(ctx.commands.spawn_plane(
+                        prefab=prefab,
+                        stand_id=f"landing:{flight_id}",
+                        position=landing_spawn_position,
+                        airplane_id=airplane_id,
+                        spawn_context="landing",
+                    ))
                     logging.info("[flight_scheduler] landing_spawn: spawned airplane_id=%s flight_id=%s", airplane_id, flight_id)
 
             # START LANDING MOVEMENT

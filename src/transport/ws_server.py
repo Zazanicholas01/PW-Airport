@@ -16,6 +16,7 @@ from src.transport.loops.flight_actions import FlightActions
 from src.transport.loops.build_flight_actions import build_flight_actions
 from src.transport.hooks.spawn_tracking import make_spawn_tracking_hook
 from src.transport.tasks import run_tasks  # if you use the helper
+from src.transport.command_builders import build_welcome
 from src.db import db_functions
 
 
@@ -41,7 +42,7 @@ async def incoming_dispatch_loop(ctx: SessionContext) -> None:
             ctx.bus.incoming.task_done()
 
 
-async def echo_handler(websocket, setup_bus, prefab_store, world_state, graph, *, Session, flight_actions: FlightActions) -> None:
+async def echo_handler(websocket, setup_bus, prefab_store, world_state, graph, *, Session, flight_actions: FlightActions, commands) -> None:
     """Handle one WebSocket client: greet, log, and echo any text received."""
     
     # Strict check on setup bus to exist
@@ -95,7 +96,8 @@ async def echo_handler(websocket, setup_bus, prefab_store, world_state, graph, *
         world_state=world_state,
         Session=Session,
         airport_icao=airport_icao,
-        flight_actions=flight_actions
+        flight_actions=flight_actions,
+        commands=commands
     )
 
     # Create and start the Dispatch Loop
@@ -111,7 +113,7 @@ async def echo_handler(websocket, setup_bus, prefab_store, world_state, graph, *
     # Always stop the bus, cancel all background tasks and await each task to finish for graceful close
     try:
         async with run_tasks(dispatch_task, spawn_task, clock_task, flight_task):
-            await bus.send_command({"type": BUS_COMMANDS.WELCOME, "message": "Connected to Python server"})
+            await bus.send_command(ctx.commands.welcome(message = "Connected to Python server"))
             await bus._recv_task
     except websockets.ConnectionClosed:
         logging.info("Client %s disconnected", peer)
@@ -147,6 +149,7 @@ async def main(host, port, *, container=None) -> None:
             graph=container.graph,
             Session=container.Session,
             flight_actions=flight_actions,
+            commands=container.commands
         )
 
     # Start websocket server with config, limits, timeouts and queue settings
