@@ -164,14 +164,18 @@ def add_vehicles(session) -> None:
 
 
 def insert_seed_values() -> None:
-    x = True
     with Session() as session:
-        if x:
-            if not session.query(models.Terminal).first(): add_terminal(session)
+        if not session.query(models.Terminal).first():
+            add_terminal(session)
+        if not session.query(models.Airport).first():
             add_airports(session)
+        if not session.query(models.Airline).first():
             add_airlines(session)
+        if not session.query(models.ParkingSpot).first():
             add_parkings(session)
+        if not session.query(models.Stand).first():
             add_stands(session)
+        if not session.query(models.Vehicle).first():
             add_vehicles(session)
 
 
