@@ -6,7 +6,7 @@ from typing import Any
 
 from src.transport.loops.flight_actions import FlightActions
 
-@dataclass
+@dataclass(frozen=True)
 class SessionContext:
     bus: Any
     setup_bus: Any
@@ -19,6 +19,7 @@ class SessionContext:
     prefab_store: Any
     graph: Any
     world_state: Any
+    Session: Any
 
     airport_icao: str
 

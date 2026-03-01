@@ -10,13 +10,13 @@ from src.utils.mapping import (
     type_for_airplane_model
 )
 
-_engine = get_engine()
-SessionLocal = sessionmaker(bind=_engine, future=True)
-
-def ensure_airplane_row(*, airplane_id: str | None, prefab: str) -> str:
+def ensure_airplane_row(*, Session=None, airplane_id: str | None, prefab: str) -> str:
     
     # Apre sessione DB e la chiude automaticamente alla fine
-    with SessionLocal() as session:
+    if Session is None:
+        Session = sessionmaker(bind=get_engine(), future=True)
+
+    with Session() as session:
 
         # Check su DB se esiste già l'aereo, se si ritorna l'ID stesso 
         # altrimenti lo crea tramite UUID
@@ -63,4 +63,3 @@ def ensure_airplane_row(*, airplane_id: str | None, prefab: str) -> str:
         session.commit()
         logging.info("[db] Airplane created id=%s prefab=%s", airplane_id, prefab)
         return airplane_id
-

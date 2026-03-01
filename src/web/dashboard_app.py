@@ -4,26 +4,42 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import Depends, FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi import HTTPException
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from src.db.db_functions import list_flights_in_sliding_window
+from src.db.engine import get_db
 from src.utils.event_log import log_dir
 
 from sqlalchemy import select
-from src.db.engine import get_engine
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm import Session as OrmSession
 from src.db import models
+from src.app.container import AppContainer, build_container
+from src.db import db_functions
 
 WEB_DIR = Path(__file__).resolve().parent
 STATIC_DIR = WEB_DIR / "static"
 TEMPLATE_FILE = WEB_DIR / "templates" / "dashboard.html"
 EVENTS_FILE = Path(log_dir()) / "events.jsonl"
 
-app = FastAPI()
-app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+def _db_dep(request: Request):
+    yield from get_db(request.app.state.Session)
+
+
+def create_app(*, container: AppContainer) -> FastAPI:
+    app = FastAPI()
+    app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+    app.state.Session = container.Session
+
+    # Ensure db_functions uses the same injected Session factory.
+    db_functions.configure_session_factory(container.Session)
+    return app
+
+
+# Default app for uvicorn: `uvicorn src.web.dashboard_app:app ...`
+app = create_app(container=build_container())
 
 
 def _to_iso(dt: Any) -> str | None:
@@ -95,38 +111,32 @@ def api_window(
     return {"now": now.isoformat(), "count": len(flights), "flights": [_flight_to_dict(f) for f in flights]}
 
 @app.get("/api/flight/{flight_id}")
-def api_flight(flight_id: str) -> dict[str, Any]:
+def api_flight(flight_id: str, session: OrmSession = Depends(_db_dep)) -> dict[str, Any]:
     """Fetch a single flight by id (used by the UI when it falls out of /api/window)."""
 
     if not isinstance(flight_id, str) or not flight_id.strip():
         raise HTTPException(status_code=400, detail="Invalid flight id")
 
-    with Session() as session:
-        # UI routes are keyed by `flightIdForRow()`, which prefers `icao` over DB PK `id`.
-        # Accept either.
-        f = session.get(models.Flight, flight_id)
-        if f is None:
-            f = session.scalars(
-                select(models.Flight).where(models.Flight.icao == flight_id)
-            ).first()
-        if f is None:
-            raise HTTPException(status_code=404, detail="Flight not found")
-        return _flight_to_dict(f)
-
-
-Engine = get_engine()
-Session = sessionmaker(bind=Engine, future=True)
+    # UI routes are keyed by `flightIdForRow()`, which prefers `icao` over DB PK `id`.
+    # Accept either.
+    f = session.get(models.Flight, flight_id)
+    if f is None:
+        f = session.scalars(
+            select(models.Flight).where(models.Flight.icao == flight_id)
+        ).first()
+    if f is None:
+        raise HTTPException(status_code=404, detail="Flight not found")
+    return _flight_to_dict(f)
 
 
 @app.get("/api/planes")
-def api_planes(now_unix_ms: int | None = None) -> dict[str, Any]:
+def api_planes(now_unix_ms: int | None = None, session: OrmSession = Depends(_db_dep)) -> dict[str, Any]:
     """Defines route for planes HTML"""
 
     # Get planes / stands / paths from DB
-    with Session() as session:
-        planes = list(session.scalars(select(models.Airplane)).all())
-        stands = list(session.scalars(select(models.Stand)).all())
-        paths = list(session.scalars(select(models.Path)).all())
+    planes = list(session.scalars(select(models.Airplane)).all())
+    stands = list(session.scalars(select(models.Stand)).all())
+    paths = list(session.scalars(select(models.Path)).all())
     
     # Build look up dict to map airplane_id --> stand
     stand_by_plane: dict[str, Any] = {

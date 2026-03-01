@@ -44,7 +44,7 @@ Main transport orchestrator. It wires together:
 
 Main public entrypoint:
 
-- `main(host, port, pw_prefab_store, pw_graph, pw_world_state)`
+- `main(host, port, *, container=AppContainer(...))`
 
 This initializes setup handler and runs `websockets.serve(...)` indefinitely.
 

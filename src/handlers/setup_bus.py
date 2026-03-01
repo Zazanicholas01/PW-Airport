@@ -41,7 +41,7 @@ class SetupState:
 class SetupBusHandler:
     """Handles setup payloads from Unity, Buffers them and commits them in batches via async queue loop"""
 
-    def __init__(self, prefab_store, init_graph) -> None:
+    def __init__(self, prefab_store, init_graph, *, session_factory: sessionmaker | None = None) -> None:
 
         self.prefab_store = prefab_store
         self.init_graph = init_graph
@@ -50,8 +50,7 @@ class SetupBusHandler:
         self.queue: asyncio.Queue = asyncio.Queue()
         self._task: asyncio.Task | None = None
 
-        self.engine = get_engine()
-        self.Session = sessionmaker(bind=self.engine, future=True)
+        self.Session = session_factory or sessionmaker(bind=get_engine(), future=True)
 
         self.setup_finished = False
 

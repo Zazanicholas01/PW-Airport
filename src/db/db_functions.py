@@ -6,6 +6,7 @@ from src.utils.standard import normalize_distance, normalize_flight_type, stand_
 from src.domain.status_constants import *
 
 from collections.abc import Callable
+from functools import lru_cache
 
 from src.db.engine import get_engine
 from sqlalchemy.orm import sessionmaker
@@ -16,15 +17,25 @@ from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
 
-# Create engine and Session factory used in each function
-_engine = get_engine()
-Session = sessionmaker(bind=_engine, future=True)
+_session_factory: sessionmaker | None = None
+
+def configure_session_factory(Session: sessionmaker) -> None:
+    """Inject the SQLAlchemy session factory (recommended at app startup)."""
+    global _session_factory
+    _session_factory = Session
+
+@lru_cache()
+def _fallback_session_factory() -> sessionmaker:
+    return sessionmaker(bind=get_engine(), future=True)
+
+def _get_session_factory() -> sessionmaker:
+    return _session_factory or _fallback_session_factory()
 
 
 def get_airplane_prefab(*, airplane_id: str) -> str | None:
     """Open session and run query to retrieve the model of an airplane"""
 
-    with Session() as session:
+    with _get_session_factory()() as session:
         return session.execute(
             select(models.Airplane.model).where(models.Airplane.id == airplane_id)
         ).scalar_one_or_none()
@@ -33,7 +44,7 @@ def get_airplane_prefab(*, airplane_id: str) -> str | None:
 def link_airplane_to_stand(*, stand_id: str, airplane_id: str) -> None:
     """Link and airplane to a stand"""
 
-    with Session() as session:
+    with _get_session_factory()() as session:
 
         # Get stand from DB
         stand = session.get(models.Stand, stand_id)
@@ -50,7 +61,7 @@ def link_airplane_to_stand(*, stand_id: str, airplane_id: str) -> None:
 def unlink_airplane_from_stand(*, stand_id: str, airplane_id: str | None = None) -> None:
     """Unlink an airplane from the stand"""
 
-    with Session() as session:
+    with _get_session_factory()() as session:
 
         # Get stand from DB with sanity check on the airplane to be the same linked
         stand = session.get(models.Stand, stand_id)
@@ -74,7 +85,7 @@ def list_flights_in_sliding_window(*, airport_icao: str, now_utc: datetime, wind
     now_db = now_utc.astimezone(timezone.utc)
     upper = now_db + window
 
-    with Session() as session:
+    with _get_session_factory()() as session:
 
         # Base Query to retrieve only Unscheduled flights with no airplane assigned yet
         q = (
@@ -148,7 +159,7 @@ def reserve_stand_for_arrival_flight(*, flight_id: str, flight_type: str | None)
     # Set preferences for Cargo flights to prefer C and Passegners flights to prefer P
     preferred = STAND_STATUS.CARGO_CATEGORY if flight_type == FLIGHT_STATUS.CARGO_TYPE else STAND_STATUS.PASSENGERS_CATEGORY
     
-    with Session() as session:
+    with _get_session_factory()() as session:
 
         # Get flight and sanity check
         flight = session.get(models.Flight, flight_id)
@@ -194,7 +205,7 @@ def reserve_stand_for_arrival_flight(*, flight_id: str, flight_type: str | None)
 def assign_airplane_to_departure_flight(*, flight_id: str, required_type: str | None) -> tuple[str, str] | None:
     """Assign airplane to departure flight"""
 
-    with Session() as session:
+    with _get_session_factory()() as session:
 
         # Get flight from ID and sanity check
         flight = session.get(models.Flight, flight_id)
@@ -249,7 +260,7 @@ def create_and_assign_airplane_for_landing_departure(
         prefab_picker: Callable[[str | None, str | None], str | None] | None = None) -> str | None:
     """Create and assign airplane for landing departure"""
 
-    with Session() as session:
+    with _get_session_factory()() as session:
 
         # Get flight and sanity check (Unscheduled and not an airplane already linked)
         flight = session.get(models.Flight, flight_id)
@@ -314,7 +325,7 @@ def create_and_assign_airplane_for_landing_departure(
 def reserve_stand_and_link_airplane_for_landing_arrival(*, flight_id: str) -> str | None:
     """Reserve stand and link airplane for landing arrival"""
 
-    with Session() as session:
+    with _get_session_factory()() as session:
 
         # Get flight from DB
         flight = session.get(models.Flight, flight_id)
@@ -376,7 +387,7 @@ def reserve_stand_and_link_airplane_for_landing_arrival(*, flight_id: str) -> st
 def mark_landing_departed(*, flight_id: str) -> None:
     """Mark landing departed"""
 
-    with Session() as session:
+    with _get_session_factory()() as session:
 
         # Get flight from DB
         flight = session.get(models.Flight, flight_id)
@@ -404,7 +415,7 @@ def mark_landing_departed(*, flight_id: str) -> None:
 def assign_path_to_airplane(*, airplane_id: str, source: str, destination: str) -> int | None:
     """Assign path to airplane"""
 
-    with Session() as session:
+    with _get_session_factory()() as session:
 
         # Retrieve path ID by source and destination
         path_id = session.execute(
@@ -434,7 +445,7 @@ def assign_path_to_airplane(*, airplane_id: str, source: str, destination: str) 
 def assign_landing_path_for_airplane(*, airplane_id: str, stand_id: str) -> int | None:
     """Assign landing path for airplane"""
 
-    with Session() as session:
+    with _get_session_factory()() as session:
 
         # Get airplane and sanity check
         airplane = session.get(models.Airplane, airplane_id)

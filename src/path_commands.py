@@ -4,11 +4,12 @@ from sqlalchemy.orm import sessionmaker
 from src.db.engine import get_engine
 from src.db import models
 
-Session = sessionmaker(bind=get_engine(), future=True)
-
 DEFAULT_PLANE_SPEED = 0.2  # !!! Now constant CHANGE WITH DYNAMIC SPEED
 
-def make_start_path_command(*, airplane_id: str, speed: float = DEFAULT_PLANE_SPEED) -> dict | None:
+def make_start_path_command(*, airplane_id: str, speed: float = DEFAULT_PLANE_SPEED, Session=None) -> dict | None:
+    
+    if Session is None:
+        Session = sessionmaker(bind=get_engine(), future=True)
     
     with Session() as session:
 

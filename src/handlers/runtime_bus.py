@@ -4,6 +4,7 @@ from datetime import timedelta
 
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy import select
+from functools import lru_cache
 
 from src.services.flight_generator import RandomFlightGenerator
 from src.db import models
@@ -12,8 +13,9 @@ from src.db.engine import get_engine
 
 from src.domain.status_constants import *
 
-_engine = get_engine()
-Session = sessionmaker(bind=_engine, future=True)
+@lru_cache()
+def _default_sessionmaker() -> sessionmaker:
+    return sessionmaker(bind=get_engine(), future=True)
 
 
 class RuntimeBusHandler:
@@ -31,7 +33,7 @@ class RuntimeBusHandler:
         self.queue = asyncio.Queue()
         self._task = None
 
-        self.Session = session_factory or Session
+        self.Session = session_factory or _default_sessionmaker()
         self._flight_generator = RandomFlightGenerator(self.Session)
 
         self._disembark_tasks: dict[str, asyncio.Task] = {}

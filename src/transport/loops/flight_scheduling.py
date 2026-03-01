@@ -7,7 +7,6 @@ from src.domain.status_constants import (
     BUS_COMMANDS,
     ENSURE_IN_WINDOW,
     MIN_POLL_REAL_S,
-    PERSONAL_AIRPORT,
     RANDOM_FLIGHTS_COUNT,
     WINDOW_TIMEDELTA_HOURS,
     WAIT_FOR_PARKED_TIMEOUT_S
@@ -36,7 +35,7 @@ async def flight_scheduler_loop(
 
     # Create a Flight Scheduler instance
     scheduler = FlightSlidingWindowScheduler(
-        airport_icao=PERSONAL_AIRPORT,
+        airport_icao=ctx.airport_icao,
         window=window,
     )
 
@@ -71,7 +70,7 @@ async def flight_scheduler_loop(
 
         # List flights inside scheduling window
         flights = ctx.flight_actions.list_flights_in_sliding_window(
-            airport_icao=PERSONAL_AIRPORT,
+            airport_icao=ctx.airport_icao,
             now_utc=now,
             window=scheduler.window,
         )
@@ -187,7 +186,7 @@ async def flight_scheduler_loop(
 
                 # Make start path command for the airplane and send through bus to Unity
                 if isinstance(airplane_id, str):
-                    cmd = make_start_path_command(airplane_id=airplane_id)
+                    cmd = make_start_path_command(airplane_id=airplane_id, Session=ctx.Session)
                     logging.info("[start_path][OUT] flight_id=%s airplane_id=%s route_id=%s segments=%d now=%s",
                         flight_id, cmd["airplane_id"], cmd["route_id"], len(cmd["segments"]), now.isoformat())
                     if cmd is not None:
@@ -236,7 +235,7 @@ async def flight_scheduler_loop(
 
                 # Call Make start path command and send through bus to Unity
                 if isinstance(airplane_id, str):
-                    cmd = make_start_path_command(airplane_id=airplane_id)
+                    cmd = make_start_path_command(airplane_id=airplane_id, Session=ctx.Session)
                     if cmd is not None:
                         await ctx.bus.send_command(cmd)
 

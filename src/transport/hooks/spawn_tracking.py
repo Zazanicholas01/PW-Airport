@@ -1,7 +1,7 @@
 from src.services.spawn_tracking import ensure_airplane_row
 from src.db.db_functions import link_airplane_to_stand
 
-def make_spawn_tracking_hook(*, world_state):
+def make_spawn_tracking_hook(*, world_state, Session=None):
     def _hook(payload: dict) -> None:
         """Helper function to define an outgoing-hook that checks for spawn commands"""
 
@@ -19,7 +19,7 @@ def make_spawn_tracking_hook(*, world_state):
 
         # Get airplane ID and ensure the record exists in the DB
         airplane_id = payload.get("airplane_id") if isinstance(payload.get("airplane_id"), str) else None
-        airplane_id = ensure_airplane_row(airplane_id=airplane_id, prefab=prefab)
+        airplane_id = ensure_airplane_row(Session=Session, airplane_id=airplane_id, prefab=prefab)
 
         # If context bootsrap, link airplane to stand in DB
         if spawn_ctx == "bootstrap":

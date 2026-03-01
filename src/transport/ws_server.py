@@ -12,9 +12,11 @@ from src.transport.session import SessionContext
 from src.transport.loops.clock import handle_clock_control, clock_sync_loop
 from src.transport.loops.spawn_scheduling import schedule_initial_spawns
 from src.transport.loops.flight_scheduling import flight_scheduler_loop
-from src.transport.loops.flight_actions import FlightActions, build_flight_actions
+from src.transport.loops.flight_actions import FlightActions
+from src.transport.loops.build_flight_actions import build_flight_actions
 from src.transport.hooks.spawn_tracking import make_spawn_tracking_hook
 from src.transport.tasks import run_tasks  # if you use the helper
+from src.db import db_functions
 
 
 async def incoming_dispatch_loop(ctx: SessionContext) -> None:
@@ -39,7 +41,7 @@ async def incoming_dispatch_loop(ctx: SessionContext) -> None:
             ctx.bus.incoming.task_done()
 
 
-async def echo_handler(websocket, setup_bus, prefab_store, world_state, graph, flight_actions) -> None:
+async def echo_handler(websocket, setup_bus, prefab_store, world_state, graph, *, Session, flight_actions: FlightActions) -> None:
     """Handle one WebSocket client: greet, log, and echo any text received."""
     
     # Strict check on setup bus to exist
@@ -55,7 +57,7 @@ async def echo_handler(websocket, setup_bus, prefab_store, world_state, graph, f
     await bus.start(websocket=websocket)
 
     # Register the hook on the bus to trigger it for every payload
-    bus.add_outgoing_hook(make_spawn_tracking_hook(world_state=world_state))
+    bus.add_outgoing_hook(make_spawn_tracking_hook(world_state=world_state, Session=Session))
 
     # Initialize Simulation Clock and a clock lock to guard it
     clock = SimulationClock(sim_start=datetime.now(timezone.utc), time_scale=1.0)
@@ -67,6 +69,7 @@ async def echo_handler(websocket, setup_bus, prefab_store, world_state, graph, f
     # Create a Runtime Bus Handler instance and start it
     runtime_bus = RuntimeBusHandler(
         prefab_store,
+        session_factory=Session,
         clock=clock,
         clock_lock=clock_lock,
         clock_changed=clock_changed,
@@ -90,6 +93,7 @@ async def echo_handler(websocket, setup_bus, prefab_store, world_state, graph, f
         prefab_store=prefab_store,
         graph=graph,
         world_state=world_state,
+        Session=Session,
         airport_icao=airport_icao,
         flight_actions=flight_actions
     )
@@ -115,23 +119,33 @@ async def echo_handler(websocket, setup_bus, prefab_store, world_state, graph, f
         await bus.stop()
 
 
-async def main(host, port, app_container, *, flight_actions: FlightActions) -> None:
+async def main(host, port, *, container=None) -> None:
     """Start the WebSocket server and keep it running indefinitely."""
 
+    if container is None:
+        raise TypeError("main() missing required keyword argument: 'container'")
+
+    db_functions.configure_session_factory(container.Session)
+
     # Initialize the setup bus handler inside the running event loop and start it
-    setup_bus = SetupBusHandler(prefab_store=app_container.prefab_store, init_graph=app_container.graph)
+    setup_bus = SetupBusHandler(
+        prefab_store=container.prefab_store,
+        init_graph=container.graph,
+        session_factory=container.Session,
+    )
     await setup_bus.start()
 
-    flight_actions = build_flight_actions(Session=app_container.Session)
+    flight_actions = build_flight_actions(Session=container.Session)
     
     # Define the handler for every connection that delegates to Echo Handler
     async def _ws_handler(websocket, path=None):
         await echo_handler(
             websocket,
             setup_bus=setup_bus,
-            prefab_store=app_container.prefab_store, 
-            world_state=app_container.world_state, 
-            graph=app_container.graph,
+            prefab_store=container.prefab_store,
+            world_state=container.world_state,
+            graph=container.graph,
+            Session=container.Session,
             flight_actions=flight_actions,
         )
 

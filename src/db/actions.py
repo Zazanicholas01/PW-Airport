@@ -1,6 +1,6 @@
 from __future__ import annotations
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import timedelta
 
 from sqlalchemy import select, func
 from src.db import models
@@ -8,7 +8,7 @@ from src.domain.status_constants import AIRPLANE_STATUS
 
 from src.services.flight_generator import RandomFlightGenerator
 
-@dataclass
+@dataclass(frozen=True)
 class DbActions:
     Session: any
 

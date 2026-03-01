@@ -81,7 +81,7 @@ if __name__ == "__main__":
             main(
                 host=WEBSOCKET_CONFIG.HOST, 
                 port=WEBSOCKET_CONFIG.PORT, 
-                app_container=app_container
+                container=app_container
             )
         )
     except KeyboardInterrupt:
