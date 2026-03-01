@@ -102,6 +102,8 @@ async def flight_scheduler_loop(
     RandomFlightGenerator(Session).generate_flights(RANDOM_FLIGHTS_COUNT, ensure_in_window=ENSURE_IN_WINDOW, window=scheduler.window)
     logging.info(f"[flight_scheduler] generated debug flights (n={RANDOM_FLIGHTS_COUNT})")
 
+    last_window_log = 0.0
+
     while True:
         if clock_lock is None:
             now = as_utc(clock.now())
@@ -116,8 +118,6 @@ async def flight_scheduler_loop(
             now_utc=now,
             window=scheduler.window,
         )
-
-        last_window_log = 0.0
 
         t = time.monotonic()
         if (t - last_window_log) >= poll_seconds:
@@ -349,6 +349,9 @@ async def clock_sync_loop(bus: WsMessageBus, clock: SimulationClock, *, clock_lo
     period = 1.0 / CLOCK_HERTZ
     logging.info("Clock sync loop started: hz=%.1f", CLOCK_HERTZ)
 
+    last_log_t = 0.0
+    last_evt_t = 0.0
+
     while True:
         if clock_lock is None:
             sync = clock.make_sync()
@@ -544,7 +547,7 @@ async def main(host, port, pw_prefab_store, pw_graph, pw_world_state) -> None:
         ping_timeout=WEBSOCKET_CONFIG.PING_TIMEOUT,
         max_queue=WEBSOCKET_CONFIG.MAX_QUEUE,
     ):
-        logging.info("WebSocket server running on ws://%s:%s", host, port)
+        logging.info("WebSocket server running on ws://%s:%s", WEBSOCKET_CONFIG.HOST, WEBSOCKET_CONFIG.PORT)
         # Keep the server alive forever; replaced by a future that never resolves.
         await asyncio.Future()
     
