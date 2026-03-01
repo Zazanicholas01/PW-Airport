@@ -10,8 +10,7 @@ from src.domain.status_constants import *
 from src.transport.ws_server import main
 from src.utils.event_log import append_event
 
-from src.db.engine import get_engine
-from sqlalchemy.orm import sessionmaker
+from src.app.container import build_container
 
 
 logging.basicConfig(
@@ -61,13 +60,16 @@ class EventJsonHandler(logging.Handler):
 
 logging.getLogger().addHandler(EventJsonHandler())
 
-pw_prefab_store = PrefabStore()
-pw_graph = InitGraph(PERSONAL_AIRPORT)
-pw_world_state = WorldState()
+prefab_store = PrefabStore()
+graph = InitGraph(PERSONAL_AIRPORT)
+world_state = WorldState()
 #logging.getLogger().setLevel(logging.DEBUG)
 
-_engine = get_engine()
-Session = sessionmaker(bind=_engine, future=True)
+app_container = build_container(
+    prefab_store=prefab_store,
+    graph=graph,
+    world_state=world_state
+)
 
 setup_bus: SetupBusHandler | None = None
 runtime_bus: RuntimeBusHandler | None = None
@@ -79,9 +81,7 @@ if __name__ == "__main__":
             main(
                 host=WEBSOCKET_CONFIG.HOST, 
                 port=WEBSOCKET_CONFIG.PORT, 
-                pw_prefab_store=pw_prefab_store, 
-                pw_graph=pw_graph, 
-                pw_world_state=pw_world_state
+                app_container=app_container
             )
         )
     except KeyboardInterrupt:

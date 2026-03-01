@@ -53,6 +53,9 @@ LOG_EVERY_S = 10.0
 
 EVT_EVERY_S = 0.5
 
+WINDOW_TIMEDELTA_HOURS = 1
+WAIT_FOR_PARKED_TIMEOUT_S = 10
+
 # File constants
 NODE_SCHEMA_JSON_PATH = "schema_nodi.json"
 
