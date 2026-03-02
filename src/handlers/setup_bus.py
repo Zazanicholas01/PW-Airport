@@ -11,31 +11,42 @@ from src.db import models
 from src.domain.status_constants import *
 
 
+class SetupPhase:
+    IDLE = "IDLE"
+    RECEIVING_SPLINES = "RECEIVING_SPLINES"
+    RECEIVING_PREFABS = "RECEIVING_PREFABS"
+    BUILDING_PATHS = "BUILDING_PATHS"
+
+    DONE = "DONE"
+    FAILED = "FAILED"
+
+
 @dataclass
 class SetupState:
     """Mutable state for a single Unity setup/import run."""
 
-    receiving_splines: bool = False
-    receiving_prefabs: bool = False
-    pending_splines: list[dict[str, Any]] = field(default_factory=list)
-    pending_prefabs: list[dict[str, Any]] = field(default_factory=list)
-    splines_committed: bool = False
-    prefabs_committed: bool = False
-    setup_completed: bool = False
-    path_building: bool = False
+    phase: SetupPhase = SetupPhase.IDLE
+
+    pending_splines = []
+    pending_prefabs = []
+
+    splines_done = False
+    prefabs_done = False
+    paths_done = False
+
     landing_spawn_position: dict[str, Any] | None = None
+    last_error: str | None = None
 
     def reset(self) -> None:
         """Reset all setup-related flags and clear buffers."""
-        self.receiving_splines = False
-        self.receiving_prefabs = False
+        self.phase = SetupPhase.IDLE
         self.pending_splines.clear()
         self.pending_prefabs.clear()
-        self.splines_committed = False
-        self.prefabs_committed = False
-        self.setup_completed = False
-        self.path_building = False
+        self.splines_done = False
+        self.prefabs_done = False
+        self.paths_done = False
         self.landing_spawn_position = None
+        self.last_error = None
 
 
 class SetupBusHandler:
@@ -102,8 +113,9 @@ class SetupBusHandler:
             return
 
         # Idempotency check on the setup completed flag
-        if self.state.setup_completed:
-            logging.info("[setup bus] Setup already completed; ignoring payload")
+        if self.state.phase in (SetupPhase.DONE, SetupPhase.FAILED):
+            if payload.get("type") == "event" and payload.get("event") == "setup-init":
+                await self._handle_control_event(payload)
             return
 
         # Routes control event payloads to the right control event handler
@@ -145,48 +157,86 @@ class SetupBusHandler:
         if handler is None:
             logging.info("[setup bus] Unhandled control event: %s", event_name)
             return
-        await handler()
+        
+        try:
+            await handler()
+        except Exception as e:
+            self.state.phase = SetupPhase.FAILED
+            self.state.last_error = repr(e)
+            raise
 
 
     async def _evt_setup_init(self) -> None:
         """SETUP INIT EVENT HANDLER"""
         self.state.reset()
+        self.setup_finished = False
         logging.info("[setup bus] Setup init: State Reset")
     
 
     async def _evt_send_splines(self) -> None:
         """SEND SPLINES EVENT HANDLER"""
-        self.state.receiving_splines = True
+        self.state.phase = SetupPhase.RECEIVING_SPLINES
         self.state.pending_splines.clear()
         logging.info("[setup bus] Begin Spline Batch")
 
 
     async def _evt_finish_send_splines(self) -> None:
         """FINISH SEND SPLINES EVENT HANDLER"""
-        self.state.receiving_splines = False
+        if self.state.phase == SetupPhase.RECEIVING_SPLINES:
+            self.state.phase = SetupPhase.IDLE
+
         await self._commit_splines()
-        logging.info("[setup bus] Finished Spline Batch")
+        self.state.splines_done = True
+
+        logging.info("[setup bus] Begin Spline Batch")
+        await self._maybe_finish_setup()
 
 
     async def _evt_send_prefabs(self) -> None:
         """SEND PREFABS EVENT HANDLER"""
-        self.state.receiving_prefabs = True
+        self.state.phase = SetupPhase.RECEIVING_PREFABS
         self.state.pending_prefabs.clear()
         logging.info("[setup bus] Begin Prefab Batch")
 
 
     async def _evt_finish_send_prefabs(self) -> None:
         """FINISH SEND PREFABS EVENT HANDLER"""
-        self.state.receiving_prefabs = False
+        if self.state.phase == SetupPhase.RECEIVING_PREFABS:
+            self.state.phase = SetupPhase.IDLE
+
         await self._commit_prefabs()
+        self.state.prefabs_done = True
+        
         logging.info("[setup bus] Finished Prefab Batch")
+        await self._maybe_finish_setup()
+
+
+    async def _maybe_finish_setup(self) -> None:
+        """Build and persist paths once both phases are done. Mark Done after success"""
+
+        # Check on splines & prefabs phases
+        if self.state.paths_done:
+            return
+        if not (self.state.splines_done and self.state.prefabs_done):
+            return
+        
+        self.state.phase = SetupPhase.BUILDING_PATHS
+
+        paths = self._build_path_models()
+        self._rebuild_paths_in_db(paths)
+
+        self.state.paths_done = True
+        self.state.phase = SetupPhase.DONE
+        self.setup_finished = True
+
+        logging.info("[setup bus] Setup completed; subsequent setup payloads will be ignored.")
 
 
     async def _buffer_spline(self, spline: dict) -> None:
         """Buffer a single spline."""
 
         # Ignores spline payloads based on receiving splines flag
-        if not self.state.receiving_splines:
+        if self.state.phase != SetupPhase.RECEIVING_SPLINES:
             logging.debug("[setup bus] Spline Ignored")
             return
         
@@ -216,16 +266,12 @@ class SetupBusHandler:
         if stand_positions:
             self._persist_stand_positions(stand_positions)
 
-        # Mark spline phase completed and trigger completion check
-        self.state.splines_committed = True
-        self._check_setup_completion()
-
 
     async def _buffer_prefabs(self, prefabs) -> None:
         """Buffer multiple prefabs."""
 
         # Check on receiving prefabs check for idempotency
-        if not self.state.receiving_prefabs:
+        if self.state.phase != SetupPhase.RECEIVING_PREFABS:
             logging.debug("[setup bus] Prefabs Ignored")
             return
 
@@ -236,9 +282,8 @@ class SetupBusHandler:
 
         # Filter with sanity check on single prefab payloads to be dictionaries and buffers them to commit
         for prefab in prefabs:
-            if not isinstance(prefab, dict):
-                continue
-            self.state.pending_prefabs.append(prefab)
+            if isinstance(prefab, dict):
+                self.state.pending_prefabs.append(prefab)
 
 
     async def _commit_prefabs(self) -> None:
@@ -253,10 +298,6 @@ class SetupBusHandler:
         self.prefab_store.add_prefabs(self.state.pending_prefabs)
         logging.info(f"[setup bus] Committed {len(self.state.pending_prefabs)} Prefabs")
         self.state.pending_prefabs.clear()
-
-        # Mark prefab phase complete and trigger completion check
-        self.state.prefabs_committed = True
-        self._check_setup_completion()
 
 
     @staticmethod
@@ -330,37 +371,11 @@ class SetupBusHandler:
         logging.info(f"[setup bus] Updated stand positions {updated}")
 
 
-    def _check_setup_completion(self) -> None:
-        """Mark setup as complete once both prefabs and splines have been received."""
-
-        # Idempotency control on setup completed
-        if self.state.setup_completed:
-            return
-        
-        # Check on both splines and prefabs committed successfully
-        if self.state.splines_committed and self.state.prefabs_committed:
-
-            # Set setup completed flag
-            self.state.setup_completed = True
-            logging.info("[setup bus] Setup completed; subsequent setup payloads will be ignored.")
-
-            # Trigger path building in init_graph and convert to ORM Path Models
-            paths = self._build_path_models()
-
-            # Truncate previous path records and build again
-            self._rebuild_paths_in_db(paths)
-
-        # Set final ready flag once all phases have been marked as done
-        if self.state.splines_committed and self.state.prefabs_committed and self.state.path_building and self.state.setup_completed:
-            self.setup_finished = True
-
-
     def _build_path_models(self) -> list[models.Path]:
         """Convert computed paths from init graph into ORM Path models"""
 
         # Trigger path building and set path building flag
         self.init_graph.build_paths()
-        self.state.path_building = True
 
         # Convert into ORM Models
         paths: list[models.Path] = []
