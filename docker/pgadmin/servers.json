@@ -1,0 +1,14 @@
+{
+  "Servers": {
+    "1": {
+      "Name": "PW Airport Postgres",
+      "Group": "PW Airport",
+      "Host": "postgres",
+      "Port": 5432,
+      "MaintenanceDB": "Airport",
+      "Username": "airport",
+      "SSLMode": "prefer",
+      "PassFile": "/pgpass"
+    }
+  }
+}

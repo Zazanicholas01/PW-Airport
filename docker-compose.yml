@@ -1,4 +1,4 @@
-version: "3.8"
+name: pw-airport-dashboard
 
 services:
   postgres:
@@ -10,25 +10,28 @@ services:
       POSTGRES_USER: airport
       POSTGRES_PASSWORD: airport
     ports:
-      - "5432:5432"
+      - "5433:5432"
     volumes:
-      - postgres-data:/var/lib/postgresql/data
+      - postgres-dashboard-data:/var/lib/postgresql/data
       - ./docker/initdb:/docker-entrypoint-initdb.d
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -d $${POSTGRES_DB} -U $${POSTGRES_USER}"]
       interval: 10s
       timeout: 5s
       retries: 5
-
-  airportdb-init:
-    image: python:3.11-slim
-    container_name: pw_airport_db_init
+  
+  airport-bootstrap:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    container_name: pw_airport_bootstrap
     depends_on:
       postgres:
         condition: service_healthy
     working_dir: /app
     volumes:
-      - ./scripts:/app/scripts:ro
+      - ./:/app:ro
+      - ./data/logs:/logs
     environment:
       POSTGRES_HOST: postgres
       POSTGRES_PORT: 5432
@@ -36,100 +39,23 @@ services:
       POSTGRES_ADMIN_DB: postgres
       POSTGRES_USER: airport
       POSTGRES_PASSWORD: airport
+      PYTHONPATH: /app
+      LOG_DIR: /logs
     entrypoint: >
-      sh -c "pip install --no-cache-dir 'psycopg[binary]' && python /app/scripts/init_db.py"
+      sh -c "python /app/scripts/init_db.py &&
+             python /app/scripts/startup.py"
+          
+    restart: "no"
 
-  metabase:
-    image: metabase/metabase:latest
-    container_name: pw_airport_metabase
+  dashboard-app:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    container_name: pw_airport_dashboard_app
     depends_on:
       postgres:
         condition: service_healthy
-      airportdb-init:
-        condition: service_completed_successfully
-    environment:
-      MB_DB_CONNECTION_URI: postgres://metabase:metabase@postgres:5432/metabase
-      MB_SITE_URL: http://localhost:3000
-      MB_PASSWORD_COMPLEXITY: weak
-      JAVA_TOOL_OPTIONS: "-Duser.timezone=Europe/Rome"
-    ports:
-      - "3000:3000"
-    restart: unless-stopped
-    volumes:
-      - metabase-data:/metabase-data
-    healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/api/health || exit 1"]
-      interval: 10s
-      timeout: 10s
-      retries: 15
-      start_period: 60s
-
-  metabase-setup:
-    image: curlimages/curl:8.4.0
-    container_name: pw_airport_metabase_setup
-    depends_on:
-      metabase:
-        condition: service_healthy
-      airportdb-init:
-        condition: service_completed_successfully
-    environment:
-      MB_ADMIN_FIRST: Admin
-      MB_ADMIN_LAST: User
-      MB_ADMIN_EMAIL: admin@pw-airport.local
-      MB_ADMIN_PASSWORD: ghiaccio123
-      MB_SITE_NAME: PW Airport Metabase
-      MB_SITE_URL: http://localhost:3000
-      MB_PROVISION_DB_NAME: Airport DB
-      MB_PROVISION_DB_HOST: postgres
-      MB_PROVISION_DB_PORT: 5432
-      MB_PROVISION_DB_DBNAME: Airport
-      MB_PROVISION_DB_USER: airport
-      MB_PROVISION_DB_PASSWORD: airport
-    entrypoint: >
-      sh -c '
-        until curl -sf http://metabase:3000/api/health >/dev/null; do
-          echo "Waiting for Metabase to be healthy...";
-          sleep 5;
-        done;
-        TOKEN=$$(curl -sf http://metabase:3000/api/session/properties | sed -n "s/.*\"setup-token\":\"\([^\"]*\)\".*/\1/p");
-        if [ -n "$$TOKEN" ] && [ "$$TOKEN" != "null" ]; then
-          echo "Running automated setup...";
-          curl -sf -X POST http://metabase:3000/api/setup \
-            -H "Content-Type: application/json" \
-            -d "{\"token\":\"$$TOKEN\",\"user\":{\"first_name\":\"$$MB_ADMIN_FIRST\",\"last_name\":\"$$MB_ADMIN_LAST\",\"email\":\"$$MB_ADMIN_EMAIL\",\"password\":\"$$MB_ADMIN_PASSWORD\"},\"prefs\":{\"site_name\":\"$$MB_SITE_NAME\",\"site_url\":\"$$MB_SITE_URL\"},\"database\":null}";
-        else
-          echo "Setup already completed; continuing to DB provisioning...";
-        fi;
-        SESSION=$$(curl -sf -X POST http://metabase:3000/api/session \
-          -H "Content-Type: application/json" \
-          -d "{\"username\":\"$$MB_ADMIN_EMAIL\",\"password\":\"$$MB_ADMIN_PASSWORD\"}" | sed -n "s/.*\"id\":\"\([^\"]*\)\".*/\1/p");
-        if [ -z "$$SESSION" ]; then
-          echo "Failed to obtain session; retrying...";
-          exit 1;
-        fi;
-        echo "Setting Metabase report timezone...";
-        curl -sf -X PUT "http://metabase:3000/api/setting/report-timezone" \
-          -H "Content-Type: application/json" \
-          -H "X-Metabase-Session: $$SESSION" \
-          -d "{\"value\":\"Europe/Rome\"}";
-        DB_EXISTS=$$(curl -sf -H "X-Metabase-Session: $$SESSION" http://metabase:3000/api/database | grep -c "\"name\":\"$$MB_PROVISION_DB_NAME\"");
-        if [ "$${DB_EXISTS}" -gt 0 ]; then
-          echo "Database '\''$$MB_PROVISION_DB_NAME'\'' already present; done.";
-          exit 0;
-        fi;
-        echo "Creating database '\''$$MB_PROVISION_DB_NAME'\''...";
-        curl -sf -X POST http://metabase:3000/api/database \
-          -H "Content-Type: application/json" \
-          -H "X-Metabase-Session: $$SESSION" \
-            -d "{\"engine\":\"postgres\",\"name\":\"$$MB_PROVISION_DB_NAME\",\"details\":{\"host\":\"$$MB_PROVISION_DB_HOST\",\"port\":$$MB_PROVISION_DB_PORT,\"dbname\":\"$$MB_PROVISION_DB_DBNAME\",\"user\":\"$$MB_PROVISION_DB_USER\",\"password\":\"$$MB_PROVISION_DB_PASSWORD\",\"ssl\":false},\"is_full_sync\":true,\"is_on_demand\":false,\"refingerprint\":false}";
-      '
-    restart: on-failure
-
-  airport-startup:
-    image: python:3.11-slim
-    container_name: pw_airport_startup
-    depends_on:
-      metabase-setup:
+      airport-bootstrap:
         condition: service_completed_successfully
     working_dir: /app
     volumes:
@@ -143,16 +69,44 @@ services:
       POSTGRES_PASSWORD: airport
       PYTHONPATH: /app
       LOG_DIR: /logs
-    entrypoint: >
-      sh -c "pip install --no-cache-dir -r /app/requirements.txt && python /app/scripts/startup.py"
-    restart: on-failure
+    expose:
+      - "8000"
+    command: uvicorn src.web.dashboard_app:app --host 0.0.0.0 --port 8000 --reload
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped
+  
+  nginx:
+    image: nginx:1.27-alpine
+    container_name: pw_airport_nginx
+    depends_on:
+      dashboard-app:
+        condition: service_started
+    ports:
+      - "8001:80"
+    volumes:
+      - ./docker/nginx/dashboard.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./src/web/static:/var/www/static:ro
+    restart: unless-stopped
+  
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: pw_airport_pgadmin
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@example.com
+      PGADMIN_DEFAULT_PASSWORD: ghiaccio123
+      PGADMIN_CONFIG_SERVER_MODE: "False"
+    ports:
+      - "5051:80"
+    volumes:
+      - pgadmin-dashboard-data:/var/lib/pgadmin
+      - ./docker/pgadmin/servers.json:/pgadmin4/servers.json:ro
+      - ./docker/pgadmin/pgpass:/pgpass:ro
+    restart: unless-stopped
 
 volumes:
-  postgres-data:
-  metabase-data:
-  logs:
-    driver: local
-    driver_opts:
-      type: none
-      o: bind
-      device: ./data/logs
+  postgres-dashboard-data:
+  pgadmin-dashboard-data:
