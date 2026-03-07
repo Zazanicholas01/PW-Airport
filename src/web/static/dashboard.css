@@ -57,6 +57,113 @@ body::before {
     inset 0 1px 0 rgba(255, 255, 255, 0.04);
 }
 
+#app {
+  min-height: 70vh;
+}
+
+.app-shell {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.app-bar {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.app-title {
+  color: var(--board-head);
+  font-size: 28px;
+  font-weight: 800;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  text-shadow: 0 0 14px var(--board-shadow);
+}
+
+.app-nav {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.app-nav-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 38px;
+  padding: 0 14px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 176, 64, 0.2);
+  color: var(--board-head);
+  text-decoration: none;
+  background: rgba(255, 176, 64, 0.05);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.app-nav-link.active {
+  color: #18120b;
+  background: linear-gradient(180deg, #ffbe5c, #dc8c20);
+  border-color: transparent;
+}
+
+.app-status {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.app-status-item {
+  color: var(--board-head);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.control-row {
+  margin-top: 10px;
+}
+
+.section-gap {
+  margin-top: 18px;
+}
+
+.section-gap-tight {
+  margin-top: 8px;
+}
+
+.overview-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.placeholder-card,
+.placeholder-screen {
+  border: 1px solid var(--board-line);
+  border-radius: 14px;
+  padding: 18px;
+  background:
+    linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0)),
+    linear-gradient(180deg, var(--board-bg), var(--board-bg-soft));
+}
+
+.metric-value {
+  margin-top: 8px;
+  color: var(--board-head);
+  font-size: 40px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+}
+
+.detail-key {
+  width: 160px;
+}
+
 .row {
   display: flex;
   gap: 12px;
@@ -324,9 +431,10 @@ table {
 
 #events {
   margin-top: 8px;
+  height: 180px;
   border: 1px solid var(--board-line);
   border-radius: 12px;
-  overflow: hidden;
+  overflow: auto;
   background: rgba(10, 12, 15, 0.92);
 }
 
@@ -488,6 +596,14 @@ table {
 .clickable-row { cursor: pointer; }
 
 @media (max-width: 900px) {
+  .overview-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .app-bar {
+    flex-direction: column;
+  }
+
   .plane-layout { flex-direction: column; }
   .plane-media { flex-basis: auto; max-width: 100%; }
 

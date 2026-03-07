@@ -4,85 +4,12 @@
     <meta charset="utf-8" />
     <title>PW Airport - Scheduling Window</title>
     <link rel="stylesheet" href="/static/dashboard.css?v=10" />
-    <script defer src="/static/dashboard.js?v=9"></script>
+    <script defer type="module" src="/static/dashboard.js?v=10"></script>
   </head>
   <body>
     <div class="shell">
       <div class="panel">
-        <div id="list_view">
-          <div class="row">
-            <h2 style="margin: 0;">Scheduling Window</h2>
-            <span class="muted" id="status">connecting…</span>
-          </div>
-
-          <div class="row" style="margin-top: 10px;">
-            <label>Airport <input id="airport" value="LIAG" size="6" /></label>
-            <label>Window (min) <input id="window" value="60" size="4" /></label>
-            <button id="refresh">Refresh</button>
-            <span class="muted">Auto-refresh on events + every 10s</span>
-          </div>
-
-          <div class="board-block">
-            <div class="board-title">Flight Information</div>
-            <table class="board-table flights-board">
-              <thead>
-                <tr>
-                  <th>When</th>
-                  <th>Δ min</th>
-                  <th>Flight</th>
-                  <th>Route</th>
-                  <th>Type</th>
-                  <th>Status</th>
-                  <th>Airplane</th>
-                </tr>
-              </thead>
-              <tbody id="rows"></tbody>
-            </table>
-          </div>
-
-          <div class="board-block" style="margin-top: 18px;">
-            <div class="board-title">Planes On Ground</div>
-            <table class="board-table planes-board">
-              <thead>
-                <tr>
-                  <th>Airplane</th>
-                  <th>Status</th>
-                  <th>Model</th>
-                  <th>Type</th>
-                  <th>Range</th>
-                  <th>Speed</th>
-                  <th>Stand</th>
-                  <th>Route</th>
-                </tr>
-              </thead>
-              <tbody id="plane_rows"></tbody>
-            </table>
-          </div>
-
-
-          <h3 style="margin-top: 18px;">Live events</h3>
-          <div id="events" style="height: 180px; overflow: auto;"></div>
-        </div>
-
-        <div id="plane_view" class="hidden">
-          <div class="row">
-            <button id="back_to_list">← Back</button>
-            <span class="muted" id="plane_status"></span>
-          </div>
-
-          <div class="plane-layout">
-            <div class="plane-media">
-              <img id="plane_img" src="/static/plane-placeholder.png" alt="Plane image" />
-            </div>
-
-            <div class="plane-data">
-              <h2 id="plane_title" style="margin: 0 0 8px;"></h2>
-              <table>
-                <tbody id="plane_detail_rows"></tbody>
-              </table>
-            </div>
-          </div>
-        </div>
+        <div id="app"></div>
       </div>
     </div>
   </body>
