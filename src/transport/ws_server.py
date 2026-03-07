@@ -34,7 +34,7 @@ async def incoming_dispatch_loop(ctx: SessionContext) -> None:
                 continue
 
             # If setup not finished, route to setup bus, otherwise route to runtime bus
-            if not ctx.setup_bus.setup_finished:
+            if not ctx.setup_bus.setup_completed:
                 await ctx.setup_bus.enqueue(payload)
             else:
                 await ctx.runtime_bus.enqueue(payload)

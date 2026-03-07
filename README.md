@@ -63,7 +63,7 @@ Seed static data (airports, airlines, terminals, stands, parking, vehicles): `sc
    - stores stand positions + landing spawn reference from splines
    - builds full landing/departure paths via `InitGraph`
    - wipes/rebuilds `Percorso` in DB
-   - marks setup complete (`setup_finished=True`)
+   - marks setup complete (`setup_completed=True`)
 
 Result: backend has prefabs, stand coordinates, and generated movement routes persisted.
 

@@ -37,6 +37,10 @@ class SetupState:
     landing_spawn_position: dict[str, Any] | None = None
     last_error: str | None = None
 
+    @property
+    def setup_completed(self) -> bool:
+        return self.phase == SetupPhase.DONE
+
     def reset(self) -> None:
         """Reset all setup-related flags and clear buffers."""
         self.phase = SetupPhase.IDLE
@@ -63,7 +67,7 @@ class SetupBusHandler:
 
         self.Session = session_factory or sessionmaker(bind=get_engine(), future=True)
 
-        self.setup_finished = False
+        self.setup_completed = False
 
 
     async def start(self) -> None:
@@ -169,7 +173,7 @@ class SetupBusHandler:
     async def _evt_setup_init(self) -> None:
         """SETUP INIT EVENT HANDLER"""
         self.state.reset()
-        self.setup_finished = False
+        self.setup_completed = False
         logging.info("[setup bus] Setup init: State Reset")
     
 
@@ -227,7 +231,7 @@ class SetupBusHandler:
 
         self.state.paths_done = True
         self.state.phase = SetupPhase.DONE
-        self.setup_finished = True
+        self.setup_completed = True
 
         logging.info("[setup bus] Setup completed; subsequent setup payloads will be ignored.")
 

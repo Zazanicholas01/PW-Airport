@@ -14,7 +14,9 @@ class FlightActions:
     assign_path_to_airplane: Callable[..., None]
 
     create_and_assign_airplane_for_landing_departure: Callable[..., str | None]
+
     mark_landing_departed: Callable[..., None]
+    mark_departure_started: Callable[..., None]
 
     reserve_stand_and_link_airplane_for_landing_arrival: Callable[..., str | None]
     assign_landing_path_for_airplane: Callable[..., None]

@@ -121,7 +121,7 @@ def list_flights_in_sliding_window(*, airport_icao: str, now_utc: datetime, wind
         q_dep_sched = (
             select(models.Flight)
             .where(models.Flight.origin == airport_icao)
-            .where(models.Flight.status == FLIGHT_STATUS.SCHEDULED)
+            .where(models.Flight.status.in_(FLIGHT_STATUS.DEPARTING_OUTBOUND))
             .where(models.Flight.airplane_id.is_not(None))
             .where(models.Flight.departure_time.is_not(None))
             .where(models.Flight.departure_time <= upper)
@@ -409,6 +409,37 @@ def mark_landing_departed(*, flight_id: str) -> None:
                 .where(models.Airplane.id == airplane_id)
                 .values(status=AIRPLANE_STATUS.IN_FLIGHT)
             )
+        session.commit()
+
+
+def mark_departure_started(*, flight_id: str) -> None:
+    """Mark an outbound departure as started"""
+
+    with _get_session_factory()() as session:
+
+        # Get flight from DB
+        flight = session.get(models.Flight, flight_id)
+        if flight is None:
+            return
+        
+        # Get airplane from flight
+        airplane_id = getattr(flight, "airplane_id", None)
+
+        # Update flight status from Scheduled --> Departing
+        session.execute(
+            update(models.Flight)
+            .where(models.Flight.id == flight_id)
+            .values(status=FLIGHT_STATUS.DEPARTING)
+        )
+
+        # If airplane exists, update airplane status from Parked --> Departing
+        if isinstance(airplane_id, str):
+            session.execute(
+                update(models.Airplane)
+                .where(models.Airplane.id == airplane_id)
+                .values(status=AIRPLANE_STATUS.DEPARTING)
+            )
+        
         session.commit()
 
 

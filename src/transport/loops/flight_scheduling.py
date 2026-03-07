@@ -191,6 +191,7 @@ async def flight_scheduler_loop(
                     if cmd is None:
                         logging.warning("[start_path][SKIP] flight_id=%s airplane_id=%s (no route/segments)", flight_id, airplane_id)
                     else:
+                        ctx.flight_actions.mark_departure_started(flight_id=flight_id)
                         logging.info("[start_path][OUT] flight_id=%s airplane_id=%s route_id=%s segments=%d now=%s",
                             flight_id, 
                             cmd["airplane_id"], 

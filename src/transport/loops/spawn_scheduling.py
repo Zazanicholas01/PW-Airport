@@ -23,8 +23,14 @@ async def schedule_initial_spawns(ctx: SessionContext) -> None:
         "message": "hello",
     })
     
-    # Initialize Spawn Scheduler instance and build initial spawn commands
-    scheduler = SpawnScheduler(prefab_store=ctx.prefab_store, commands=ctx.commands, session_factory=ctx.Session)
+    # Initialize Spawn Scheduler instance
+    scheduler = SpawnScheduler(
+        prefab_store=ctx.prefab_store, 
+        commands=ctx.commands, 
+        session_factory=ctx.Session
+    )
+
+    # Build initial spawn commands with helper function
     commands = scheduler.plan_initial_spawns()
     if not commands:
         logging.info("No initial spawns commands generated")

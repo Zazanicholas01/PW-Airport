@@ -54,7 +54,7 @@ Caller path:
 
 Flow:
 
-1. Transport forwards payloads while `setup_finished == False`.
+1. Transport forwards payloads while `setup_completed == False`.
 2. `SetupBusHandler` event loop consumes queued payloads.
 3. Control events open/close batch windows:
    - `setup-init` -> reset setup state
@@ -79,7 +79,7 @@ Flow:
      - insert rebuilt paths
    - marks:
      - `state.setup_completed = True`
-     - `setup_finished = True`
+     - `setup_completed = True`
 
 Outcome:
 

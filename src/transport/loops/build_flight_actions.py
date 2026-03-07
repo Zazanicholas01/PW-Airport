@@ -15,6 +15,7 @@ def build_flight_actions(*, Session) -> FlightActions:
         assign_path_to_airplane=f.assign_path_to_airplane,
         create_and_assign_airplane_for_landing_departure=f.create_and_assign_airplane_for_landing_departure,
         mark_landing_departed=f.mark_landing_departed,
+        mark_departure_started=f.mark_departure_started,
         reserve_stand_and_link_airplane_for_landing_arrival=f.reserve_stand_and_link_airplane_for_landing_arrival,
         assign_landing_path_for_airplane=f.assign_landing_path_for_airplane,
         get_airplane_prefab=f.get_airplane_prefab,

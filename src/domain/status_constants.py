@@ -78,11 +78,13 @@ class FLIGHT_STATUS:
     UNSCHEDULED = "Unscheduled"
     STAND_RESERVED = "StandReserved"
     SCHEDULED = "Scheduled"
+    DEPARTING = "Departing"
     ONGOING = "Ongoing"
     LANDING = "Landing"
     DISEMBARKING = "Disembarking"
     COMPLETED = "Completed"
     LANDING_INBOUND = (LANDING, ONGOING, SCHEDULED, DISEMBARKING)
+    DEPARTING_OUTBOUND = (DEPARTING, SCHEDULED)
     NEEDS_AIRPLANE = (UNSCHEDULED,)
 
     CARGO_TYPE = "Cargo"
@@ -110,6 +112,7 @@ class AIRPLANE_STATUS:
     PARKED = "Parked"
     RESERVED = "Reserved"
     SCHEDULED = "Scheduled"
+    DEPARTING = "Departing"
     IN_FLIGHT = "InFlight"
     DISEMBARKING = "Disembarking"
     AVAILABLE_FOR_DEPARTURE = (PARKED,)
