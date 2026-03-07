@@ -316,7 +316,7 @@ def create_and_assign_airplane_for_landing_departure(
 
         # Logging and return
         logging.info(
-            "[db] landing_dep: created airplane_id=%s type=%s range=%s and linked to flight_id=%s (status=Ongoing)",
+            "[db] landing_dep: created airplane_id=%s type=%s range=%s and linked to flight_id=%s (status=Lan_Ongoing)",
             airplane_id, airplane.type, airplane.range, flight_id
         )
         return airplane_id
@@ -333,11 +333,11 @@ def reserve_stand_and_link_airplane_for_landing_arrival(*, flight_id: str) -> st
             logging.warning("[db] landing_arr: flight not found flight_id=%s", flight_id)
             return None
         
-        # Get airplane_id from Flight and check status equal to Ongoing
+        # Get airplane_id from Flight and check status equal to Lan_Ongoing
         airplane_id = getattr(flight, "airplane_id", None)
         if not isinstance(airplane_id, str) or not airplane_id:
             return None
-        if getattr(flight, "status", None) != FLIGHT_STATUS.ONGOING:
+        if getattr(flight, "status", None) != FLIGHT_STATUS.LAN_ONGOING:
             return None
         
         # Determine preferred stand category and filter to currently available stands
@@ -394,12 +394,12 @@ def mark_landing_departed(*, flight_id: str) -> None:
         if flight is None:
             return
 
-        # Get airplane_id from flight and update flight status to Ongoing
+        # Get airplane_id from flight and update flight status to Lan_Ongoing
         airplane_id = getattr(flight, "airplane_id", None)
         session.execute(
             update(models.Flight)
             .where(models.Flight.id == flight_id)
-            .values(status=FLIGHT_STATUS.ONGOING)
+            .values(status=FLIGHT_STATUS.LAN_ONGOING)
         )
 
         # If airplane exists, update status to InFlight

@@ -12,6 +12,7 @@ public class MessageDispatcher : MonoBehaviour
     public event Action<SpawnCommand> OnSpawnCommand;
     public event Action<ClockSyncCommand> OnClockSync;
     public event Action<StartPathCommand> OnStartPathCommand;
+    public event Action<DespawnPlaneCommand> OnDespawnPlaneCommand;
 
     [Serializable]
     private class CommandEnvelope
@@ -27,6 +28,12 @@ public class MessageDispatcher : MonoBehaviour
         public string stand_id;
         public string airplane_id;
         public SerializableVector3 position;
+    }
+
+    [Serializable]
+    public class DespawnPlaneCommand {
+        public string command;
+        public string airplane_id;
     }
 
     [Serializable]
@@ -141,6 +148,9 @@ public class MessageDispatcher : MonoBehaviour
             case "start_path":
                 HandleStartPath(json);
                 break;
+            case "despawn_plane":
+                HandleDespawnPlane(json);
+                break;
             default:
                 Debug.LogWarning($"[MessageDispatcher] Unsupported command '{envelope.command}'.");
                 break;
@@ -196,5 +206,24 @@ public class MessageDispatcher : MonoBehaviour
 
         OnStartPathCommand?.Invoke(cmd);
         Debug.Log("[MessageDispatcher] StartPath command dispatched.");
+    }
+
+    private void HandleDespawnPlane(string json) {
+
+        DespawnPlaneCommand cmd = null;
+        try {
+            cmd = JsonUtility.FromJson<DespawnPlaneCommand>(json);
+        } catch (Exception ex) {
+            Debug.LogWarning($"[MessageDispatcher] Invalid despawn_plane payload: {ex.Message}");
+            return;
+        }
+
+        if (cmd == null || string.IsNullOrWhiteSpace(cmd.airplane_id)) {
+            Debug.LogWarning("[MessageDispatcher] despawn_plane payload missing airplane_id.");
+            return;
+        }
+
+        OnDespawnPlaneCommand?.Invoke(cmd);
+        Debug.Log($"[MessageDispatcher] DespawnPlane command dispatched airplane_id={cmd.airplane_id}");
     }
 }

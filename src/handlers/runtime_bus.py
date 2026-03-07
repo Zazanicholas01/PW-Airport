@@ -24,6 +24,8 @@ class RuntimeBusHandler:
         prefab_store,
         session_factory: sessionmaker | None = None,
         *,
+        bus = None,
+        commands = None,
         clock=None,
         clock_lock: asyncio.Lock | None = None,
         clock_changed: asyncio.Event | None = None,
@@ -37,10 +39,14 @@ class RuntimeBusHandler:
         self._flight_generator = RandomFlightGenerator(self.Session)
 
         self._disembark_tasks: dict[str, asyncio.Task] = {}
+        self._disembark_sim_seconds = float(disembark_sim_seconds)
+
         self._clock = clock
         self._clock_lock = clock_lock
         self._clock_changed = clock_changed
-        self._disembark_sim_seconds = float(disembark_sim_seconds)
+
+        self._bus = bus
+        self._commands = commands
 
     
     def _start_disembark_timer(self, airplane_id: str) -> None:
@@ -211,23 +217,48 @@ class RuntimeBusHandler:
                 # Get destination of the path
                 destination = getattr(path, "destination", None)
                 
-                # DEPARTURE LOGIC - TODO
                 if destination == "Departure":
+                    
+                    # Update status of airplane from Departing --> InFlight with idempotency check
+                    if airplane.status == AIRPLANE_STATUS.DEPARTING:
+                        airplane.status = AIRPLANE_STATUS.IN_FLIGHT
+
+                    # Get flight from DB and if exists, update status from Departing --> Dep_Ongoing
+                    flight = session.scalars(
+                        select(models.Flight)
+                        .where(models.Flight.airplane_id == airplane_id)
+                        .where(models.Flight.status.in_(FLIGHT_STATUS.DEPARTING_OUTBOUND))
+                        .order_by(models.Flight.departure_time.desc())
+                    ).first()
+
+                    if flight is not None and flight.status != FLIGHT_STATUS.DEP_ONGOING:
+                        flight.status = FLIGHT_STATUS.DEP_ONGOING
+                    
+                    session.commit()
+
+                    # Send command to Unity through bus
+                    if self._bus is not None and self._commands is not None:
+                        await self._bus.send_command(
+                            self._commands.despawn_plane(airplane_id=airplane_id)
+                        )
+                    
+                    # Logging and return
                     logging.info("[runtime] path_completed (departure) airplane_id=%s route_id=%s", airplane_id, airplane.route_id)
                     return
                 
-                # ARRIVAL LOGIC
                 else:
                     # Update airplane status from Landing --> Disembarking
                     airplane.status = AIRPLANE_STATUS.DISEMBARKING
 
-                    # Get flight linked to the airplane and change from Landing --> Disembarking
+                    # Get flight linked to the airplane
                     flight = session.scalars(
                         select(models.Flight)
                         .where(models.Flight.airplane_id == airplane_id)
                         .where(models.Flight.status.in_((FLIGHT_STATUS.DISEMBARKING, FLIGHT_STATUS.LANDING)))
                         .order_by(models.Flight.arrival_time.desc())
                     ).first()
+
+                    # Update flight status from Landing --> Disembarking
                     if flight is not None:
                         flight.status = FLIGHT_STATUS.DISEMBARKING
 
@@ -245,18 +276,28 @@ class RuntimeBusHandler:
                     return
 
             # Plane Left Stand Event Handling
-            if evt == RUNTIME_EVENTS.PLANE_LEFT_STAND:
+            elif evt == RUNTIME_EVENTS.PLANE_LEFT_STAND:
+
+                logging.info("[runtime] plane_left_stand received airplane_id=%s", airplane_id)
 
                 # Sanity check on stand to be linked to the right airplane and to exist
                 if stand_id is None:
+                    logging.info("[runtime] plane_left_stand ignored airplane_id=%s reason=no linked stand", airplane_id)
                     return
                 
                 stand = session.get(models.Stand, stand_id)
                 if stand is None or stand.airplane_id != airplane_id:
+                    logging.info(
+                        "[runtime] plane_left_stand ignored airplane_id=%s stand_id=%s reason=stand mismatch",
+                        airplane_id,
+                        stand_id,
+                    )
                     return
 
                 # Release stand and set status from Occupied --> Available
                 stand.airplane_id = None
                 stand.status = STAND_STATUS.AVAILABLE
                 session.commit()
+
+                logging.info("[runtime] plane_left_stand released stand_id=%s airplane_id=%s", stand_id, airplane_id)
                 return

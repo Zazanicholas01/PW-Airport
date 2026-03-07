@@ -10,6 +10,13 @@ public class SplineFollower : MonoBehaviour {
     [SerializeField] private int arcSamples = 200;
 
     public event Action<string, int> OnPathCompleted;
+    public event Action<string, int> OnPlaneLeftStand;
+
+    private bool standLeftReported;
+
+    private const string MasterSplineName = "MasterSpline";
+    private const string DepartureSplineName = "Spline_Departure";
+
     private string airplaneId;
     private int routeId;
 
@@ -50,6 +57,7 @@ public class SplineFollower : MonoBehaviour {
         prevSplineName = null;
         prevEndT = 0f;
         hasLastSim = false;
+        standLeftReported = false;
     }
 
     public void Stop() {
@@ -62,6 +70,7 @@ public class SplineFollower : MonoBehaviour {
         prevSplineName = null;
         prevEndT = 0f;
         hasLastSim = false;
+        standLeftReported = false;
 
         airplaneId = null;
         routeId = 0;     
@@ -112,6 +121,14 @@ public class SplineFollower : MonoBehaviour {
                     Stop();
                     OnPathCompleted?.Invoke(doneAirplaneId, doneRouteId);
                     return;
+                }
+
+                if (!standLeftReported &&
+                    string.Equals(segments[segIndex].name, MasterSplineName, StringComparison.OrdinalIgnoreCase) &&
+                    string.Equals(segments[next].name, DepartureSplineName, StringComparison.OrdinalIgnoreCase)
+                ) {
+                    standLeftReported = true;
+                    OnPlaneLeftStand?.Invoke(airplaneId, routeId);
                 }
 
                 if (!BeginSegment(next)) {

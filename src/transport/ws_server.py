@@ -71,6 +71,8 @@ async def echo_handler(websocket, setup_bus, prefab_store, world_state, graph, *
     runtime_bus = RuntimeBusHandler(
         prefab_store,
         session_factory=Session,
+        bus=bus,
+        commands=commands,
         clock=clock,
         clock_lock=clock_lock,
         clock_changed=clock_changed,

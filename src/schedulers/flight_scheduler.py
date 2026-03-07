@@ -134,13 +134,13 @@ class FlightSlidingWindowScheduler:
     def should_reserve_landing_stand(self, *, flight, now_utc: datetime) -> bool:
         """Handles ongoing arrival flights to decide whether a stand should be reserved or not"""
 
-        # Check direction to be a landing flight, status to be Ongoing and airplane to exist
+        # Check direction to be a landing flight, status to be Lan_Ongoing and airplane to exist
         # Get arrival time as UTC and check inside window
         if not self._is_stage_eligible(
             flight=flight,
             now_utc=now_utc,
             expected_side="destination",
-            expected_status="Ongoing",
+            expected_status="Lan_Ongoing",
             event_field="arrival_time",
             max_delta=self.window,
             requires_airplane=True,

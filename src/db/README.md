@@ -108,7 +108,7 @@ Query behavior:
 - Collects multiple flight sets to support lifecycle visibility:
   - unscheduled departures/arrivals in window
   - scheduled departures/arrivals with assigned airplane
-  - active inbound flights (`Landing`, `Ongoing`, `Disembarking`)
+  - active inbound flights (`Landing`, `Lan_Ongoing`, `Disembarking`)
 
 Outcome:
 
@@ -146,7 +146,7 @@ Flow:
 1. Create airplane for unscheduled inbound flight (optional prefab-guided type/range).
 2. Link airplane to flight; set flight to `Scheduled`.
 3. At departure time from remote airport:
-   - `mark_landing_departed` sets flight `Ongoing`, airplane `InFlight`.
+   - `mark_landing_departed` sets flight `Dep_Ongoing`, airplane `InFlight`.
 4. Near arrival:
    - reserve compatible stand
    - link stand to airplane

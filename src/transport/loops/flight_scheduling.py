@@ -150,13 +150,13 @@ async def flight_scheduler_loop(
                     logging.info("[flight_scheduler] landing_dep: could not create/link airplane flight_id=%s", flight_id)
                     continue
 
-                logging.info("[flight_scheduler] landing_dep: linked airplane_id=%s to flight_id=%s (Ongoing)", airplane_id, flight_id)
+                logging.info("[flight_scheduler] landing_dep: linked airplane_id=%s to flight_id=%s (Lan_Ongoing)", airplane_id, flight_id)
                 continue
 
             # MARK LANDING DEPARTED - Marks a landing flight as departed from a remote airport
             if scheduler.should_mark_landing_departed(flight=flight, now_utc=now):
                 ctx.flight_actions.mark_landing_departed(flight_id=flight_id)
-                logging.info("[flight_scheduler] landing_dep: departed flight_id=%s -> Ongoing", flight_id)
+                logging.info("[flight_scheduler] landing_dep: departed flight_id=%s -> Lan_Ongoing", flight_id)
                 continue
 
             # LANDING RESERVATION - In Window on Arrival Time for Landing 

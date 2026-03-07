@@ -41,6 +41,14 @@ def build_spawn_plane(
         "spawn_context": spawn_context
     }
 
+
+def build_despawn_plane(*, airplane_id: str) -> dict[str, Any]:
+    return {
+        "command": BUS_COMMANDS.DESPAWN_PLANE,
+        "airplane_id": airplane_id,
+    }
+
+
 def build_start_path_command(*, airplane_id: str, route_id: str, segments: list, speed: float) -> dict[str, Any]:
     return {
         "command": BUS_COMMANDS.START_PATH,
@@ -57,6 +65,7 @@ class CommandBuilders:
     clock_sync: callable
     spawn_plane: callable
     start_path: callable
+    despawn_plane: callable
 
 
 def default_command_builders() -> CommandBuilders:
@@ -64,5 +73,6 @@ def default_command_builders() -> CommandBuilders:
         welcome=build_welcome,
         clock_sync=build_clock_sync,
         spawn_plane=build_spawn_plane,
-        start_path=build_start_path_command
+        start_path=build_start_path_command,
+        despawn_plane=build_despawn_plane,
     )

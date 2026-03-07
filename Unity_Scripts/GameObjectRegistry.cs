@@ -19,7 +19,16 @@ public class GameObjectRegistry : MonoBehaviour
         return (uuid != null && byUuid.TryGetValue(uuid, out var go)) ? go : null;
     }
 
-    public bool Unregister(string uuid) => uuid != null && byUuid.Remove(uuid);
+    public bool Unregister(string uuid) {
+
+        if (string.IsNullOrWhiteSpace(uuid)) return false;
+
+        var removed = byUuid.Remove(uuid);
+        if (removed)
+            Debug.Log($"[GameObjectRegistry] Unregistered plane {uuid}");
+
+        return removed;
+    }
 
     public void Clear() => byUuid.Clear();
 }

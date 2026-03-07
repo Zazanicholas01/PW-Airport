@@ -6,7 +6,7 @@ These values are used across code for statuses and type fields.
 
 - `Unscheduled`
 - `Scheduled`
-- `Ongoing`
+- `Lan_Ongoing`
 - `Landing`
 - `Disembarking`
 - `Completed`

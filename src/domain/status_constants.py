@@ -79,12 +79,13 @@ class FLIGHT_STATUS:
     STAND_RESERVED = "StandReserved"
     SCHEDULED = "Scheduled"
     DEPARTING = "Departing"
-    ONGOING = "Ongoing"
+    DEP_ONGOING = "Dep_Ongoing"
+    LAN_ONGOING = "Lan_Ongoing"
     LANDING = "Landing"
     DISEMBARKING = "Disembarking"
     COMPLETED = "Completed"
-    LANDING_INBOUND = (LANDING, ONGOING, SCHEDULED, DISEMBARKING)
-    DEPARTING_OUTBOUND = (DEPARTING, SCHEDULED)
+    LANDING_INBOUND = (LANDING, LAN_ONGOING, SCHEDULED, DISEMBARKING)
+    DEPARTING_OUTBOUND = (DEPARTING, SCHEDULED, DEP_ONGOING)
     NEEDS_AIRPLANE = (UNSCHEDULED,)
 
     CARGO_TYPE = "Cargo"
@@ -142,6 +143,7 @@ class BUS_COMMANDS:
     CLOCK_SYNC = "clock_sync"
     WELCOME = "welcome"
     START_PATH = "start_path"
+    DESPAWN_PLANE = "despawn_plane"
 
 # Websocket configuration
 @dataclass
