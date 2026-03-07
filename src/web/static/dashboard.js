@@ -56,6 +56,16 @@ function fmtWhen(f) {
   return { t, label: isDep ? "DEP" : "ARR" };
 }
 
+function statusClass(status) {
+  const s = String(status || "").toLowerCase();
+  if (s.includes("scheduled")) return "status-scheduled";
+  if (s.includes("boarding")) return "status-boarding";
+  if (s.includes("landing")) return "status-landing";
+  if (s.includes("parked")) return "status-parked";
+  if (s.includes("completed")) return "status-completed";
+  return "status-default";
+}
+
 function esc(s) {
   return String(s ?? "")
     .replaceAll("&", "&amp;")
@@ -94,37 +104,11 @@ function flightIdForRow(f) {
 }
 
 function setPlaneDebug(text) {
-  if (!DEBUG_PLANE_PAGE) return;
-  let box = $("plane_debug");
-  if (!box) {
-    const pv = $("plane_view");
-    if (pv) {
-      box = document.createElement("pre");
-      box.id = "plane_debug";
-      box.className = "muted";
-      box.style.whiteSpace = "pre-wrap";
-      box.style.margin = "8px 0 0";
-      pv.appendChild(box);
-    }
-  }
-  if (box) box.textContent = text || "";
+  void text;
 }
 
 function setFlightDebug(text) {
-  if (!DEBUG_PLANE_PAGE) return;
-  let box = $("flight_debug");
-  if (!box) {
-    const fv = $("flight_view");
-    if (fv) {
-      box = document.createElement("pre");
-      box.id = "flight_debug";
-      box.className = "muted";
-      box.style.whiteSpace = "pre-wrap";
-      box.style.margin = "8px 0 0";
-      fv.appendChild(box);
-    }
-  }
-  if (box) box.textContent = text || "";
+  void text;
 }
 
 function setVisible(el, visible) {
@@ -180,7 +164,6 @@ function ensurePlaneViews() {
           <table>
             <tbody id="plane_detail_rows"></tbody>
           </table>
-          <pre id="plane_debug" class="muted" style="white-space:pre-wrap; margin:8px 0 0;"></pre>
         </div>
       </div>
     `;
@@ -223,7 +206,6 @@ function ensurePlaneViews() {
 	          <table id="flight_detail_table">
 	            <tbody id="flight_detail_rows"></tbody>
 	          </table>
-	          <pre id="flight_debug" class="muted" style="white-space:pre-wrap; margin:8px 0 0;"></pre>
 	        </div>
 	      </div>
     `;
@@ -346,17 +328,6 @@ function renderPlaneDetail(p) {
     .join("");
 
   $("plane_detail_rows").innerHTML = rows || kvRow("Info", "No data");
-
-  const debugBox = $("plane_debug");
-  if (debugBox) {
-    try {
-      debugBox.textContent = DEBUG_PLANE_PAGE
-        ? `hash=${location.hash}\nplaneById=${planeById.size}\n\n${JSON.stringify(p, null, 2)}`
-        : "";
-    } catch {
-      debugBox.textContent = "";
-    }
-  }
 
   dbg("renderPlaneDetail", { id: p.id, keys: Object.keys(p || {}) });
 }
@@ -497,7 +468,6 @@ function setFlightDataVisible(visible) {
     "flight_progress",
     "flight_progress_label",
     "flight_detail_table",
-    "flight_debug",
   ];
   for (const id of ids) {
     const el = $(id);
@@ -677,7 +647,7 @@ async function refreshWindow() {
 	            <td>${flightCode}</td>
 	            <td>${route}</td>
 	            <td>${esc(f.tipo || "")}</td>
-	            <td><span class="pill">${esc(f.status || "")}</span></td>
+	            <td><span class="pill ${statusClass(f.status)}">${esc(f.status || "")}</span></td>
 	            <td class="muted">${esc(f.airplane_id || "")}</td>
 	          </tr>
 	        `;
@@ -713,7 +683,6 @@ async function refreshPlanes() {
 
   const rows = (data.planes || [])
     .map((p) => {
-      const pos = fmtVec3(p.position);
       const route =
         p.route_source && p.route_destination
           ? `${esc(p.route_source)} → ${esc(p.route_destination)}`
@@ -723,12 +692,11 @@ async function refreshPlanes() {
       return `
 	          <tr class="plane-row" data-plane-id="${esc(p.id || "")}" style="cursor:pointer;">
 	            <td>${esc(p.id || "")}</td>
-	            <td><span class="pill">${esc(p.status || "")}</span></td>
+	            <td><span class="pill ${statusClass(p.status)}">${esc(p.status || "")}</span></td>
 	            <td class="muted">${esc(p.model || "")}</td>
 	            <td>${esc(p.type || "")}</td>
 	            <td>${esc(p.range || "")}</td>
 	            <td class="muted">${esc(speed)}</td>
-	            <td class="muted" title="${esc(pos)}">${esc(pos)}</td>
 	            <td class="muted">${stand}</td>
 	            <td class="muted" title="${route}">${route}</td>
 	          </tr>
@@ -737,7 +705,7 @@ async function refreshPlanes() {
     .join("");
 
   $("plane_rows").innerHTML =
-    rows || `<tr><td colspan="9" class="muted">No planes found.</td></tr>`;
+    rows || `<tr><td colspan="8" class="muted">No planes found.</td></tr>`;
 
   if (location.hash.startsWith("#plane/")) route().catch(() => {});
 }

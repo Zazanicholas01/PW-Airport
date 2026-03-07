@@ -3,8 +3,8 @@
   <head>
     <meta charset="utf-8" />
     <title>PW Airport - Scheduling Window</title>
-    <link rel="stylesheet" href="/static/dashboard.css?v=8" />
-    <script defer src="/static/dashboard.js?v=8"></script>
+    <link rel="stylesheet" href="/static/dashboard.css?v=10" />
+    <script defer src="/static/dashboard.js?v=9"></script>
   </head>
   <body>
     <div class="shell">
@@ -22,38 +22,43 @@
             <span class="muted">Auto-refresh on events + every 10s</span>
           </div>
 
-          <table>
-            <thead>
-              <tr>
-                <th>When</th>
-                <th>Δ min</th>
-                <th>Flight</th>
-                <th>Route</th>
-                <th>Type</th>
-                <th>Status</th>
-                <th>Airplane</th>
-              </tr>
-            </thead>
-            <tbody id="rows"></tbody>
-          </table>
+          <div class="board-block">
+            <div class="board-title">Flight Information</div>
+            <table class="board-table flights-board">
+              <thead>
+                <tr>
+                  <th>When</th>
+                  <th>Δ min</th>
+                  <th>Flight</th>
+                  <th>Route</th>
+                  <th>Type</th>
+                  <th>Status</th>
+                  <th>Airplane</th>
+                </tr>
+              </thead>
+              <tbody id="rows"></tbody>
+            </table>
+          </div>
 
-          <h3 style="margin-top: 18px;">Planes</h3>
-          <table>
-            <thead>
-              <tr>
-                <th>Airplane</th>
-                <th>Status</th>
-                <th>Model</th>
-                <th>Type</th>
-                <th>Range</th>
-                <th>Speed</th>
-                <th>Position</th>
-                <th>Stand</th>
-                <th>Route</th>
-              </tr>
-            </thead>
-            <tbody id="plane_rows"></tbody>
-          </table>
+          <div class="board-block" style="margin-top: 18px;">
+            <div class="board-title">Planes On Ground</div>
+            <table class="board-table planes-board">
+              <thead>
+                <tr>
+                  <th>Airplane</th>
+                  <th>Status</th>
+                  <th>Model</th>
+                  <th>Type</th>
+                  <th>Range</th>
+                  <th>Speed</th>
+                  <th>Stand</th>
+                  <th>Route</th>
+                </tr>
+              </thead>
+              <tbody id="plane_rows"></tbody>
+            </table>
+          </div>
+
 
           <h3 style="margin-top: 18px;">Live events</h3>
           <div id="events" style="height: 180px; overflow: auto;"></div>
