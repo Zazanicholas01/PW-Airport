@@ -1,12 +1,12 @@
 :root {
-  --board-bg: #111315;
-  --board-bg-soft: #1a1d20;
-  --board-line: rgba(255, 176, 64, 0.22);
-  --board-text: #ffb347;
-  --board-text-dim: #d18b2e;
-  --board-text-soft: #8f6425;
-  --board-head: #ffd089;
-  --board-shadow: rgba(255, 170, 60, 0.32);
+  --board-bg: #090b0d;
+  --board-bg-soft: #121519;
+  --board-line: rgba(255, 196, 110, 0.28);
+  --board-text: #ffd27a;
+  --board-text-dim: #f0bc5e;
+  --board-text-soft: #c28a2a;
+  --board-head: #ffe7b3;
+  --board-shadow: rgba(255, 196, 110, 0.38);
 }
 
 body {
@@ -14,7 +14,7 @@ body {
   margin: 0;
   background:
     linear-gradient(rgba(5, 7, 10, 0.76), rgba(5, 7, 10, 0.82)),
-    url("/static/background-airport.png") no-repeat center center fixed;
+    url("/static/background-airport.png") no-repeat center center;
   background-size: cover;
   color: var(--board-text);
   position: relative;
@@ -219,6 +219,7 @@ table {
   border-bottom: 1px solid var(--board-line);
   color: var(--board-text);
   font-size: 14px;
+  font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   text-shadow: 0 0 8px rgba(255, 176, 64, 0.14);
@@ -230,6 +231,7 @@ table {
 .board-table th {
   color: var(--board-head);
   font-size: 12px;
+  font-weight: 800;
   letter-spacing: 0.18em;
   background: rgba(255, 176, 64, 0.05);
   text-align: center;
@@ -279,6 +281,7 @@ table {
 .board-table td.muted,
 .muted {
   color: var(--board-text-dim);
+  font-weight: 600;
 }
 
 .pill {

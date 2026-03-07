@@ -3,7 +3,7 @@ const $ = (id) => document.getElementById(id);
 let simNowMs = null;
 let simTimeScale = null;
 
-const DEBUG_PLANE_PAGE = true;
+const DEBUG_PLANE_PAGE = false;
 
 let planeById = new Map();
 let flightById = new Map();
