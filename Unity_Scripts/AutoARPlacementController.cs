@@ -1,22 +1,28 @@
 using System.Collections;
+using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.EventSystems;
 using UnityEngine.Events;
+using UnityEngine.InputSystem;
 using UnityEngine.XR.ARFoundation;
 using UnityEngine.XR.ARSubsystems;
 
-public class AutoARPlacementController : MonoBehaviour {
-
+public class AutoARPlacementController : MonoBehaviour
+{
     [Header("Scene References")]
     [SerializeField] private ARPlaneManager planeManager;
     [SerializeField] private ARAnchorManager anchorManager;
+    [SerializeField] private ARRaycastManager raycastManager;
     [SerializeField] private Camera arCamera;
     [SerializeField] private Transform airportRoot;
 
     [Header("Placement Rules")]
-    [SerializeField] private float minPlaneArea = 0.15f;
-    [SerializeField] private float stabilizationTime = 1.0f;
-    [SerializeField] private float airportScale = 0.01f;
-    [SerializeField] private bool disablePlaneVisualizationAfterPlacement = true;
+    [SerializeField] private float minPlaneArea = 0.5f;
+    [SerializeField] private float airportScale = 0.05f;
+    [SerializeField] private float placementHeightOffset = 0.2f;
+    [SerializeField] private bool disablePlaneVisualizationAfterPlacement = false;
+    [SerializeField] private bool keepPlaneTrackingAfterPlacement = true;
+    [SerializeField] private bool spawnDebugMarker = true;
 
     [Header("Optional Debug")]
     [SerializeField] private bool logDebug = true;
@@ -25,10 +31,11 @@ public class AutoARPlacementController : MonoBehaviour {
     public UnityEvent OnPlacementCompleted;
     public UnityEvent OnPlacementReset;
 
-    private ARPlane candidatePlane;
-    private float candidateStableSince = -1f;
     private ARAnchor currentAnchor;
     private bool placed;
+    private bool placementPromptLogged;
+
+    private static readonly List<ARRaycastHit> RaycastHits = new();
 
     public bool IsPlaced => placed;
     public ARAnchor CurrentAnchor => currentAnchor;
@@ -41,60 +48,45 @@ public class AutoARPlacementController : MonoBehaviour {
         if (anchorManager == null)
             anchorManager = FindObjectOfType<ARAnchorManager>();
 
+        if (raycastManager == null)
+            raycastManager = FindObjectOfType<ARRaycastManager>();
+
         if (arCamera == null)
             arCamera = Camera.main;
+
+        if (logDebug && airportRoot != null)
+            Debug.Log($"[AutoARPlacement] airportRoot assigned to: {airportRoot.name}");
 
         if (airportRoot != null)
             airportRoot.gameObject.SetActive(false);
     }
 
-    private void Update() {
-
-        if (placed || planeManager == null || anchorManager == null || arCamera == null || airportRoot == null)
+    private void Update()
+    {
+        if (placed || planeManager == null || anchorManager == null || raycastManager == null || arCamera == null || airportRoot == null)
             return;
 
-        var bestPlane = FindBestPlane();
-        if (bestPlane == null)
-        {
-            candidatePlane = null;
-            candidateStableSince = -1f;
+        if (!HasAnyValidPlane())
             return;
-        }
 
-        if (candidatePlane != bestPlane)
+        if (!placementPromptLogged && logDebug)
         {
-            candidatePlane = bestPlane;
-            candidateStableSince = Time.time;
-
-            if (logDebug)
-                Debug.Log($"[AutoARPlacement] New candidate plane: {candidatePlane.trackableId}");
+            placementPromptLogged = true;
+            Debug.Log("[AutoARPlacement] Valid plane detected. Tap the plane to place the airport.");
         }
 
-        if (Time.time - candidateStableSince >= stabilizationTime)
-        {
-            StartCoroutine(PlaceOnPlane(candidatePlane));
-        }
+        TryPlaceFromTouch();
     }
 
-    private ARPlane FindBestPlane()
+    private bool HasAnyValidPlane()
     {
-        ARPlane best = null;
-        float bestArea = 0f;
-
         foreach (var plane in planeManager.trackables)
         {
-            if (!IsPlaneValid(plane))
-                continue;
-
-            float area = GetPlaneArea(plane);
-            if (area > bestArea)
-            {
-                best = plane;
-                bestArea = area;
-            }
+            if (IsPlaneValid(plane))
+                return true;
         }
 
-        return best;
+        return false;
     }
 
     private bool IsPlaneValid(ARPlane plane)
@@ -123,14 +115,107 @@ public class AutoARPlacementController : MonoBehaviour {
         return size.x * size.y;
     }
 
-    private IEnumerator PlaceOnPlane(ARPlane plane) {
+    private bool TryGetScreenPress(out Vector2 screenPos, out int fingerId)
+    {
+        screenPos = default;
+        fingerId = -1;
+
+        var touchscreen = Touchscreen.current;
+        if (touchscreen != null)
+        {
+            var touches = touchscreen.touches;
+            for (int i = 0; i < touches.Count; i++)
+            {
+                var touch = touches[i];
+                if (!touch.press.isPressed)
+                    continue;
+
+                var phase = touch.phase.ReadValue();
+                var position = touch.position.ReadValue();
+                var id = touch.touchId.ReadValue();
+
+                if (logDebug)
+                    Debug.Log($"[AutoARPlacement] Raw touch {i}: phase={phase}, position={position}, fingerId={id}");
+
+                if (phase == UnityEngine.InputSystem.TouchPhase.Began ||
+                    phase == UnityEngine.InputSystem.TouchPhase.Ended)
+                {
+                    screenPos = position;
+                    fingerId = id;
+                    return true;
+                }
+            }
+        }
+
+        if (Mouse.current != null && Mouse.current.leftButton.wasPressedThisFrame)
+        {
+            screenPos = Mouse.current.position.ReadValue();
+            return true;
+        }
+
+        return false;
+    }
+
+    private void TryPlaceFromTouch()
+    {
+        if (!TryGetScreenPress(out var screenPos, out var fingerId))
+            return;
+
+        if (EventSystem.current != null && fingerId >= 0 && EventSystem.current.IsPointerOverGameObject(fingerId))
+        {
+            if (logDebug)
+                Debug.Log("[AutoARPlacement] Ignoring tap because it is over UI.");
+            return;
+        }
+
+        if (logDebug)
+            Debug.Log($"[AutoARPlacement] Screen press at {screenPos}");
+
+        if (!raycastManager.Raycast(screenPos, RaycastHits, TrackableType.PlaneWithinPolygon))
+        {
+            if (logDebug)
+                Debug.Log($"[AutoARPlacement] Tap at {screenPos} did not hit a detected plane.");
+            return;
+        }
+
+        if (logDebug)
+            Debug.Log($"[AutoARPlacement] Tap at {screenPos} produced {RaycastHits.Count} AR raycast hit(s).");
+
+        foreach (var hit in RaycastHits)
+        {
+            if (!planeManager.trackables.TryGetTrackable(hit.trackableId, out var plane))
+            {
+                if (logDebug)
+                    Debug.Log($"[AutoARPlacement] Raycast hit {hit.trackableId}, but no ARPlane was found for that trackable.");
+                continue;
+            }
+
+            if (!IsPlaneValid(plane))
+            {
+                if (logDebug)
+                {
+                    Debug.Log($"[AutoARPlacement] Raycast hit plane {plane.trackableId}, but it was rejected. trackingState={plane.trackingState}, alignment={plane.alignment}, area={GetPlaneArea(plane):F3}, subsumed={(plane.subsumedBy != null)}");
+                }
+                continue;
+            }
+
+            if (logDebug)
+                Debug.Log($"[AutoARPlacement] Tap hit valid plane: {plane.trackableId}");
+
+            StartCoroutine(PlaceOnPlane(plane, hit.pose));
+            return;
+        }
+    }
+
+    private IEnumerator PlaceOnPlane(ARPlane plane, Pose hitPose)
+    {
         if (placed || plane == null)
             yield break;
 
         placed = true;
         OnPlacementStarted?.Invoke();
 
-        Pose pose = GetPlacementPose(plane);
+        Pose pose = GetPlacementPose(hitPose);
         ARAnchor anchor = anchorManager.AttachAnchor(plane, pose);
 
         if (anchor == null)
@@ -145,15 +230,50 @@ public class AutoARPlacementController : MonoBehaviour {
 
         currentAnchor = anchor;
 
+        if (spawnDebugMarker)
+        {
+            var marker = GameObject.CreatePrimitive(PrimitiveType.Cube);
+            marker.name = "ARPlacementDebugMarker";
+            marker.transform.SetParent(currentAnchor.transform, false);
+            marker.transform.localPosition = Vector3.up * 0.25f;
+            marker.transform.localScale = Vector3.one * 0.25f;
+
+            var markerRenderer = marker.GetComponent<Renderer>();
+            if (markerRenderer != null)
+                markerRenderer.material.color = Color.red;
+        }
+
         airportRoot.SetParent(currentAnchor.transform, worldPositionStays: false);
-        airportRoot.localPosition = Vector3.zero;
+        airportRoot.localPosition = Vector3.up * placementHeightOffset;
         airportRoot.localRotation = Quaternion.identity;
         airportRoot.localScale = Vector3.one * airportScale;
-        airportRoot.gameObject.SetActive(true);
+
+        SetHierarchyActive(airportRoot, true);
+
+        if (logDebug)
+        {
+            var renderers = airportRoot.GetComponentsInChildren<Renderer>(true);
+            int activeRendererCount = 0;
+
+            foreach (var renderer in renderers)
+            {
+                if (renderer.gameObject.activeInHierarchy)
+                    activeRendererCount++;
+            }
+
+            Debug.Log($"[AutoARPlacement] Airport localPosition={airportRoot.localPosition}, localScale={airportRoot.localScale}, worldPosition={airportRoot.position}");
+            Debug.Log($"[AutoARPlacement] Airport renderer count={renderers.Length}, active renderer count={activeRendererCount}");
+
+            for (int i = 0; i < Mathf.Min(renderers.Length, 10); i++)
+            {
+                var renderer = renderers[i];
+                Debug.Log($"[AutoARPlacement] Renderer {i}: name={renderer.name}, enabled={renderer.enabled}, activeInHierarchy={renderer.gameObject.activeInHierarchy}, boundsCenter={renderer.bounds.center}");
+            }
+        }
 
         if (disablePlaneVisualizationAfterPlacement)
             SetPlaneVisualization(false);
-        
+
         if (logDebug)
             Debug.Log("[AutoARPlacement] Airport placed successfully.");
 
@@ -161,9 +281,9 @@ public class AutoARPlacementController : MonoBehaviour {
         yield return null;
     }
 
-    private Pose GetPlacementPose(ARPlane plane) {
-
-        Vector3 position = plane.center;
+    private Pose GetPlacementPose(Pose hitPose)
+    {
+        Vector3 position = hitPose.position;
 
         Vector3 cameraForward = arCamera.transform.forward;
         Vector3 flatForward = Vector3.ProjectOnPlane(cameraForward, Vector3.up).normalized;
@@ -175,8 +295,8 @@ public class AutoARPlacementController : MonoBehaviour {
         return new Pose(position, rotation);
     }
 
-    public void ResetPlacement() {
-
+    public void ResetPlacement()
+    {
         StopAllCoroutines();
 
         if (airportRoot != null)
@@ -192,8 +312,7 @@ public class AutoARPlacementController : MonoBehaviour {
         }
 
         placed = false;
-        candidatePlane = null;
-        candidateStableSince = -1f;
+        placementPromptLogged = false;
 
         SetPlaneVisualization(true);
 
@@ -203,16 +322,32 @@ public class AutoARPlacementController : MonoBehaviour {
         OnPlacementReset?.Invoke();
     }
 
-    private void SetPlaneVisualization(bool enabled) {
-
+    private void SetPlaneVisualization(bool enabled)
+    {
         if (planeManager == null)
             return;
-        
+
         foreach (var plane in planeManager.trackables)
         {
-            plane.gameObject.SetActive(enabled);
+            foreach (var renderer in plane.GetComponentsInChildren<Renderer>(true))
+                renderer.enabled = enabled;
+
+            foreach (var lineRenderer in plane.GetComponentsInChildren<LineRenderer>(true))
+                lineRenderer.enabled = enabled;
         }
 
-        planeManager.enabled = enabled;
+        if (!keepPlaneTrackingAfterPlacement)
+            planeManager.enabled = enabled;
+    }
+
+    private void SetHierarchyActive(Transform root, bool isActive)
+    {
+        if (root == null)
+            return;
+
+        root.gameObject.SetActive(isActive);
+
+        for (int i = 0; i < root.childCount; i++)
+            SetHierarchyActive(root.GetChild(i), isActive);
     }
 }

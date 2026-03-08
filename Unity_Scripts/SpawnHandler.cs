@@ -14,6 +14,9 @@ public class SpawnHandler : MonoBehaviour
 
         if (prefabRegistry == null) prefabRegistry = FindObjectOfType<PrefabRegistry>();
         if (registry == null) registry = FindObjectOfType<GameObjectRegistry>();
+
+        if (spawnParent == null)
+            Debug.LogWarning("[SpawnHandler] spawnParent is not assigned. Spawned planes will not be anchored under AirportRoot.");
     }
 
     private void OnEnable()
@@ -32,6 +35,12 @@ public class SpawnHandler : MonoBehaviour
         }
     }
 
+    public void SetSpawnParent(Transform newSpawnParent)
+    {
+        spawnParent = newSpawnParent;
+    }
+
+
     private void HandleSpawn(MessageDispatcher.SpawnCommand command)
     {
         if (prefabRegistry == null)
@@ -43,6 +52,12 @@ public class SpawnHandler : MonoBehaviour
         if (!prefabRegistry.TryGetPrefab(command.prefab, out var prefab))
         {
             Debug.LogWarning($"[SpawnHandler] Prefab '{command.prefab}' not found in registry.");
+            return;
+        }
+        
+        if (spawnParent == null)
+        {
+            Debug.LogError("[SpawnHandler] spawnParent is null. Assign AirportRoot/SpawnParent before runtime spawning.");
             return;
         }
 

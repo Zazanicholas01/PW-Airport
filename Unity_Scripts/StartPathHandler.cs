@@ -6,8 +6,11 @@ using UnityEngine.Splines;
 
 [RequireComponent(typeof(MessageDispatcher))]
 public class StartPathHandler : MonoBehaviour {
+
     [SerializeField] private MessageDispatcher dispatcher;
     [SerializeField] private GameObjectRegistry registry;
+    [SerializeField] private Transform splineRoot;
+    [SerializeField] private bool includeInactive = true;
 
     private Dictionary<string, SplineContainer> splineByName;
 
@@ -25,12 +28,39 @@ public class StartPathHandler : MonoBehaviour {
         if (dispatcher != null) dispatcher.OnStartPathCommand -= HandleStartPath;
     }
 
+    public void RebuildSplineCache()
+    {
+        BuildSplineCache();
+    }
+
     private void BuildSplineCache() {
         splineByName = new Dictionary<string, SplineContainer>(StringComparer.OrdinalIgnoreCase);
-        foreach (var c in FindObjectsOfType<SplineContainer>(includeInactive: true)) {
-            if (c != null && c.gameObject != null)
-                splineByName[c.gameObject.name] = c;
+        IEnumerable<SplineContainer> containers;
+
+        if (splineRoot != null)
+        {
+            containers = splineRoot.GetComponentsInChildren<SplineContainer>(includeInactive);
         }
+        else
+        {
+            containers = FindObjectsOfType<SplineContainer>(includeInactive);
+            Debug.LogWarning("[StartPathHandler] splineRoot not assigned. Falling back to scene-wide spline search.");
+        }
+
+        foreach (var container in containers)
+        {
+            if (container == null || container.gameObject == null)
+                continue;
+
+            string splineName = container.gameObject.name;
+
+            if (string.IsNullOrWhiteSpace(splineName))
+                continue;
+
+            splineByName[splineName] = container;
+        }
+
+        Debug.Log($"[StartPathHandler] Cached {splineByName.Count} splines.");
     }
 
     private void HandleStartPath(MessageDispatcher.StartPathCommand cmd) {
@@ -46,7 +76,8 @@ public class StartPathHandler : MonoBehaviour {
         follower.ResolveSplineByName = FindSpline;
 
         var reporter = plane.GetComponent<PathCompletionReporter>();
-        if (reporter == null) reporter = plane.AddComponent<PathCompletionReporter>();
+        if (reporter == null) 
+            reporter = plane.AddComponent<PathCompletionReporter>();
         reporter.Attach(follower);
 
         var speed = cmd.speed > 0f ? cmd.speed : 5f;
@@ -59,32 +90,5 @@ public class StartPathHandler : MonoBehaviour {
         if (string.IsNullOrWhiteSpace(name)) return null;
 
         return splineByName.TryGetValue(name, out var container) ? container : null;
-    }
-
-    private static float ApproxSegmentLength(SplineContainer container, float t0, float t1, int samples) {
-
-        samples = Mathf.Max(2, samples);
-        float dir = t1 >= t0 ? 1f : -1f;
-        float a = t0, b = t1;
-
-        Vector3 prev = EvalWorld(container, a);
-        float total = 0f;
-
-        for (int i = 1; i <= samples; i++) {
-            float u = i / (float)samples;
-            float t = a + (b - a) * u;
-            Vector3 p = EvalWorld(container, t);
-            total += Vector3.Distance(prev, p);
-            prev = p;
-        }
-
-        return total;
-    }
-
-    private static Vector3 EvalWorld(SplineContainer container, float t)
-    {
-        if (container == null || container.Spline == null) return Vector3.zero;
-        var local = SplineUtility.EvaluatePosition(container.Spline, t);
-        return container.transform.TransformPoint((Vector3)local);
     }
 }
