@@ -8,7 +8,7 @@ using UnityEngine;
 
 public class LocalWebSocketClient : MonoBehaviour
 {
-    [SerializeField] private string uri = "ws://localhost:8765";
+    [SerializeField] private string uri = "ws://192.168.1.22:8765";
     private ClientWebSocket socket;
     private CancellationTokenSource cts;
     private TaskCompletionSource<bool> connectedTcs = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -19,23 +19,33 @@ public class LocalWebSocketClient : MonoBehaviour
     public Task<bool> WaitForConnectionAsync() => connectedTcs.Task;
     public bool IsConnected => socket?.State == WebSocketState.Open;
 
-    private async void Start()
+    public async Task<bool> ConnectAsync()
     {
+        if (socket != null && socket.State == WebSocketState.Open)
+            return true;
+
+        socket?.Dispose();
+        cts?.Cancel();
+        cts?.Dispose();
+
+        connectedTcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
         socket = new ClientWebSocket();
         cts = new CancellationTokenSource();
 
         try
         {
             await socket.ConnectAsync(new Uri(uri), cts.Token);
-            Debug.Log("[WS] Connected");
+            Debug.Log($"[WS] Connected to {uri}");
             connectedTcs.TrySetResult(true);
             _ = ListenLoop();
             await Send("Hello from Unity");
+            return true;
         }
         catch (Exception ex)
         {
             Debug.LogError($"[WS] Connect failed: {ex.Message}");
             connectedTcs.TrySetResult(false);
+            return false;
         }
     }
 
@@ -43,14 +53,20 @@ public class LocalWebSocketClient : MonoBehaviour
     {
         var buffer = new byte[1024];
 
-        while (socket.State == WebSocketState.Open)
+        while (socket != null && socket.State == WebSocketState.Open)
         {
             using var ms = new MemoryStream();
             WebSocketReceiveResult result;
             do
             {
                 result = await socket.ReceiveAsync(new ArraySegment<byte>(buffer), cts.Token);
+
+                if (result.MessageType == WebSocketMessageType.Close) {
+                        Debug.LogWarning("[WS] Server closed the connection.");
+                        return;
+                }
                 ms.Write(buffer, 0, result.Count);
+
             } while (!result.EndOfMessage);
 
             var message = Encoding.UTF8.GetString(ms.ToArray());
@@ -60,9 +76,7 @@ public class LocalWebSocketClient : MonoBehaviour
             var isClockSync = compact.Contains("\"command\":\"clock_sync\"");
 
             if (!isClockSync)
-            {
                 Debug.Log($"[WS] Received: {message}");
-}
 
             // Richiamo a Unity Main Thread Dispatcher
             if (MessageReceived != null){

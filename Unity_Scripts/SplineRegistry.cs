@@ -10,6 +10,7 @@ public class SplineRegistry : MonoBehaviour
     [SerializeField] private List<SplineContainer> registeredSplines = new();
     [SerializeField] private string masterSplineName = "MasterSpline";
     [SerializeField] private bool includeInactive = true;
+    [SerializeField] private Transform splineRoot;
 
     private LocalWebSocketClient ws;
     private TaskCompletionSource<bool> sendCompletedTcs = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -27,34 +28,47 @@ public class SplineRegistry : MonoBehaviour
         public SplineRecord spline;
     }
 
-    private void Awake() => ws = GetComponent<LocalWebSocketClient>();
-
-    private async void Start()
-    {
-        // Wait for websocket, then send once on play; call SendAllSplines() again after edits.
-        var connected = await ws.WaitForConnectionAsync();
-        if (!connected)
-        {
-            Debug.LogWarning("[SplineRegistry] WebSocket not connected; skipping spline send.");
-            sendCompletedTcs.TrySetResult(false);
-            return;
-        }
-        try
-        {
-            await SendAllSplines();
-            sendCompletedTcs.TrySetResult(true);
-        }
-        catch (Exception ex)
-        {
-            Debug.LogError($"[SplineRegistry] Failed to send splines: {ex.Message}");
-            sendCompletedTcs.TrySetResult(false);
-        }
+    [Serializable] 
+    private class SingleSplinePayload { 
+        public SplineRecord spline; 
     }
+
+    [Serializable] 
+    private class SplineRecord { 
+        public string name; 
+        public bool closed; 
+        public List<KnotEntry> knotEntries; 
+        public KnotPosition firstKnotPos;
+        public KnotPosition lastKnotPos;
+    }
+
+    [Serializable] 
+    private class KnotEntry { 
+        public string id; 
+        public List<KnotPoint> parameters; 
+    }
+
+    [Serializable] 
+    private class KnotPoint {
+        public float x, y, z;
+        public float inX, inY, inZ;
+        public float outX, outY, outZ;
+        public float rotX, rotY, rotZ, rotW;
+    }
+
+    [Serializable]
+    private class KnotPosition {
+        public float x, y, z;
+    }
+
+    private void Awake() => ws = GetComponent<LocalWebSocketClient>();
 
     public Task<bool> WaitForSplineSendAsync() => sendCompletedTcs.Task;
 
+
     public async Task SendAllSplines()
     {
+        sendCompletedTcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
 
         // Begin Batch
         await ws.Send(JsonUtility.ToJson(new SimpleEvent {@event = "send-splines"}));
@@ -64,13 +78,16 @@ public class SplineRegistry : MonoBehaviour
             var payload = new SplineEvent { spline = splineRecord };
             var json = JsonUtility.ToJson(payload, true);
             await ws.Send(json);
+
             int knotCount = splineRecord.knotEntries != null ? splineRecord.knotEntries.Count : 0;
             Debug.Log($"[SplineRegistry] Sent spline '{splineRecord.name}' with {knotCount} knots.");
+
             await Task.Yield(); // avoid flooding in one frame
         }
 
         // Finish Batch
         await ws.Send(JsonUtility.ToJson(new SimpleEvent {@event = "finish-send-splines"}));
+        sendCompletedTcs.TrySetResult(true);
     }
 
     private IEnumerable<SplineRecord> EnumerateSplines()
@@ -150,38 +167,5 @@ public class SplineRegistry : MonoBehaviour
                 lastKnotPos = lastKnotPos
             };
         }
-    }
-
-    [Serializable] 
-    private class SingleSplinePayload { 
-        public SplineRecord spline; 
-    }
-
-    [Serializable] 
-    private class SplineRecord { 
-        public string name; 
-        public bool closed; 
-        public List<KnotEntry> knotEntries; 
-        public KnotPosition firstKnotPos;
-        public KnotPosition lastKnotPos;
-    }
-
-    [Serializable] 
-    private class KnotEntry { 
-        public string id; 
-        public List<KnotPoint> parameters; 
-    }
-
-    [Serializable] 
-    private class KnotPoint {
-        public float x, y, z;
-        public float inX, inY, inZ;
-        public float outX, outY, outZ;
-        public float rotX, rotY, rotZ, rotW;
-    }
-
-    [Serializable]
-    private class KnotPosition {
-        public float x, y, z;
     }
 }

@@ -14,7 +14,7 @@ public class PrefabRegistry : MonoBehaviour
     [SerializeField] private SplineRegistry splineRegistry;
 
     [SerializeField]
-    private GameObject[] registeredPrefabs;
+    private PrefabEntry[] registeredPrefabs;
 
     public enum PrefabKind { Plane, GroundVehicle, Unknown }
 
@@ -25,9 +25,10 @@ public class PrefabRegistry : MonoBehaviour
         public GameObject prefab;  // Riferimento effettivo al Prefab da istanziare
     }
 
-    private readonly Dictionary<string, PrefabEntry> prefabMap = new Dictionary<string, PrefabEntry>(StringComparer.OrdinalIgnoreCase);
-    private bool prefabMapBuilt = false;
+    private readonly Dictionary<string, PrefabEntry> prefabMap = 
+        new Dictionary<string, PrefabEntry>(StringComparer.OrdinalIgnoreCase);
 
+    private bool prefabMapBuilt = false;
     private LocalWebSocketClient ws;
 
     [Serializable]
@@ -57,22 +58,23 @@ public class PrefabRegistry : MonoBehaviour
         if (registeredPrefabs == null || registeredPrefabs.Length == 0) {
 
             Debug.LogWarning("[PrefabRegistry] registeredPrefabs is empty; no prefabs will be spawnable.");
+            prefabMapBuilt = false;
             return;
         }
 
         var planeNames = new HashSet<string>(GetPrefabNames(aereiFolder), StringComparer.OrdinalIgnoreCase);
         var groundNames = new HashSet<string>(GetPrefabNames(mezziFolder), StringComparer.OrdinalIgnoreCase);
 
-        foreach (var go in registeredPrefabs) {
-            if (go == null) continue;
+        foreach (var entry in registeredPrefabs) {
+            if (entry == null) continue;
 
             var kind =
-                planeNames.Contains(go.name) ? PrefabKind.Plane :
-                groundNames.Contains(go.name) ? PrefabKind.GroundVehicle :
+                planeNames.Contains(entry.name) ? PrefabKind.Plane :
+                groundNames.Contains(entry.name) ? PrefabKind.GroundVehicle :
                 PrefabKind.Unknown;
             
-            if (!prefabMap.ContainsKey(go.name)){
-                prefabMap.Add(go.name, new PrefabEntry { name = go.name, type = kind, prefab = go });
+            if (!prefabMap.ContainsKey(entry.name)){
+                prefabMap.Add(entry.name, new PrefabEntry { name = entry.name, type = kind, prefab = entry });
             }
         }
 
@@ -100,21 +102,6 @@ public class PrefabRegistry : MonoBehaviour
         }
 
         return false;
-    }
-
-    private async void Start()
-    {
-        if (!sendOnStart) return;
-
-        // Ensure websocket connected, then wait for splines to go out before sending prefabs.
-        var connected = await ws.WaitForConnectionAsync();
-        if (!connected)
-        {
-            Debug.LogWarning("[PrefabRegistry] WebSocket not connected; skipping prefab send.");
-            return;
-        }
-        await EnsureSplineRegistryReady();
-        await SendPrefabNames();
     }
 
     private async Task EnsureSplineRegistryReady()
