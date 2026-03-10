@@ -11,7 +11,7 @@ public class AirportSimulationBootstrap : MonoBehaviour {
     [SerializeField] private StartPathHandler startPathHandler;
 
     [Header("Optional")]
-    [SerializeField] private bool startSimulationAfterPlacement = false;
+    [SerializeField] private bool startSimulationAfterPlacement = true;
     [SerializeField] private bool sendSetupInit = true;
     [SerializeField] private bool logDebug = true;
 
@@ -44,6 +44,8 @@ public class AirportSimulationBootstrap : MonoBehaviour {
             placementController.OnPlacementReset.AddListener(HandlePlacementReset);
         }
 
+        Debug.Log($"[Bootstrap] OnEnable placementController={(placementController != null)} placed={(placementController != null && placementController.IsPlaced)} startAfterPlacement={startSimulationAfterPlacement}");
+
         if (placementController != null && placementController.IsPlaced && startSimulationAfterPlacement)
             _ = StartSimulationAsync();
     }
@@ -59,6 +61,8 @@ public class AirportSimulationBootstrap : MonoBehaviour {
 
     private async void HandlePlacementCompleted()
     {
+        Debug.Log("[Bootstrap] HandlePlacementCompleted fired");
+
         if (!startSimulationAfterPlacement)
         {
             if (logDebug)
@@ -79,6 +83,8 @@ public class AirportSimulationBootstrap : MonoBehaviour {
     }
 
     private async Task StartSimulationAsync() {
+
+        Debug.Log($"[Bootstrap] StartSimulationAsync entered startupTriggered={startupTriggered} startupCompleted={startupCompleted}");
 
         if (startupTriggered || startupCompleted)
             return;
@@ -105,6 +111,7 @@ public class AirportSimulationBootstrap : MonoBehaviour {
                 if (logDebug)
                     Debug.Log("[Bootstrap] Rebuilt spline cache after AR placement.");
             }
+            Debug.Log("[Bootstrap] About to call ConnectAsync()");
 
             bool connected = await webSocketClient.ConnectAsync();
             if (!connected)
@@ -133,6 +140,7 @@ public class AirportSimulationBootstrap : MonoBehaviour {
         } catch (Exception ex) {
             startupTriggered = false;
             Debug.LogError($"[Bootstrap] Initialization failed: {ex.Message}");
+            Debug.LogError($"[WS] Connect failed: {ex.GetType().Name} | {ex.Message}");
         }
     }
 }

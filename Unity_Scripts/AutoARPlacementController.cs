@@ -22,7 +22,7 @@ public class AutoARPlacementController : MonoBehaviour
     [SerializeField] private float placementHeightOffset = 0.2f;
     [SerializeField] private bool disablePlaneVisualizationAfterPlacement = false;
     [SerializeField] private bool keepPlaneTrackingAfterPlacement = true;
-    [SerializeField] private bool spawnDebugMarker = true;
+    [SerializeField] private bool spawnDebugMarker = false;
 
     [Header("Optional Debug")]
     [SerializeField] private bool logDebug = true;
@@ -277,7 +277,9 @@ public class AutoARPlacementController : MonoBehaviour
         if (logDebug)
             Debug.Log("[AutoARPlacement] Airport placed successfully.");
 
+        Debug.Log("[AutoARPlacement] Invoking OnPlacementCompleted");
         OnPlacementCompleted?.Invoke();
+        Debug.Log("[AutoARPlacement] OnPlacementCompleted invoked");
         yield return null;
     }
 
