@@ -12,12 +12,22 @@ function renderFlightProgress(flight, nowMs) {
   const now = nowMs != null ? Number(nowMs) : Date.now();
   const departureMs = parseDateMs(flight.departure_time);
   const arrivalMs = parseDateMs(flight.arrival_time);
+  const status = String(flight.status || "");
 
-  if (String(flight.status || "") === "Completed") {
+  if (status === "Completed") {
     return {
       completed: true,
-      width: "0%",
-      label: "",
+      width: "100%",
+      label: "Progress: completed",
+      indeterminate: false,
+    };
+  }
+
+  if (status === "Disembarking") {
+    return {
+      completed: false,
+      width: "100%",
+      label: "Progress: arrived",
       indeterminate: false,
     };
   }

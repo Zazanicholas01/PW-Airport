@@ -58,6 +58,11 @@ async def flight_scheduler_loop(
     # Create Random Flight Generator instance
     ctx.flight_actions.generate_debug_flights(RANDOM_FLIGHTS_COUNT, ensure_in_window=ENSURE_IN_WINDOW, window=scheduler.window)
     logging.info(f"[flight_scheduler] generated debug flights (n={RANDOM_FLIGHTS_COUNT})")
+    await ctx.observer_hub.broadcast({
+        "type": "backend_event",
+        "event": "debug_flights_generated",
+        "count": RANDOM_FLIGHTS_COUNT,
+    })
 
     # Initialize timestamp used to rate-limit scheduling window logging
     last_window_log = 0.0
@@ -135,6 +140,13 @@ async def flight_scheduler_loop(
                 )
 
                 logging.info("[flight_scheduler] departure assigned airplane_id=%s stand_id=%s flight_id=%s", airplane_id, stand_id, flight_id)
+                await ctx.observer_hub.broadcast({
+                    "type": "backend_event",
+                    "event": "departure_assigned",
+                    "flight_id": flight_id,
+                    "airplane_id": airplane_id,
+                    "stand_id": stand_id,
+                })
                 continue
 
             # LANDING - In Window for Landing Flights on Departure Time
@@ -151,12 +163,23 @@ async def flight_scheduler_loop(
                     continue
 
                 logging.info("[flight_scheduler] landing_dep: linked airplane_id=%s to flight_id=%s (Lan_Ongoing)", airplane_id, flight_id)
+                await ctx.observer_hub.broadcast({
+                    "type": "backend_event",
+                    "event": "landing_plane_assigned",
+                    "flight_id": flight_id,
+                    "airplane_id": airplane_id,
+                })
                 continue
 
             # MARK LANDING DEPARTED - Marks a landing flight as departed from a remote airport
             if scheduler.should_mark_landing_departed(flight=flight, now_utc=now):
                 ctx.flight_actions.mark_landing_departed(flight_id=flight_id)
                 logging.info("[flight_scheduler] landing_dep: departed flight_id=%s -> Lan_Ongoing", flight_id)
+                await ctx.observer_hub.broadcast({
+                    "type": "backend_event",
+                    "event": "landing_departed",
+                    "flight_id": flight_id,
+                })
                 continue
 
             # LANDING RESERVATION - In Window on Arrival Time for Landing 
@@ -177,6 +200,13 @@ async def flight_scheduler_loop(
                     )
 
                 logging.info("[flight_scheduler] landing_arr: stand_id=%s reserved + plane linked flight_id=%s", stand_id, flight_id)
+                await ctx.observer_hub.broadcast({
+                    "type": "backend_event",
+                    "event": "landing_stand_reserved",
+                    "flight_id": flight_id,
+                    "stand_id": stand_id,
+                    "airplane_id": airplane_id,
+                })
                 continue
 
             # START DEPARTURE MOVEMENT - Departure Time > Now
@@ -202,6 +232,13 @@ async def flight_scheduler_loop(
                         
                         await ctx.bus.send_command(cmd)
                         logging.info("[flight_scheduler] start_path departure airplane_id=%s flight_id=%s", airplane_id, flight_id)
+                        await ctx.observer_hub.broadcast({
+                            "type": "backend_event",
+                            "event": "departure_started",
+                            "flight_id": flight_id,
+                            "airplane_id": airplane_id,
+                            "route_id": cmd["route_id"],
+                        })
                 continue
 
             # SPAWN LANDING PLANE - 1 Minute Before Arrival Time
@@ -235,6 +272,13 @@ async def flight_scheduler_loop(
                         spawn_context="landing",
                     ))
                     logging.info("[flight_scheduler] landing_spawn: spawned airplane_id=%s flight_id=%s", airplane_id, flight_id)
+                    await ctx.observer_hub.broadcast({
+                        "type": "backend_event",
+                        "event": "landing_spawn",
+                        "flight_id": flight_id,
+                        "airplane_id": airplane_id,
+                        "prefab": prefab,
+                    })
 
             # START LANDING MOVEMENT
             if scheduler.should_start_landing_approach(flight=flight, now_utc=now):
@@ -247,6 +291,13 @@ async def flight_scheduler_loop(
                     cmd = make_start_path_command(airplane_id=airplane_id, Session=ctx.Session)
                     if cmd is not None:
                         await ctx.bus.send_command(cmd)
+                        await ctx.observer_hub.broadcast({
+                            "type": "backend_event",
+                            "event": "landing_approach_started",
+                            "flight_id": flight_id,
+                            "airplane_id": airplane_id,
+                            "route_id": cmd["route_id"],
+                        })
 
         # Convert simulation polling to real time sleep based on time_scale
         poll_real_s = max(MIN_POLL_REAL_S, poll_seconds / max(time_scale, 1.0))

@@ -1,4 +1,12 @@
-import { esc, flightIdForRow, fmtWhen, minsUntil, statusClass, toDate } from "../lib/format.js";
+import {
+  esc,
+  flightIdForRow,
+  fmtWhen,
+  minsUntil,
+  shortTime,
+  statusClass,
+  toDate,
+} from "../lib/format.js";
 
 export function renderFlightTable(flights, { airport, nowMs }) {
   const rows = (flights || [])
@@ -7,7 +15,7 @@ export function renderFlightTable(flights, { airport, nowMs }) {
       const when = fmtWhen(flight, airport);
       const dt = toDate(when.t);
       const delta = dt ? minsUntil(dt, nowMs) : "";
-      const whenCell = dt ? `${when.label} ${dt.toLocaleTimeString()}` : "";
+      const whenCell = dt ? `${when.label} ${shortTime(dt)}` : "";
       return `
         <tr class="flight-row clickable-row" data-flight-id="${esc(flightId)}">
           <td>${esc(whenCell)}</td>

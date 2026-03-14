@@ -29,7 +29,7 @@ function boot() {
 
   const api = createApiService(store);
   const refresh = createRefreshService(store, api);
-  const events = createEventService(store, refresh.scheduleRefreshSoon);
+  const events = createEventService(store, refresh);
   const router = createRouter(mount, store, { api, refresh, events });
 
   refresh.start();

@@ -22,6 +22,10 @@ async def schedule_initial_spawns(ctx: SessionContext) -> None:
         "type": "simulation_start",
         "message": "hello",
     })
+    await ctx.observer_hub.broadcast({
+        "type": "simulation_start",
+        "message": "hello",
+    })
     
     # Initialize Spawn Scheduler instance
     scheduler = SpawnScheduler(
@@ -41,3 +45,8 @@ async def schedule_initial_spawns(ctx: SessionContext) -> None:
         await ctx.bus.send_command(cmd)
 
     logging.info("Scheduled %d initial spawn commands", len(commands))
+    await ctx.observer_hub.broadcast({
+        "type": "backend_event",
+        "event": "initial_spawns_scheduled",
+        "count": len(commands),
+    })

@@ -1,6 +1,33 @@
 import { normalizeEvent } from "../lib/format.js";
 
-export function createEventService(store, scheduleRefreshSoon) {
+function refreshForBackendEvent(refresh, eventName) {
+  switch (eventName) {
+    case "departure_assigned":
+    case "landing_plane_assigned":
+    case "landing_departed":
+    case "departure_started":
+      refresh.scheduleWindowRefreshSoon();
+      refresh.schedulePlanesRefreshSoon();
+      return;
+
+    case "landing_stand_reserved":
+    case "landing_spawn":
+    case "landing_approach_started":
+    case "departure_completed":
+    case "landing_completed":
+    case "plane_left_stand":
+    case "disembark_complete":
+    case "initial_spawns_scheduled":
+      refresh.schedulePlanesRefreshSoon();
+      refresh.scheduleWindowRefreshSoon();
+      return;
+
+    default:
+      refresh.scheduleAllRefreshSoon();
+  }
+}
+
+export function createEventService(store, refresh) {
   function connect() {
     const proto = location.protocol === "https:" ? "wss" : "ws";
     const ws = new WebSocket(`${proto}://${location.host}/ws/events?tail=50`);
@@ -8,6 +35,7 @@ export function createEventService(store, scheduleRefreshSoon) {
     ws.onopen = () => {
       console.log("[events-ws] connected");
       store.setConnectionStatus("connected");
+      refresh.scheduleAllRefreshSoon(0);
     };
 
     ws.onclose = () => {
@@ -16,7 +44,7 @@ export function createEventService(store, scheduleRefreshSoon) {
       setTimeout(connect, 1000);
     };
 
-    ws.onerror = () => {
+    ws.onerror = (err) => {
       console.error("[event-ws] error", err);
       store.setConnectionStatus("error");
     };
@@ -27,6 +55,7 @@ export function createEventService(store, scheduleRefreshSoon) {
         const kind = obj ? obj.type || obj.event : null;
 
         if (kind === "clock") {
+          const previousTimeScale = Number(store.getState().sim.timeScale);
           const nowMs =
             typeof obj.sim_unix_ms === "number" ? obj.sim_unix_ms : Number(obj.sim_unix_ms);
           const timeScale =
@@ -43,14 +72,23 @@ export function createEventService(store, scheduleRefreshSoon) {
           });
 
           store.setSimClock(nowMs, timeScale);
-          scheduleRefreshSoon();
+          refresh.handleClockSync({
+            previousTimeScale: Number.isFinite(previousTimeScale) ? previousTimeScale : null,
+            nextTimeScale: Number.isFinite(timeScale) ? timeScale : null,
+          });
           return;
         }
+
+        if (kind === "backend_event") {
+          store.addLog(normalizeEvent(obj));
+          refreshForBackendEvent(refresh, obj.event);
+          return;
+        }
+
         store.addLog(normalizeEvent(obj));
       } catch {
         store.addLog(normalizeEvent({ type: "raw", message: ev.data }));
       }
-      scheduleRefreshSoon();
     };
   }
 

@@ -22,7 +22,7 @@ export const scheduleScreen = {
       <section>
         <div class="row">
           <h2 style="margin: 0;">Scheduling Window</h2>
-          <span class="muted">Auto-refresh on events, plus 10s flights and 2s planes polling</span>
+          <span class="muted">Auto-refresh on events, plus 5s flights and 2s planes polling</span>
         </div>
 
         <div class="row control-row">

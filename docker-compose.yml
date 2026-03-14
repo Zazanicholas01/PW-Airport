@@ -44,14 +44,11 @@ services:
     command: python /app/scripts/init_db.py
     restart: "no"
   
-  backend:
+  db-seed:
     build:
       context: .
       dockerfile: docker/Dockerfile
-    container_name: pw_airport_backend
     depends_on:
-      postgres:
-        condition: service_healthy
       db-init:
         condition: service_completed_successfully
     working_dir: /app
@@ -62,15 +59,12 @@ services:
       POSTGRES_HOST: postgres
       POSTGRES_PORT: 5432
       POSTGRES_DB: Airport
-      POSTGRES_ADMIN_DB: postgres
       POSTGRES_USER: airport
       POSTGRES_PASSWORD: airport
       PYTHONPATH: /app
       LOG_DIR: /logs
     command: python /app/scripts/startup.py
-    ports:
-      - "8765:8765"
-    restart: unless-stopped
+    restart: "no"
 
   dashboard-app:
     build:
@@ -80,10 +74,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-      db-init:
+      db-seed:
         condition: service_completed_successfully
-      backend:
-        condition: service_started
     working_dir: /app
     volumes:
       - ./:/app:ro
@@ -96,6 +88,7 @@ services:
       POSTGRES_PASSWORD: airport
       PYTHONPATH: /app
       LOG_DIR: /logs
+      SIM_EVENT_WS_URL: ws://host.docker.internal:8765/observer
     expose:
       - "8000"
     command: uvicorn src.web.dashboard_app:app --host 0.0.0.0 --port 8000

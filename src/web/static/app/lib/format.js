@@ -1,4 +1,17 @@
 const ALLOWED_LEVELS = new Set(["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]);
+const TIME_ONLY_FORMAT = {
+  hour: "2-digit",
+  minute: "2-digit",
+  second: "2-digit",
+};
+const DATE_TIME_FORMAT = {
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+  hour: "2-digit",
+  minute: "2-digit",
+  second: "2-digit",
+};
 
 export function toDate(value) {
   return value ? new Date(value) : null;
@@ -12,7 +25,15 @@ export function parseDateMs(value) {
 
 export function fmtLocalTimeFromIso(value) {
   try {
-    return value ? new Date(value).toLocaleTimeString() : "";
+    return value ? new Date(value).toLocaleTimeString([], TIME_ONLY_FORMAT) : "";
+  } catch {
+    return "";
+  }
+}
+
+export function fmtLocalDateTime(value) {
+  try {
+    return value ? new Date(value).toLocaleString([], DATE_TIME_FORMAT) : "";
   } catch {
     return "";
   }
@@ -80,7 +101,7 @@ export function flightIdForRow(flight) {
 
 export function shortTime(value) {
   try {
-    return value ? new Date(value).toLocaleTimeString() : "";
+    return value ? new Date(value).toLocaleTimeString([], TIME_ONLY_FORMAT) : "";
   } catch {
     return "";
   }

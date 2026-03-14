@@ -57,48 +57,41 @@ export function createStore(initialState) {
       );
       notify("planes");
     },
+    waitForSimClock(timeoutMs = 5000) {
+      if (Number.isFinite(state.sim.nowMs)) {
+        return Promise.resolve(state.sim.nowMs);
+      }
+
+      return new Promise((resolve) => {
+        const startedAt = Date.now();
+
+        const unsubscribe = this.subscribe((type) => {
+          if (type === "sim" && Number.isFinite(state.sim.nowMs)) {
+            unsubscribe();
+            resolve(state.sim.nowMs);
+            return;
+          }
+
+          if ((Date.now() - startedAt) >= timeoutMs) {
+            unsubscribe();
+            resolve(null);
+          }
+        });
+      });
+    },
     setSimClock(nowMs, timeScale) {
       state.sim = {
         ...state.sim,
         nowMs: Number.isFinite(nowMs) ? nowMs : state.sim.nowMs,
         timeScale: Number.isFinite(timeScale) ? timeScale : state.sim.timeScale,
-        receivedAtMs: Date.now(),
       };
 
       console.log("[clock_sync][WEB SET]", {
         nowMs: state.sim.nowMs,
         timeScale: state.sim.timeScale,
-        receivedAtMs: state.sim.receivedAtMs,
         iso: Number.isFinite(state.sim.nowMs) ? new Date(state.sim.nowMs).toISOString() : null,
       });
 
-      notify("sim");
-    },
-    advanceSimClock() {
-      if (!Number.isFinite(state.sim.nowMs)) return;
-      if (!Number.isFinite(state.sim.receivedAtMs)) return;
-
-      const now = Date.now();
-      const elapsedMs = now - state.sim.receivedAtMs;
-      if (elapsedMs <= 0) return;
-
-      const timeScale = Number.isFinite(state.sim.timeScale) ? state.sim.timeScale : 1;
-
-      state.sim = {
-        ...state.sim,
-        nowMs: state.sim.nowMs + elapsedMs * timeScale,
-        receivedAtMs: now,
-      };
-
-      if (now - lastClockAdvanceLogAt >= 2000) {
-        lastClockAdvanceLogAt = now;
-        console.log("[clock_sync][WEB ADVANCE]", {
-          nowMs: state.sim.nowMs,
-          timeScale: state.sim.timeScale,
-          iso: new Date(state.sim.nowMs).toISOString(),
-        });
-      }
-      
       notify("sim");
     },
     addLog(event) {

@@ -13,6 +13,21 @@ from src.utils.event_log import append_event
 from src.transport.session import SessionContext
 from src.transport.command_builders import build_clock_sync
 
+
+def _clock_event(sync) -> dict:
+    return {
+        "type": "clock",
+        "sim_unix_ms": sync.sim_unix_ms,
+        "time_scale": sync.time_scale,
+        "sync_id": sync.sync_id,
+    }
+
+
+async def _publish_clock_snapshot(ctx: SessionContext, sync) -> None:
+    event = _clock_event(sync)
+    append_event(event)
+    await ctx.observer_hub.broadcast(event)
+
 async def handle_clock_control(ctx: SessionContext, payload: dict) -> bool:
 
     # Get payload and sanity checks
@@ -75,6 +90,7 @@ async def handle_clock_control(ctx: SessionContext, payload: dict) -> bool:
                 time_scale=sync.time_scale
             )
         )
+        await _publish_clock_snapshot(ctx, sync)
         return True
 
     # Handle Set Sim Time command
@@ -92,8 +108,17 @@ async def handle_clock_control(ctx: SessionContext, payload: dict) -> bool:
         
         async with ctx.clock_lock:
             ctx.clock.set_sim_time(new_sim)
+            sync = ctx.clock.make_sync()
         
         ctx.clock_changed.set()
+        await ctx.bus.send_command(
+            ctx.commands.clock_sync(
+                sync_id=sync.sync_id,
+                sim_unix_ms=sync.sim_unix_ms,
+                time_scale=sync.time_scale,
+            )
+        )
+        await _publish_clock_snapshot(ctx, sync)
         return True
     
     return False
@@ -142,12 +167,7 @@ async def clock_sync_loop(ctx: SessionContext) -> None:
             # Event Sync Logging in the Web UI
             if (t - last_evt_t) >= EVT_EVERY_S:
                 last_evt_t = t
-                append_event({
-                    "type": "clock",
-                    "sim_unix_ms": sync.sim_unix_ms,
-                    "time_scale": sync.time_scale,
-                    "sync_id": sync.sync_id,
-                })
+                await _publish_clock_snapshot(ctx, sync)
 
                 # logging.info(
                 #     "[clock_sync][PY->WEB] sim_unix_ms=%d time_scale=%.2f sync_id=%d",

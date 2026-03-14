@@ -1,4 +1,4 @@
-import { esc } from "../lib/format.js";
+import { esc, fmtLocalDateTime } from "../lib/format.js";
 import { hrefForKpi, hrefForOverview, hrefForSchedule } from "../lib/routes.js";
 
 function navClass(current, expected) {
@@ -6,8 +6,8 @@ function navClass(current, expected) {
 }
 
 export function renderAppShell({ route, connection, sim, screenHtml }) {
-  const clockLabel = sim.nowMs != null ? new Date(sim.nowMs).toLocaleString() : "syncing";
-  const scaleLabel = sim.timeScale != null ? `${sim.timeScale}x` : "n/a";
+  const clockLabel = sim.nowMs != null ? fmtLocalDateTime(sim.nowMs) : "syncing";
+  const scaleLabel = sim.timeScale != null ? `${Number(sim.timeScale).toFixed(1)}x` : "n/a";
 
   return `
     <div class="app-shell">
@@ -51,12 +51,14 @@ export function updateAppShell(root, { route, connection, sim }) {
   const simTime = root.querySelector("#sim_time");
   if (simTime) {
     simTime.textContent = `Sim Time ${
-      sim.nowMs != null ? new Date(sim.nowMs).toLocaleString() : "syncing"
+      sim.nowMs != null ? fmtLocalDateTime(sim.nowMs) : "syncing"
     }`;
   }
 
   const simScale = root.querySelector("#sim_scale");
   if (simScale) {
-    simScale.textContent = `Scale ${sim.timeScale != null ? `${sim.timeScale}x` : "n/a"}`;
+    simScale.textContent = `Scale ${
+      sim.timeScale != null ? `${Number(sim.timeScale).toFixed(1)}x` : "n/a"
+    }`;
   }
 }

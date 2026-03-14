@@ -9,6 +9,10 @@ from uuid import uuid4
 engine = get_engine()
 Session = sessionmaker(bind=engine, future=True)
 
+
+def _has_rows(session, model) -> bool:
+    return session.execute(select(model).limit(1)).first() is not None
+
 def add_terminal(session) -> None:
 
     #### Aggiungi Terminal ####
@@ -164,15 +168,36 @@ def add_vehicles(session) -> None:
 
 
 def insert_seed_values() -> None:
-    x = True
     with Session() as session:
-        if x:
-            if not session.query(models.Terminal).first(): add_terminal(session)
+        if not _has_rows(session, models.Terminal):
+            add_terminal(session)
+        else:
+            print("Terminal already seeded, skipping")
+
+        if not _has_rows(session, models.Airport):
             add_airports(session)
+        else:
+            print("Airports already seeded, skipping")
+
+        if not _has_rows(session, models.Airline):
             add_airlines(session)
+        else:
+            print("Airlines already seeded, skipping")
+
+        if not _has_rows(session, models.ParkingSpot):
             add_parkings(session)
+        else:
+            print("Parking spots already seeded, skipping")
+
+        if not _has_rows(session, models.Stand):
             add_stands(session)
+        else:
+            print("Stands already seeded, skipping")
+
+        if not _has_rows(session, models.Vehicle):
             add_vehicles(session)
+        else:
+            print("Vehicles already seeded, skipping")
 
 
 def main() -> None:
