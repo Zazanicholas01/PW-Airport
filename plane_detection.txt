@@ -18,3 +18,8 @@ UNITY FIXES:
         --> Run Python backend in Windows
         --> Proxy from windows interface to WSL on port 8765 and open firewall to that route
     
+ADB LOGCAT:
+
+    - $adb = "C:\Program Files\Unity\Hub\Editor\6000.2.14f1\Editor\Data\PlaybackEngines\AndroidPlayer\SDK\platform-tools\adb.exe"
+    - & $adb logcat -c
+    - & $adb logcat --pid=$(& $adb shell pidof com.GhiaccioLIAG.PWAirport) | Select-String "SimClockClient|UI|clock_sync|WS"
