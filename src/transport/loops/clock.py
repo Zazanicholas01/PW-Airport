@@ -110,42 +110,58 @@ async def clock_sync_loop(ctx: SessionContext) -> None:
     last_evt_t = 0.0
 
     while True:
+        try:
 
-        # Build clock sync snapshot and current simulation time
-        async with ctx.clock_lock:
-            sync = ctx.clock.make_sync()
-            sim_now = ctx.clock.now()
+            # Build clock sync snapshot and current simulation time
+            async with ctx.clock_lock:
+                sync = ctx.clock.make_sync()
+                sim_now = ctx.clock.now()
 
-        # Send Clock Sync command to Unity
-        await ctx.bus.send_command(
-            ctx.commands.clock_sync(
-                sync_id=sync.sync_id,
-                sim_unix_ms=sync.sim_unix_ms,
-                time_scale=sync.time_scale,
-            )
-        )
-
-        t = time.monotonic()
-
-        # Clock Sync Logging in the CLI
-        if (t - last_log_t) >= LOG_EVERY_S:
-            last_log_t = t
-            logging.info(
-                "[clock_sync] sim_now=%s sim_unix_ms=%d time_scale=%.2f sync_id=%d",
-                isoformat_utc_plus1(sim_now, timespec="seconds"),
-                sync.sim_unix_ms,
-                sync.time_scale,
-                sync.sync_id,
+            # Send Clock Sync command to Unity
+            await ctx.bus.send_command(
+                ctx.commands.clock_sync(
+                    sync_id=sync.sync_id,
+                    sim_unix_ms=sync.sim_unix_ms,
+                    time_scale=sync.time_scale,
+                )
             )
 
-        # Event Sync Logging in the Web UI
-        if (t - last_evt_t) >= EVT_EVERY_S:
-            last_evt_t = t
-            append_event({
-                "type": "clock",
-                "sim_unix_ms": sync.sim_unix_ms,
-                "time_scale": sync.time_scale,
-                "sync_id": sync.sync_id,
-            })
+            t = time.monotonic()
 
-        await asyncio.sleep(period)
+            # Clock Sync Logging in the CLI
+            if (t - last_log_t) >= LOG_EVERY_S:
+                last_log_t = t
+                logging.info(
+                    "[clock_sync] sim_now=%s sim_unix_ms=%d time_scale=%.2f sync_id=%d",
+                    isoformat_utc_plus1(sim_now, timespec="seconds"),
+                    sync.sim_unix_ms,
+                    sync.time_scale,
+                    sync.sync_id,
+                )
+
+            # Event Sync Logging in the Web UI
+            if (t - last_evt_t) >= EVT_EVERY_S:
+                last_evt_t = t
+                append_event({
+                    "type": "clock",
+                    "sim_unix_ms": sync.sim_unix_ms,
+                    "time_scale": sync.time_scale,
+                    "sync_id": sync.sync_id,
+                })
+
+                # logging.info(
+                #     "[clock_sync][PY->WEB] sim_unix_ms=%d time_scale=%.2f sync_id=%d",
+                #     sync.sim_unix_ms,
+                #     sync.time_scale,
+                #     sync.sync_id,
+                # )
+
+            await asyncio.sleep(period)
+
+        except asyncio.CancelledError:
+            logging.info("[clock_sync] Loop cancelled")
+            raise
+        
+        except Exception:
+            logging.exception("[clock_sync] Loop crashed")
+            await asyncio.sleep(1.0)

@@ -67,6 +67,9 @@ class WsMessageBus:
 
     async def _recv_loop(self, websocket):
         """Legge dal Websocket e mette i payload JSON in incoming"""
+
+        peer = getattr(websocket, "remote_address", None)
+        logging.info("[ws.recv] Start peer=%s", peer)
         
         try:
             # Loop sui payload in arrivo e prova a convertire in JSON
@@ -80,10 +83,14 @@ class WsMessageBus:
                 # Inserisce payload JSON nella coda incoming
                 await self.incoming.put(payload)
 
-        except ConnectionClosed:
-            pass
+        except ConnectionClosed as e:
+            logging.warning("[ws.recv] connection closed peer=%s code=%s reason=%r", peer, e.code, e.reason)
+        
+        except Exception:
+            logging.exception("[ws.recv] crashed peer=%s", peer)
 
         finally:
+            logging.warning("[ws.recv] stopping peer=%s", peer)
             self.closed.set()
             await self.outgoing.put(None)
     

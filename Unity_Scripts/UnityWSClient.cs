@@ -9,6 +9,7 @@ using UnityEngine;
 public class LocalWebSocketClient : MonoBehaviour
 {
     [SerializeField] private string uri = "ws://192.168.1.22:8765";
+    [SerializeField] private int connectTimeoutSeconds = 8;
     private ClientWebSocket socket;
     private CancellationTokenSource cts;
     private TaskCompletionSource<bool> connectedTcs = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -30,11 +31,24 @@ public class LocalWebSocketClient : MonoBehaviour
 
         connectedTcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
         socket = new ClientWebSocket();
-        cts = new CancellationTokenSource();
+        cts = new CancellationTokenSource(TimeSpan.FromSeconds(Mathf.Max(1, connectTimeoutSeconds)));
+
+        if (!Uri.TryCreate(uri, UriKind.Absolute, out var parsedUri))
+        {
+            Debug.LogError($"[WS] Invalid URI '{uri}'.");
+            connectedTcs.TrySetResult(false);
+            return false;
+        }
+
+        Debug.Log(
+            $"[WS] Connecting to {parsedUri} | host={parsedUri.Host} | port={parsedUri.Port} | " +
+            $"scheme={parsedUri.Scheme} | reachability={Application.internetReachability} | " +
+            $"platform={Application.platform}"
+        );
 
         try
         {
-            await socket.ConnectAsync(new Uri(uri), cts.Token);
+            await socket.ConnectAsync(parsedUri, cts.Token);
             Debug.Log($"[WS] Connected to {uri}");
             connectedTcs.TrySetResult(true);
             _ = ListenLoop();
@@ -43,7 +57,7 @@ public class LocalWebSocketClient : MonoBehaviour
         }
         catch (Exception ex)
         {
-            Debug.LogError($"[WS] Connect failed: {ex.Message}");
+            Debug.LogError($"[WS] Connect failed for {uri}: {FormatException(ex)}");
             connectedTcs.TrySetResult(false);
             return false;
         }
@@ -121,5 +135,29 @@ public class LocalWebSocketClient : MonoBehaviour
                 connectedTcs.TrySetCanceled();
             }
         }
+    }
+
+    private static string FormatException(Exception ex)
+    {
+        if (ex == null) return "Unknown exception";
+
+        var sb = new StringBuilder();
+        int depth = 0;
+        Exception current = ex;
+
+        while (current != null && depth < 6)
+        {
+            if (depth > 0)
+                sb.Append(" | Inner: ");
+
+            sb.Append(current.GetType().Name);
+            sb.Append(": ");
+            sb.Append(current.Message);
+
+            current = current.InnerException;
+            depth++;
+        }
+
+        return sb.ToString();
     }
 }

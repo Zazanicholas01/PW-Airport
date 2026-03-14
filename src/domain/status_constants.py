@@ -151,8 +151,8 @@ class WEBSOCKET_CONFIG:
     HOST = "0.0.0.0"
     PORT = 8765
     MAX_SIZE = 4 * 1024 * 1024
-    PING_INTERVAL = 20
-    PING_TIMEOUT = 20
+    PING_INTERVAL = 60
+    PING_TIMEOUT = 60
     MAX_QUEUE = 32
 
 # Spline related constants

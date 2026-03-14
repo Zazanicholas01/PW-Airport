@@ -192,7 +192,7 @@ class SetupBusHandler:
         await self._commit_splines()
         self.state.splines_done = True
 
-        logging.info("[setup bus] Begin Spline Batch")
+        logging.info("[setup bus] Finished Spline Batch")
         await self._maybe_finish_setup()
 
 

@@ -128,6 +128,9 @@ public class AirportSimulationBootstrap : MonoBehaviour {
             if (logDebug)
                 Debug.Log("[Bootstrap] Sent spline batch.");
 
+            if (logDebug)
+                Debug.Log("[Bootstrap] About to send prefab batch.");
+
             await prefabRegistry.SendPrefabNames();
             if (logDebug)
                 Debug.Log("[Bootstrap] Sent prefab batch.");

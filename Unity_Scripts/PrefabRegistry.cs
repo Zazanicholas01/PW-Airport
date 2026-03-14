@@ -8,6 +8,7 @@ using UnityEngine;
 public class PrefabRegistry : MonoBehaviour
 {
     [SerializeField] private PrefabEntry[] registeredPrefabs;
+    [SerializeField] private bool logDebug = true;
 
     private readonly Dictionary<string, PrefabEntry> prefabMap =
         new(StringComparer.OrdinalIgnoreCase);
@@ -53,7 +54,38 @@ public class PrefabRegistry : MonoBehaviour
     private void Awake()
     {
         ws = GetComponent<LocalWebSocketClient>();
+        LogConfiguredPrefabs();
         BuildPrefabMap();
+    }
+
+    private void LogConfiguredPrefabs()
+    {
+        if (!logDebug)
+            return;
+
+        if (registeredPrefabs == null)
+        {
+            Debug.LogWarning("[PrefabRegistry] registeredPrefabs is null.");
+            return;
+        }
+
+        Debug.Log($"[PrefabRegistry] Awake on {Application.platform}. configured entries={registeredPrefabs.Length}");
+
+        for (int i = 0; i < registeredPrefabs.Length; i++)
+        {
+            var entry = registeredPrefabs[i];
+            if (entry == null)
+            {
+                Debug.LogWarning($"[PrefabRegistry] Entry[{i}] is null.");
+                continue;
+            }
+
+            string prefabName = entry.prefab != null ? entry.prefab.name : "null";
+            Debug.Log(
+                $"[PrefabRegistry] Entry[{i}] name='{entry.name}' type={entry.type} " +
+                $"prefab={(entry.prefab == null ? "NULL" : prefabName)}"
+            );
+        }
     }
 
     private void BuildPrefabMap()
@@ -69,15 +101,38 @@ public class PrefabRegistry : MonoBehaviour
 
         foreach (var entry in registeredPrefabs)
         {
-            if (entry == null || string.IsNullOrWhiteSpace(entry.name) || entry.prefab == null)
+            if (entry == null)
+            {
+                if (logDebug)
+                    Debug.LogWarning("[PrefabRegistry] Skipping null entry while building prefab map.");
                 continue;
+            }
+
+            if (string.IsNullOrWhiteSpace(entry.name))
+            {
+                if (logDebug)
+                    Debug.LogWarning($"[PrefabRegistry] Skipping entry with empty name for prefab '{(entry.prefab == null ? "NULL" : entry.prefab.name)}'.");
+                continue;
+            }
+
+            if (entry.prefab == null)
+            {
+                if (logDebug)
+                    Debug.LogWarning($"[PrefabRegistry] Skipping entry '{entry.name}' because prefab reference is null.");
+                continue;
+            }
 
             if (!prefabMap.ContainsKey(entry.name))
                 prefabMap.Add(entry.name, entry);
+            else if (logDebug)
+                Debug.LogWarning($"[PrefabRegistry] Duplicate prefab entry name '{entry.name}' ignored.");
         }
 
         prefabMapBuilt = prefabMap.Count > 0;
-        Debug.Log($"[PrefabRegistry] Built prefab map with {prefabMap.Count} entries.");
+        Debug.Log($"[PrefabRegistry] Built prefab map with {prefabMap.Count} valid entries from {registeredPrefabs.Length} configured entries.");
+
+        if (logDebug && prefabMap.Count > 0)
+            Debug.Log($"[PrefabRegistry] Runtime keys: {string.Join(", ", prefabMap.Keys.OrderBy(key => key))}");
     }
 
     public bool TryGetPrefab(string name, out GameObject prefab)
@@ -99,18 +154,16 @@ public class PrefabRegistry : MonoBehaviour
             return prefab != null;
         }
 
+        if (logDebug)
+            Debug.LogWarning($"[PrefabRegistry] Prefab '{name}' not found. Available keys: {string.Join(", ", prefabMap.Keys.OrderBy(key => key))}");
+
         return false;
     }
 
     public async Task SendPrefabNames()
     {
-        if (registeredPrefabs == null || registeredPrefabs.Length == 0)
-        {
-            Debug.LogWarning("[PrefabRegistry] No prefabs configured.");
-            return;
-        }
-
-        var prefabs = registeredPrefabs
+        var configuredCount = registeredPrefabs?.Length ?? 0;
+        var prefabs = (registeredPrefabs ?? Array.Empty<PrefabEntry>())
             .Where(entry => entry != null && !string.IsNullOrWhiteSpace(entry.name))
             .Select(entry => new PrefabPayload
             {
@@ -124,10 +177,12 @@ public class PrefabRegistry : MonoBehaviour
             })
             .ToArray();
 
-        if (prefabs.Length == 0)
+        Debug.Log($"[PrefabRegistry] Sending prefab batch. configured={configuredCount} serializable={prefabs.Length}");
+
+        if (logDebug)
         {
-            Debug.LogWarning("[PrefabRegistry] No prefabs sent.");
-            return;
+            for (int i = 0; i < prefabs.Length; i++)
+                Debug.Log($"[PrefabRegistry] Payload[{i}] type={prefabs[i].type} name='{prefabs[i].name}'");
         }
 
         await ws.Send(JsonUtility.ToJson(new SimpleEvent { @event = "send-prefabs" }));
@@ -136,8 +191,12 @@ public class PrefabRegistry : MonoBehaviour
         var json = JsonUtility.ToJson(payload);
         await ws.Send(json);
 
-        Debug.Log($"[PrefabRegistry] Sent {prefabs.Length} prefabs: {json}");
+        if (prefabs.Length == 0)
+            Debug.LogWarning("[PrefabRegistry] Sent empty prefab batch. Setup can still complete, but runtime spawns will fail.");
+        else
+            Debug.Log($"[PrefabRegistry] Sent {prefabs.Length} prefabs: {json}");
 
         await ws.Send(JsonUtility.ToJson(new SimpleEvent { @event = "finish-send-prefabs" }));
+        Debug.Log("[PrefabRegistry] Sent finish-send-prefabs.");
     }
 }

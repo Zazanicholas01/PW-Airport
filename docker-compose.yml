@@ -19,12 +19,12 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
-  
-  airport-bootstrap:
+
+  db-init:
     build:
       context: .
       dockerfile: docker/Dockerfile
-    container_name: pw_airport_bootstrap
+    container_name: pw_airport_db_init
     depends_on:
       postgres:
         condition: service_healthy
@@ -41,11 +41,36 @@ services:
       POSTGRES_PASSWORD: airport
       PYTHONPATH: /app
       LOG_DIR: /logs
-    entrypoint: >
-      sh -c "python /app/scripts/init_db.py &&
-             python /app/scripts/startup.py"
-          
+    command: python /app/scripts/init_db.py
     restart: "no"
+  
+  backend:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    container_name: pw_airport_backend
+    depends_on:
+      postgres:
+        condition: service_healthy
+      db-init:
+        condition: service_completed_successfully
+    working_dir: /app
+    volumes:
+      - ./:/app:ro
+      - ./data/logs:/logs
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: Airport
+      POSTGRES_ADMIN_DB: postgres
+      POSTGRES_USER: airport
+      POSTGRES_PASSWORD: airport
+      PYTHONPATH: /app
+      LOG_DIR: /logs
+    command: python /app/scripts/startup.py
+    ports:
+      - "8765:8765"
+    restart: unless-stopped
 
   dashboard-app:
     build:
@@ -55,8 +80,10 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-      airport-bootstrap:
+      db-init:
         condition: service_completed_successfully
+      backend:
+        condition: service_started
     working_dir: /app
     volumes:
       - ./:/app:ro
@@ -71,7 +98,7 @@ services:
       LOG_DIR: /logs
     expose:
       - "8000"
-    command: uvicorn src.web.dashboard_app:app --host 0.0.0.0 --port 8000 --reload
+    command: uvicorn src.web.dashboard_app:app --host 0.0.0.0 --port 8000
     extra_hosts:
       - "host.docker.internal:host-gateway"
     restart: unless-stopped

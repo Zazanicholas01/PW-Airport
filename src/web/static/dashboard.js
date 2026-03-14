@@ -13,7 +13,7 @@ function boot() {
   const store = createStore({
     route: { name: "overview", params: {}, canonicalHash: "#/overview" },
     connection: { status: "connecting" },
-    sim: { nowMs: null, timeScale: null },
+    sim: { nowMs: null, timeScale: null, receivedAtMs: null },
     data: {
       flightsById: new Map(),
       planesById: new Map(),

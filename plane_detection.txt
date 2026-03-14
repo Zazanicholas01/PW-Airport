@@ -1,0 +1,20 @@
+
+PROXY
+
+    - Phone --> ws://<Phone_IP>:8765
+    - Proxy from Windows --> WSL
+    - netsh interface portproxy delete v4tov4 listenport=8765 listenaddress=0.0.0.0
+    - netsh interface portproxy add v4tov4 listenport=8765 listenaddress=0.0.0.0 connectport=8765 connectadress=<WSL_IP>
+    - netsh interface portproxy show all
+
+UNITY FIXES:
+
+    - Disable Vulkan, Activate OpenGSL3 ??
+    - Disable all Main Camera that are not needed by Android build
+    - Code Bugs Fix & Better Debugging
+    - adb shell used for logging
+    - Enable the airport prefab in the scene
+    - WSL Mirrored doesn't work. 2 Options:
+        --> Run Python backend in Windows
+        --> Proxy from windows interface to WSL on port 8765 and open firewall to that route
+    

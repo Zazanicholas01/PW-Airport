@@ -98,6 +98,7 @@ export function createRouter(mount, store, services) {
     });
 
     window.addEventListener("hashchange", syncRoute);
+    window.setInterval(() => store.advanceSimClock(), 1000);
     ensureShell();
     syncRoute();
   }
