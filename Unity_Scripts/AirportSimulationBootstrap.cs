@@ -44,6 +44,11 @@ public class AirportSimulationBootstrap : MonoBehaviour {
             placementController.OnPlacementReset.AddListener(HandlePlacementReset);
         }
 
+        if (webSocketClient != null) {
+            webSocketClient.Connected += HandleWsConnected;
+            webSocketClient.Disconnected += HandleWsDisconnected;
+        }
+
         Debug.Log($"[Bootstrap] OnEnable placementController={(placementController != null)} placed={(placementController != null && placementController.IsPlaced)} startAfterPlacement={startSimulationAfterPlacement}");
 
         if (placementController != null && placementController.IsPlaced && startSimulationAfterPlacement)
@@ -57,6 +62,33 @@ public class AirportSimulationBootstrap : MonoBehaviour {
             placementController.OnPlacementCompleted.RemoveListener(HandlePlacementCompleted);
             placementController.OnPlacementReset.RemoveListener(HandlePlacementReset);
         }
+
+        if (webSocketClient != null) {
+            webSocketClient.Connected -= HandleWsConnected;
+            webSocketClient.Disconnected -= HandleWsDisconnected;
+        }
+    }
+
+    private void HandleWsDisconnected() {
+        if (logDebug)
+            Debug.Log("[Bootstrap] WebSocket disconnected. Startup flags reset for reconnect.");
+
+        startupTriggered = false;
+        startupCompleted = false;
+    }
+
+    private async void HandleWsConnected() {
+
+        if (placementController == null || !placementController.IsPlaced)
+            return;
+        
+        if (startupTriggered || startupCompleted)
+            return;
+
+        if (logDebug)
+            Debug.Log("[Bootstrap] WebSocket connected/reconnected. Re-running setup sync.");
+        
+        await StartSimulationAsync();
     }
 
     private async void HandlePlacementCompleted()

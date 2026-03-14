@@ -10,12 +10,20 @@ public class LocalWebSocketClient : MonoBehaviour
 {
     [SerializeField] private string uri = "ws://192.168.1.22:8765";
     [SerializeField] private int connectTimeoutSeconds = 8;
+    [SerializeField] private float reconnectDelaySeconds = 2f;
+    [SerializeField] private bool autoReconnect = true;
+
+    private bool reconnecting;
+    private bool shuttingDown;
+
     private ClientWebSocket socket;
-    private CancellationTokenSource cts;
+    private CancellationTokenSource lifetimeCts;
     private TaskCompletionSource<bool> connectedTcs = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
     // Evento ascoltato dai Dispatchers
     public event Action<string> MessageReceived;
+    public event Action Connected;
+    public event Action Disconnected;
 
     public Task<bool> WaitForConnectionAsync() => connectedTcs.Task;
     public bool IsConnected => socket?.State == WebSocketState.Open;
@@ -26,12 +34,12 @@ public class LocalWebSocketClient : MonoBehaviour
             return true;
 
         socket?.Dispose();
-        cts?.Cancel();
-        cts?.Dispose();
+        lifetimeCts?.Cancel();
+        lifetimeCts?.Dispose();
 
         connectedTcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
         socket = new ClientWebSocket();
-        cts = new CancellationTokenSource(TimeSpan.FromSeconds(Mathf.Max(1, connectTimeoutSeconds)));
+        lifetimeCts = new CancellationTokenSource();
 
         if (!Uri.TryCreate(uri, UriKind.Absolute, out var parsedUri))
         {
@@ -48,11 +56,16 @@ public class LocalWebSocketClient : MonoBehaviour
 
         try
         {
-            await socket.ConnectAsync(parsedUri, cts.Token);
+            using var connectCts = CancellationTokenSource.CreateLinkedTokenSource(lifetimeCts.Token);
+            connectCts.CancelAfter(TimeSpan.FromSeconds(Mathf.Max(1, connectTimeoutSeconds)));
+
+            await socket.ConnectAsync(parsedUri, connectCts.Token);
+
             Debug.Log($"[WS] Connected to {uri}");
             connectedTcs.TrySetResult(true);
+            Connected?.Invoke();
             _ = ListenLoop();
-            await Send("Hello from Unity");
+
             return true;
         }
         catch (Exception ex)
@@ -67,53 +80,125 @@ public class LocalWebSocketClient : MonoBehaviour
     {
         var buffer = new byte[1024];
 
-        while (socket != null && socket.State == WebSocketState.Open)
-        {
-            using var ms = new MemoryStream();
-            WebSocketReceiveResult result;
-            do
+        try {
+
+
+            while (socket != null && socket.State == WebSocketState.Open)
             {
-                result = await socket.ReceiveAsync(new ArraySegment<byte>(buffer), cts.Token);
+                using var ms = new MemoryStream();
+                WebSocketReceiveResult result;
+                do
+                {
+                    result = await socket.ReceiveAsync(new ArraySegment<byte>(buffer), lifetimeCts.Token);
 
-                if (result.MessageType == WebSocketMessageType.Close) {
-                        Debug.LogWarning("[WS] Server closed the connection.");
-                        return;
-                }
-                ms.Write(buffer, 0, result.Count);
-
-            } while (!result.EndOfMessage);
-
-            var message = Encoding.UTF8.GetString(ms.ToArray());
-
-            // Control to log all messages except clock messages from Python
-            var compact = message.Replace(" ", "");
-            var isClockSync = compact.Contains("\"command\":\"clock_sync\"");
-
-            if (!isClockSync)
-                Debug.Log($"[WS] Received: {message}");
-
-            // Richiamo a Unity Main Thread Dispatcher
-            if (MessageReceived != null){
-                UnityMainThreadDispatcher.Instance.Enqueue(() =>{
-                    try{
-                        MessageReceived?.Invoke(message);
-                    }catch(Exception ex){
-                        Debug.LogError($"[WS] MessageReceived handler error: {ex.Message}");
+                    if (result.MessageType == WebSocketMessageType.Close) {
+                            Debug.LogWarning("[WS] Server closed the connection.");
+                            HandleDisconnect();
+                            return;
                     }
-                });
+                    ms.Write(buffer, 0, result.Count);
+
+                } while (!result.EndOfMessage);
+
+                var message = Encoding.UTF8.GetString(ms.ToArray());
+
+                // Control to log all messages except clock messages from Python
+                var compact = message.Replace(" ", "");
+                var isClockSync = compact.Contains("\"command\":\"clock_sync\"");
+
+                if (!isClockSync)
+                    Debug.Log($"[WS] Received: {message}");
+
+                // Richiamo a Unity Main Thread Dispatcher
+                if (MessageReceived != null){
+                    UnityMainThreadDispatcher.Instance.Enqueue(() =>{
+                        try{
+                            MessageReceived?.Invoke(message);
+                        }catch(Exception ex){
+                            Debug.LogError($"[WS] MessageReceived handler error: {ex.Message}");
+                        }
+                    });
+                }
             }
+        } catch (OperationCanceledException) {
+            if (!shuttingDown) {
+                Debug.LogWarning("[WS] Listen loop cancelled.");
+                HandleDisconnect();   
+            }
+        } catch (Exception ex) {
+            if (!shuttingDown) {
+                Debug.LogWarning($"[WS] Listen loop failed: {FormatException(ex)}");
+                HandleDisconnect();
+            }
+        }
+    }
+
+    private void HandleDisconnect() {
+        if (shuttingDown) return;
+
+        if (socket != null) {
+            try { socket.Dispose(); } catch { }
+            socket = null;
+        }
+
+        try {
+            lifetimeCts?.Cancel();
+            lifetimeCts?.Dispose();
+        } catch {}
+
+        lifetimeCts = null;
+
+        if (!connectedTcs.Task.IsCompleted)
+            connectedTcs.TrySetResult(false);
+
+        Disconnected?.Invoke();
+
+        if (autoReconnect)
+            BeginReconnectLoop();
+    }
+
+    private async void BeginReconnectLoop() {
+
+        if (reconnecting || shuttingDown) return;
+
+        reconnecting = true;
+
+        try {
+            while (!shuttingDown && !IsConnected) {
+                Debug.Log($"[WS] Reconnect attempt in {reconnectDelaySeconds:0.0}s...");
+                await Task.Delay(TimeSpan.FromSeconds(Mathf.Max(0.25f, reconnectDelaySeconds)));
+
+                if (shuttingDown) return;
+
+                var ok = await ConnectAsync();
+                if (ok) {
+                    Debug.Log("[WS] Reconnect successful");
+                    return;
+                }
+            }
+        } finally {
+            reconnecting = false;
         }
     }
 
     public async Task Send(string message)
     {
         if (socket?.State != WebSocketState.Open) return;
+
         var data = Encoding.UTF8.GetBytes(message);
-        await socket.SendAsync(new ArraySegment<byte>(data), WebSocketMessageType.Text, true, cts.Token);
+
+        await socket.SendAsync(
+            new ArraySegment<byte>(data), 
+            WebSocketMessageType.Text, 
+            true, 
+            cts.Token
+        );
     }
 
     private async void OnDestroy()
     {
+        shuttingDown = true;
+
         try
         {
             if (socket?.State == WebSocketState.Open)
