@@ -1,21 +1,17 @@
 # Dashboard / web
 
-This topic is derived from `../../web/README.md`.
+This topic tracks the dashboard reset baseline.
 
 ## Scope
 
-The dashboard is read-only monitoring for the simulation:
-
-- flight scheduling window
-- planes/stands/routes snapshots
-- live event stream (logs + clock ticks)
+The old dashboard runtime was removed. What remains is the preserved shell/layout/theme that will be used for the rebuild.
 
 ## Key files
 
 - FastAPI app: `../../web/dashboard_app.py`
 - HTML template: `../../web/templates/dashboard.html`
-- Client JS: `../../web/static/dashboard.js`
 - CSS: `../../web/static/dashboard.css`
+- Refactor checklist: `dashboard-reset-checklist.md`
 
 ## Run
 

@@ -14,10 +14,10 @@ from src.domain.status_constants import (
 
 from src.schedulers.flight_scheduler import FlightSlidingWindowScheduler
 from src.utils.datetimes import as_utc
+from src.utils.event_log import append_event
 from src.path_commands import make_start_path_command
 
 from src.transport.session import SessionContext
-from src.transport.command_builders import build_spawn_plane
 
 async def flight_scheduler_loop(
     ctx: SessionContext,
@@ -58,7 +58,7 @@ async def flight_scheduler_loop(
     # Create Random Flight Generator instance
     ctx.flight_actions.generate_debug_flights(RANDOM_FLIGHTS_COUNT, ensure_in_window=ENSURE_IN_WINDOW, window=scheduler.window)
     logging.info(f"[flight_scheduler] generated debug flights (n={RANDOM_FLIGHTS_COUNT})")
-    await ctx.observer_hub.broadcast({
+    append_event({
         "type": "backend_event",
         "event": "debug_flights_generated",
         "count": RANDOM_FLIGHTS_COUNT,
@@ -140,7 +140,7 @@ async def flight_scheduler_loop(
                 )
 
                 logging.info("[flight_scheduler] departure assigned airplane_id=%s stand_id=%s flight_id=%s", airplane_id, stand_id, flight_id)
-                await ctx.observer_hub.broadcast({
+                append_event({
                     "type": "backend_event",
                     "event": "departure_assigned",
                     "flight_id": flight_id,
@@ -163,7 +163,7 @@ async def flight_scheduler_loop(
                     continue
 
                 logging.info("[flight_scheduler] landing_dep: linked airplane_id=%s to flight_id=%s (Lan_Ongoing)", airplane_id, flight_id)
-                await ctx.observer_hub.broadcast({
+                append_event({
                     "type": "backend_event",
                     "event": "landing_plane_assigned",
                     "flight_id": flight_id,
@@ -175,7 +175,7 @@ async def flight_scheduler_loop(
             if scheduler.should_mark_landing_departed(flight=flight, now_utc=now):
                 ctx.flight_actions.mark_landing_departed(flight_id=flight_id)
                 logging.info("[flight_scheduler] landing_dep: departed flight_id=%s -> Lan_Ongoing", flight_id)
-                await ctx.observer_hub.broadcast({
+                append_event({
                     "type": "backend_event",
                     "event": "landing_departed",
                     "flight_id": flight_id,
@@ -200,7 +200,7 @@ async def flight_scheduler_loop(
                     )
 
                 logging.info("[flight_scheduler] landing_arr: stand_id=%s reserved + plane linked flight_id=%s", stand_id, flight_id)
-                await ctx.observer_hub.broadcast({
+                append_event({
                     "type": "backend_event",
                     "event": "landing_stand_reserved",
                     "flight_id": flight_id,
@@ -232,7 +232,7 @@ async def flight_scheduler_loop(
                         
                         await ctx.bus.send_command(cmd)
                         logging.info("[flight_scheduler] start_path departure airplane_id=%s flight_id=%s", airplane_id, flight_id)
-                        await ctx.observer_hub.broadcast({
+                        append_event({
                             "type": "backend_event",
                             "event": "departure_started",
                             "flight_id": flight_id,
@@ -272,7 +272,7 @@ async def flight_scheduler_loop(
                         spawn_context="landing",
                     ))
                     logging.info("[flight_scheduler] landing_spawn: spawned airplane_id=%s flight_id=%s", airplane_id, flight_id)
-                    await ctx.observer_hub.broadcast({
+                    append_event({
                         "type": "backend_event",
                         "event": "landing_spawn",
                         "flight_id": flight_id,
@@ -291,7 +291,7 @@ async def flight_scheduler_loop(
                     cmd = make_start_path_command(airplane_id=airplane_id, Session=ctx.Session)
                     if cmd is not None:
                         await ctx.bus.send_command(cmd)
-                        await ctx.observer_hub.broadcast({
+                        append_event({
                             "type": "backend_event",
                             "event": "landing_approach_started",
                             "flight_id": flight_id,

@@ -10,7 +10,6 @@ from src.transport.command_builders import CommandBuilders
 @dataclass(frozen=True)
 class SessionContext:
     bus: Any
-    observer_hub: Any
     setup_bus: Any
     runtime_bus: Any
 

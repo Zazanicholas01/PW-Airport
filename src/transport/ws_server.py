@@ -1,5 +1,5 @@
 from datetime import datetime, timezone
-import asyncio, logging, json
+import asyncio, logging
 import websockets
 from dataclasses import dataclass
 from typing import Any
@@ -17,7 +17,6 @@ from src.transport.loops.flight_scheduling import flight_scheduler_loop
 from src.transport.loops.flight_actions import FlightActions
 from src.transport.loops.build_flight_actions import build_flight_actions
 from src.transport.hooks.spawn_tracking import make_spawn_tracking_hook
-from src.transport.tasks import run_tasks  # if you use the helper
 from src.transport.command_builders import build_welcome
 from src.db import db_functions
 
@@ -47,50 +46,6 @@ class ActiveUnityBus:
             return
         
         await bus.send_command(payload)
-
-
-class ObserverHub:
-    def __init__(self) -> None:
-        self._clients: set = set()
-    
-    async def add(self, websocket) -> None:
-        self._clients.add(websocket)
-    
-    async def remove(self, websocket) -> None:
-        self._clients.discard(websocket)
-    
-    async def broadcast(self, payload: dict) -> None:
-        if not self._clients:
-            return
-        
-        message = json.dumps(payload, separators=(",", ":"))
-        dead = []
-
-        for ws in self._clients:
-            try:
-                await ws.send(message)
-            except Exception:
-                dead.append(ws)
-        
-        for ws in dead:
-            self._clients.discard(ws)
-
-observer_hub = ObserverHub()
-
-
-async def observer_handler(websocket) -> None:
-    """Read-only websocket endpoint for dashboard / backend observers"""
-
-    peer = websocket.remote_address
-    logging.info("[Observer] Connected: %s", peer)
-    await observer_hub.add(websocket)
-
-    try:
-        await websocket.wait_closed()
-    finally:
-        await observer_hub.remove(websocket)
-        logging.info("[Observer] Disconnected: %s", peer)
-
 
 # Dataclass that holds the long-lived runtime objects
 @dataclass
@@ -210,7 +165,6 @@ async def echo_handler(
 
     ctx = SessionContext(
         bus=server_runtime.bus,
-        observer_hub=observer_hub,
         setup_bus=server_runtime.setup_bus,
         runtime_bus=server_runtime.runtime_bus,
         clock=server_runtime.clock,
@@ -302,7 +256,6 @@ async def main(host, port, *, container=None) -> None:
         session_factory=container.Session,
         bus=active_unity_bus,
         commands=container.commands,
-        observer_hub=observer_hub,
         clock=clock,
         clock_lock=clock_lock,
         clock_changed=clock_changed,
@@ -319,7 +272,6 @@ async def main(host, port, *, container=None) -> None:
     # Global session context definition
     global_ctx = SessionContext(
         bus=active_unity_bus,
-        observer_hub=observer_hub,
         setup_bus=setup_bus,
         runtime_bus=runtime_bus,
         clock=clock,
@@ -376,10 +328,6 @@ async def main(host, port, *, container=None) -> None:
     
     # Define the handler for every connection that delegates to Echo Handler
     async def _ws_handler(websocket, path=None):
-        if path == "/observer":
-            await observer_handler(websocket)
-            return
-        
         await echo_handler(
             websocket,
             server_runtime=server_runtime,

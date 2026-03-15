@@ -141,7 +141,7 @@ Flow:
   - records spawns in `WorldState`
 - `src/schedulers/*` + `src/db/db_functions.py`
   - consume values derived from prefab and clock logic indirectly through transport orchestration
-- `src/web/dashboard_app.py` / `src/web/static/dashboard.js`
+- `src/web/dashboard_app.py` / `src/web/templates/dashboard.html`
   - consume clock events generated from `SimulationClock` syncs (via log stream)
 
 ## Important Caveats

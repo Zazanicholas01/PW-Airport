@@ -10,6 +10,7 @@ from src.services.flight_generator import RandomFlightGenerator
 from src.db import models
 
 from src.db.engine import get_engine
+from src.utils.event_log import append_event
 
 from src.domain.status_constants import *
 
@@ -26,7 +27,6 @@ class RuntimeBusHandler:
         *,
         bus = None,
         commands = None,
-        observer_hub = None,
         clock=None,
         clock_lock: asyncio.Lock | None = None,
         clock_changed: asyncio.Event | None = None,
@@ -48,7 +48,6 @@ class RuntimeBusHandler:
 
         self._bus = bus
         self._commands = commands
-        self._observer_hub = observer_hub
 
     
     def _start_disembark_timer(self, airplane_id: str) -> None:
@@ -152,12 +151,11 @@ class RuntimeBusHandler:
             # Final logging and exception handling
 
             logging.info("[runtime] disembark complete airplane_id=%s -> Parked", airplane_id)
-            if self._observer_hub is not None:
-                await self._observer_hub.broadcast({
-                    "type": "backend_event",
-                    "event": "disembark_complete",
-                    "airplane_id": airplane_id,
-                })
+            append_event({
+                "type": "backend_event",
+                "event": "disembark_complete",
+                "airplane_id": airplane_id,
+            })
         except asyncio.CancelledError:
             return
         except Exception:
@@ -252,13 +250,12 @@ class RuntimeBusHandler:
                     
                     # Logging and return
                     logging.info("[runtime] path_completed (departure) airplane_id=%s route_id=%s", airplane_id, airplane.route_id)
-                    if self._observer_hub is not None:
-                        await self._observer_hub.broadcast({
-                            "type": "backend_event",
-                            "event": "departure_completed",
-                            "airplane_id": airplane_id,
-                            "route_id": airplane.route_id,
-                        })
+                    append_event({
+                        "type": "backend_event",
+                        "event": "departure_completed",
+                        "airplane_id": airplane_id,
+                        "route_id": airplane.route_id,
+                    })
                     return
                 
                 else:
@@ -287,13 +284,12 @@ class RuntimeBusHandler:
                     session.commit()
                     
                     logging.info("[runtime] path_completed (landing) airplane_id=%s -> Disembarking (timer started)", airplane_id)
-                    if self._observer_hub is not None:
-                        await self._observer_hub.broadcast({
-                            "type": "backend_event",
-                            "event": "landing_completed",
-                            "airplane_id": airplane_id,
-                            "stand_id": stand_id,
-                        })
+                    append_event({
+                        "type": "backend_event",
+                        "event": "landing_completed",
+                        "airplane_id": airplane_id,
+                        "stand_id": stand_id,
+                    })
                     self._start_disembark_timer(airplane_id)
                     return
 
@@ -322,11 +318,10 @@ class RuntimeBusHandler:
                 session.commit()
 
                 logging.info("[runtime] plane_left_stand released stand_id=%s airplane_id=%s", stand_id, airplane_id)
-                if self._observer_hub is not None:
-                    await self._observer_hub.broadcast({
-                        "type": "backend_event",
-                        "event": "plane_left_stand",
-                        "airplane_id": airplane_id,
-                        "stand_id": stand_id,
-                    })
+                append_event({
+                    "type": "backend_event",
+                    "event": "plane_left_stand",
+                    "airplane_id": airplane_id,
+                    "stand_id": stand_id,
+                })
                 return

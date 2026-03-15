@@ -4,13 +4,334 @@
     <meta charset="utf-8" />
     <title>PW Airport - Scheduling Window</title>
     <link rel="stylesheet" href="/static/dashboard.css?v=10" />
-    <script defer type="module" src="/static/dashboard.js?v=10"></script>
   </head>
   <body>
     <div class="shell">
       <div class="panel">
-        <div id="app"></div>
+        <div id="app">
+          <div class="app-shell">
+            <div class="app-bar">
+              <div>
+                <div class="app-title">PW Airport Ops</div>
+                <div class="muted">Dashboard layout baseline preserved for rebuild.</div>
+              </div>
+              <nav class="app-nav">
+                <a class="app-nav-link" href="#">Overview</a>
+                <a class="app-nav-link active" href="#">Schedule</a>
+                <a class="app-nav-link" href="#">KPI</a>
+              </nav>
+            </div>
+
+            <div class="app-status">
+              <span class="pill status-default">Static Baseline</span>
+              <span class="app-status-item" id="sim-time-status">Sim Time: --:--:--</span>
+              <span class="app-status-item" id="sim-scale-status">Scale: --</span>
+            </div>
+
+            <section>
+              <div class="row">
+                <h2 style="margin: 0;">Scheduling Window</h2>
+                <span class="muted">Static shell extracted from the previous dashboard so the visual layout remains intact during the reset.</span>
+              </div>
+
+              <div class="row control-row">
+                <label>Airport <input id="window-airport" value="LIAG" size="6" readonly /></label>
+                <label>Window (min) <input id="window-minutes" value="60" size="4" readonly /></label>
+                <button type="button">Refresh</button>
+              </div>
+
+              <div class="board-block">
+                <div class="board-title">Flight Information</div>
+                <table class="board-table flights-board">
+                  <thead>
+                    <tr>
+                      <th>Dir</th>
+                      <th>When</th>
+                      <th>Delta Min</th>
+                      <th>Flight</th>
+                      <th>Route</th>
+                      <th>Type</th>
+                      <th>Status</th>
+                      <th>Airplane</th>
+                    </tr>
+                  </thead>
+                  <tbody id="rows">
+                    <tr>
+                      <td class="muted">[DEP]</td>
+                      <td class="muted">Template</td>
+                      <td class="muted">--</td>
+                      <td>AZ100</td>
+                      <td>LIAG -> LIMC</td>
+                      <td>PAX</td>
+                      <td><span class="pill status-scheduled">Scheduled</span></td>
+                      <td class="muted">A320-01</td>
+                    </tr>
+                    <tr>
+                      <td class="muted">[ARR]</td>
+                      <td class="muted">Template</td>
+                      <td class="muted">--</td>
+                      <td>LH220</td>
+                      <td>EDDF -> LIAG</td>
+                      <td>PAX</td>
+                      <td><span class="pill status-boarding">Boarding</span></td>
+                      <td class="muted">E190-02</td>
+                    </tr>
+                    <tr>
+                      <td colspan="8" class="muted">Replace these placeholder rows with the new implementation.</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+
+              <div class="board-block section-gap">
+                <div class="board-title">Planes On Ground</div>
+                <table class="board-table planes-board">
+                  <thead>
+                    <tr>
+                      <th>Airplane</th>
+                      <th>Status</th>
+                      <th>Model</th>
+                      <th>Type</th>
+                      <th>Range</th>
+                      <th>Speed</th>
+                      <th>Stand</th>
+                      <th>Route</th>
+                    </tr>
+                  </thead>
+                  <tbody id="plane_rows">
+                    <tr>
+                      <td>A320-01</td>
+                      <td><span class="pill status-parked">Parked</span></td>
+                      <td class="muted">A320</td>
+                      <td>NARROWBODY</td>
+                      <td>6100</td>
+                      <td class="muted">828.00</td>
+                      <td class="muted">S12</td>
+                      <td class="muted">LIAG TO LIMC</td>
+                    </tr>
+                    <tr>
+                      <td>E190-02</td>
+                      <td><span class="pill status-default">Ready</span></td>
+                      <td class="muted">E190</td>
+                      <td>REGIONAL</td>
+                      <td>4500</td>
+                      <td class="muted">829.00</td>
+                      <td class="muted">S08</td>
+                      <td class="muted">LIAG TO EDDF</td>
+                    </tr>
+                    <tr>
+                      <td colspan="8" class="muted">This table is preserved as static markup only.</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+
+              <div class="section-gap">
+                <div class="board-block">
+                  <div class="board-title">Live Events</div>
+                  <div id="events">
+                    <div class="logline lvl-INFO">
+                      <div class="ts">--:--:--</div>
+                      <div class="lvl">INFO</div>
+                      <div class="sub">dashboard</div>
+                      <div class="msg">Connecting to live event stream...</div>
+                      <div class="fields"></div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </section>
+          </div>
+        </div>
       </div>
     </div>
+    <script>
+      (function () {
+        const eventsRoot = document.getElementById("events");
+        const flightsRows = document.getElementById("rows");
+        const airportField = document.getElementById("window-airport");
+        const windowField = document.getElementById("window-minutes");
+        const simTimeStatus = document.getElementById("sim-time-status");
+        const simScaleStatus = document.getElementById("sim-scale-status");
+        const maxRows = 20;
+        let clockAnchor = null;
+
+        function makeCell(className, value) {
+          const node = document.createElement("div");
+          node.className = className;
+          node.textContent = value || "";
+          return node;
+        }
+
+        function renderEvent(event) {
+          const row = document.createElement("div");
+          row.className = "logline lvl-" + (event.level || "INFO");
+          row.appendChild(makeCell("ts", event.ts || "--:--:--"));
+          row.appendChild(makeCell("lvl", event.level || "INFO"));
+          row.appendChild(makeCell("sub", event.subsystem || "-"));
+          row.appendChild(makeCell("msg", event.message || ""));
+          row.appendChild(makeCell("fields", event.fields || ""));
+          return row;
+        }
+
+        function renderSnapshot(events) {
+          eventsRoot.innerHTML = "";
+          if (!events.length) {
+            eventsRoot.appendChild(
+              renderEvent({
+                ts: "--:--:--",
+                level: "INFO",
+                subsystem: "dashboard",
+                message: "No log events found in data/logs/events.jsonl.",
+                fields: "",
+              })
+            );
+            return;
+          }
+
+          events.forEach((event) => {
+            eventsRoot.appendChild(renderEvent(event));
+          });
+          eventsRoot.scrollTop = eventsRoot.scrollHeight;
+        }
+
+        function appendEvents(events) {
+          if (!events.length) {
+            return;
+          }
+
+          const placeholder = eventsRoot.querySelector(".logline .msg");
+          if (placeholder && placeholder.textContent.includes("Connecting")) {
+            eventsRoot.innerHTML = "";
+          }
+
+          events.forEach((event) => {
+            eventsRoot.appendChild(renderEvent(event));
+          });
+
+          while (eventsRoot.children.length > maxRows) {
+            eventsRoot.removeChild(eventsRoot.firstElementChild);
+          }
+
+          eventsRoot.scrollTop = eventsRoot.scrollHeight;
+        }
+
+        const scheme = window.location.protocol === "https:" ? "wss" : "ws";
+        const socket = new WebSocket(`${scheme}://${window.location.host}/ws/events`);
+
+        socket.addEventListener("message", (messageEvent) => {
+          const payload = JSON.parse(messageEvent.data);
+          if (payload.kind === "snapshot") {
+            renderSnapshot(payload.events || []);
+            return;
+          }
+          if (payload.kind === "append") {
+            appendEvents(payload.events || []);
+          }
+        });
+
+        socket.addEventListener("close", () => {
+          appendEvents([
+            {
+              ts: "--:--:--",
+              level: "WARNING",
+              subsystem: "dashboard",
+              message: "Live event stream disconnected.",
+              fields: "",
+            },
+          ]);
+        });
+
+        function renderFlightsSnapshot(windowSnapshot) {
+          const rows = (windowSnapshot && windowSnapshot.rows) || [];
+          airportField.value = windowSnapshot && windowSnapshot.airport_icao ? windowSnapshot.airport_icao : "LIAG";
+          windowField.value = windowSnapshot && windowSnapshot.window_minutes ? String(windowSnapshot.window_minutes) : "60";
+          flightsRows.innerHTML = "";
+
+          if (!rows.length) {
+            const emptyRow = document.createElement("tr");
+            emptyRow.innerHTML = '<td colspan="8" class="muted">No flights currently in the scheduling window.</td>';
+            flightsRows.appendChild(emptyRow);
+            return;
+          }
+
+          rows.forEach((row) => {
+            const tr = document.createElement("tr");
+            tr.innerHTML = `
+              <td class="muted">${row.direction || "--"}</td>
+              <td>${row.when || "--:--"}</td>
+              <td class="muted">${row.delta_min}</td>
+              <td>${row.flight || "--"}</td>
+              <td>${row.route || "--"}</td>
+              <td>${row.type || "--"}</td>
+              <td><span class="pill ${row.status_class || "status-default"}">${row.status || "--"}</span></td>
+              <td class="muted">${row.airplane || "--"}</td>
+            `;
+            flightsRows.appendChild(tr);
+          });
+        }
+
+        function formatSimTime(date) {
+          return new Intl.DateTimeFormat([], {
+            hour: "2-digit",
+            minute: "2-digit",
+            second: "2-digit",
+            hour12: false,
+          }).format(date);
+        }
+
+        function renderClock() {
+          if (!clockAnchor) {
+            return;
+          }
+
+          const elapsedRealMs = Date.now() - clockAnchor.receivedAtMs;
+          const simUnixMs = clockAnchor.simUnixMs + elapsedRealMs * clockAnchor.timeScale;
+          simTimeStatus.textContent = "Sim Time: " + formatSimTime(new Date(simUnixMs));
+          simScaleStatus.textContent = "Scale: x" + clockAnchor.timeScale.toFixed(2);
+        }
+
+        function applyClockSync(clock) {
+          clockAnchor = {
+            simUnixMs: clock.sim_unix_ms,
+            timeScale: clock.time_scale,
+            syncId: clock.sync_id,
+            receivedAtMs: Date.now(),
+          };
+          renderClock();
+        }
+
+        const clockScheme = window.location.protocol === "https:" ? "wss" : "ws";
+        const clockSocket = new WebSocket(`${clockScheme}://${window.location.host}/ws/clock`);
+
+        clockSocket.addEventListener("message", (messageEvent) => {
+          const payload = JSON.parse(messageEvent.data);
+          if (payload.kind === "sync" && payload.clock) {
+            applyClockSync(payload.clock);
+          }
+        });
+
+        clockSocket.addEventListener("close", () => {
+          simTimeStatus.textContent = "Sim Time: disconnected";
+        });
+
+        const flightsScheme = window.location.protocol === "https:" ? "wss" : "ws";
+        const flightsSocket = new WebSocket(`${flightsScheme}://${window.location.host}/ws/window-flights`);
+
+        flightsSocket.addEventListener("message", (messageEvent) => {
+          const payload = JSON.parse(messageEvent.data);
+          if (payload.kind === "snapshot" && payload.window) {
+            renderFlightsSnapshot(payload.window);
+          }
+        });
+
+        flightsSocket.addEventListener("close", () => {
+          renderFlightsSnapshot({ rows: [] });
+        });
+
+        renderClock();
+        window.setInterval(renderClock, 250);
+      })();
+    </script>
   </body>
 </html>

@@ -5,7 +5,7 @@ Real-time airport simulation with:
 - Python backend (authoritative scheduling, DB state, and simulation clock)
 - Unity client (scene setup, prefab spawning, spline movement)
 - PostgreSQL + Metabase (data persistence and analytics)
-- FastAPI dashboard (flight window, planes, and live logs)
+- FastAPI dashboard shell baseline for the UI rebuild
 
 ## Documentation
 
@@ -27,7 +27,7 @@ Project documentation is organized under `src/docs` (topic folders, in reading o
 - `src/services/flight_generator.py`: creates random flights in DB for simulation.
 - `src/db/db_functions.py`: domain-level DB transitions (assign planes, reserve stands, assign paths, status transitions).
 - `src/domain/sim_clock.py`: authoritative simulation clock with adjustable `time_scale`.
-- `src/web/dashboard_app.py` + `src/web/static/*`: dashboard APIs + live UI.
+- `src/web/dashboard_app.py` + `src/web/templates/dashboard.html` + `src/web/static/dashboard.css`: static dashboard shell baseline.
 - `Unity_Scripts/*`: Unity side websocket client, dispatchers, spline export/import, spawning, path-follow movement, time controls.
 
 ### Data model (high level)
@@ -151,19 +151,12 @@ Unity emits events:
 
 ### 7) Dashboard workflow
 
-FastAPI app (`src/web/dashboard_app.py`) exposes:
+FastAPI app (`src/web/dashboard_app.py`) currently serves:
 
-- `GET /api/window`: flights in sliding window
-- `GET /api/planes`: planes + stand + route snapshot
-- `GET /api/flight/{id}`: single flight lookup
-- `WS /ws/events`: tails JSONL event stream
+- `GET /`: static dashboard shell
+- `/static/*`: CSS and image assets
 
-Frontend (`dashboard.js`) provides:
-
-- auto-refresh from clock/events + timers
-- list view for flights and planes
-- detail routes (`#plane/:id`, `#flight/:id`)
-- progress visualization and completed-flight banner
+The previous dashboard runtime was intentionally removed so the web layer can be rebuilt from a clean baseline while preserving the current visual style.
 
 ## Message Contracts (primary)
 

@@ -1,83 +1,236 @@
 import asyncio
-import contextlib
+import json
 import logging
-import os
-from contextlib import asynccontextmanager
+from collections import deque
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from fastapi import Depends, FastAPI, HTTPException, Query, Request
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
-from sqlalchemy import select
-from sqlalchemy.orm import Session as OrmSession
 
-from src.app.container import AppContainer, build_container
-from src.db import db_functions, models
-from src.db.engine import get_db
-from src.utils.event_log import log_dir
-from src.web.dashboard_bridge import run_dashboard_event_bridge
-from src.web.dashboard_projection import DashboardProjectionService, _flight_to_dict
+from src.db.db_functions import list_flights_in_sliding_window
+from src.domain.status_constants import PERSONAL_AIRPORT, WINDOW_TIMEDELTA_HOURS
 
 WEB_DIR = Path(__file__).resolve().parent
 STATIC_DIR = WEB_DIR / "static"
 TEMPLATE_FILE = WEB_DIR / "templates" / "dashboard.html"
-EVENTS_FILE = Path(log_dir()) / "events.jsonl"
-SIM_EVENT_WS_URL = os.getenv("SIM_EVENT_WS_URL", "ws://host.docker.internal:8765/observer")
-DASHBOARD_DISABLE_EVENT_BRIDGE = os.getenv("DASHBOARD_DISABLE_EVENT_BRIDGE", "").strip().lower() in {
-    "1",
-    "true",
-    "yes",
-    "on",
-}
-logger = logging.getLogger(__name__)
+EVENTS_LOG_FILE = WEB_DIR.parent.parent / "data" / "logs" / "events.jsonl"
+WINDOW_AIRPORT_ICAO = PERSONAL_AIRPORT
+WINDOW_DURATION = timedelta(hours=WINDOW_TIMEDELTA_HOURS)
 
 
-def _db_dep(request: Request):
-    yield from get_db(request.app.state.Session)
+def _format_log_timestamp(raw_ts: str | None) -> str:
+    if not raw_ts:
+        return "--:--:--"
+    try:
+        return datetime.fromisoformat(raw_ts).strftime("%H:%M:%S")
+    except ValueError:
+        return raw_ts
 
 
-def create_app(*, container: AppContainer) -> FastAPI:
-    app = FastAPI(lifespan=lifespan)
+def _parse_log_event(line: str) -> dict[str, str] | None:
+    try:
+        event = json.loads(line)
+    except json.JSONDecodeError:
+        return None
+
+    if event.get("type") != "log":
+        return None
+
+    level = str(event.get("level") or "INFO").upper()
+    subsystem = event.get("subsystem") or event.get("logger") or "-"
+    fields = event.get("logger") if event.get("subsystem") else ""
+    return {
+        "ts": _format_log_timestamp(event.get("ts")),
+        "level": level,
+        "subsystem": str(subsystem),
+        "message": str(event.get("message") or ""),
+        "fields": str(fields or ""),
+    }
+
+
+def _parse_clock_event(line: str) -> dict[str, float | int | str] | None:
+    try:
+        event = json.loads(line)
+    except json.JSONDecodeError:
+        return None
+
+    if event.get("type") != "clock":
+        return None
+
+    sim_unix_ms = event.get("sim_unix_ms")
+    time_scale = event.get("time_scale")
+    sync_id = event.get("sync_id")
+    ts = event.get("ts")
+    if sim_unix_ms is None or time_scale is None or sync_id is None or not ts:
+        return None
+
+    return {
+        "sim_unix_ms": int(sim_unix_ms),
+        "time_scale": float(time_scale),
+        "sync_id": int(sync_id),
+        "ts": str(ts),
+    }
+
+
+def _read_recent_events(limit: int = 20) -> list[dict[str, str]]:
+    if not EVENTS_LOG_FILE.exists():
+        return []
+
+    entries: deque[dict[str, str]] = deque(maxlen=limit)
+    with EVENTS_LOG_FILE.open("r", encoding="utf-8") as handle:
+        for line in handle:
+            parsed = _parse_log_event(line)
+            if parsed:
+                entries.append(parsed)
+    return list(entries)
+
+
+def _read_events_since(offset: int) -> tuple[list[dict[str, str]], int]:
+    if not EVENTS_LOG_FILE.exists():
+        return [], 0
+
+    entries: list[dict[str, str]] = []
+    with EVENTS_LOG_FILE.open("rb") as handle:
+        handle.seek(offset)
+        for raw_line in handle:
+            line = raw_line.decode("utf-8", errors="ignore")
+            parsed = _parse_log_event(line)
+            if parsed:
+                entries.append(parsed)
+        return entries, handle.tell()
+
+
+def _read_latest_clock_sync() -> dict[str, float | int | str] | None:
+    if not EVENTS_LOG_FILE.exists():
+        return None
+
+    latest: dict[str, float | int | str] | None = None
+    with EVENTS_LOG_FILE.open("r", encoding="utf-8") as handle:
+        for line in handle:
+            parsed = _parse_clock_event(line)
+            if parsed:
+                latest = parsed
+    return latest
+
+
+def _current_sim_now_utc() -> datetime:
+    latest = _read_latest_clock_sync()
+    if latest is None:
+        return datetime.now(timezone.utc)
+
+    sync_ts = datetime.fromisoformat(str(latest["ts"]))
+    if sync_ts.tzinfo is None:
+        sync_ts = sync_ts.replace(tzinfo=timezone.utc)
+
+    elapsed_real_ms = max(0.0, (datetime.now(timezone.utc) - sync_ts).total_seconds() * 1000.0)
+    sim_unix_ms = float(latest["sim_unix_ms"]) + elapsed_real_ms * float(latest["time_scale"])
+    return datetime.fromtimestamp(sim_unix_ms / 1000.0, tz=timezone.utc)
+
+
+def _read_clock_syncs_since(offset: int) -> tuple[list[dict[str, float | int | str]], int]:
+    if not EVENTS_LOG_FILE.exists():
+        return [], 0
+
+    entries: list[dict[str, float | int | str]] = []
+    with EVENTS_LOG_FILE.open("rb") as handle:
+        handle.seek(offset)
+        for raw_line in handle:
+            line = raw_line.decode("utf-8", errors="ignore")
+            parsed = _parse_clock_event(line)
+            if parsed:
+                entries.append(parsed)
+        return entries, handle.tell()
+
+
+def _status_pill_class(status: str | None) -> str:
+    normalized = str(status or "").lower()
+    if normalized in {"scheduled", "standreserved"}:
+        return "status-scheduled"
+    if normalized in {"departing", "dep_ongoing", "landing", "lan_ongoing", "disembarking"}:
+        return "status-landing"
+    if normalized in {"completed"}:
+        return "status-completed"
+    return "status-default"
+
+
+def _flight_reference_time(flight, airport_icao: str) -> datetime | None:
+    origin = getattr(flight, "origin", None)
+    destination = getattr(flight, "destination", None)
+
+    if destination == airport_icao and getattr(flight, "arrival_time", None) is not None:
+        return getattr(flight, "arrival_time", None)
+    if origin == airport_icao and getattr(flight, "departure_time", None) is not None:
+        return getattr(flight, "departure_time", None)
+    if getattr(flight, "arrival_time", None) is not None:
+        return getattr(flight, "arrival_time", None)
+    return getattr(flight, "departure_time", None)
+
+
+def _serialize_window_flight(*, flight, airport_icao: str, now_utc: datetime) -> dict[str, str | int]:
+    reference_time = _flight_reference_time(flight, airport_icao)
+    if reference_time is not None and reference_time.tzinfo is None:
+        reference_time = reference_time.replace(tzinfo=timezone.utc)
+
+    delta_min = None
+    when_label = "--:--"
+    if reference_time is not None:
+        delta_min = round((reference_time - now_utc).total_seconds() / 60.0)
+        when_label = reference_time.astimezone().strftime("%H:%M")
+
+    origin = str(getattr(flight, "origin", "") or "")
+    destination = str(getattr(flight, "destination", "") or "")
+    status = str(getattr(flight, "status", "") or "")
+    flight_code = str(getattr(flight, "icao", None) or getattr(flight, "id", "") or "")
+    direction = "[ARR]" if destination == airport_icao else "[DEP]"
+
+    return {
+        "id": str(getattr(flight, "id", "") or ""),
+        "direction": direction,
+        "when": when_label,
+        "delta_min": "--" if delta_min is None else int(delta_min),
+        "flight": flight_code,
+        "route": f"{origin} -> {destination}",
+        "type": str(getattr(flight, "tipo", "") or ""),
+        "status": status,
+        "status_class": _status_pill_class(status),
+        "airplane": str(getattr(flight, "airplane_id", None) or "--"),
+    }
+
+
+def _read_window_flights_snapshot() -> dict[str, object]:
+    now_utc = _current_sim_now_utc()
+    try:
+        flights = list_flights_in_sliding_window(
+            airport_icao=WINDOW_AIRPORT_ICAO,
+            now_utc=now_utc,
+            window=WINDOW_DURATION,
+        )
+        rows = [
+            _serialize_window_flight(flight=flight, airport_icao=WINDOW_AIRPORT_ICAO, now_utc=now_utc)
+            for flight in flights
+        ]
+        rows.sort(key=lambda row: (999999 if row["delta_min"] == "--" else abs(int(row["delta_min"])), str(row["flight"])))
+    except Exception:
+        logging.exception("[dashboard] failed to read window flights snapshot")
+        rows = []
+
+    return {
+        "airport_icao": WINDOW_AIRPORT_ICAO,
+        "window_minutes": int(WINDOW_DURATION.total_seconds() // 60),
+        "generated_at": now_utc.isoformat(),
+        "rows": rows,
+    }
+
+
+def create_app() -> FastAPI:
+    app = FastAPI()
     app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
-    app.state.Session = container.Session
-    app.state.projection = DashboardProjectionService(
-        session_factory=container.Session,
-        events_file=EVENTS_FILE,
-    )
-    db_functions.configure_session_factory(container.Session)
     return app
 
 
-async def _projection_warmup(app: FastAPI) -> None:
-    projection: DashboardProjectionService = app.state.projection
-    projection.ensure_clock_fresh()
-    projection.load_recent_logs_from_events_file()
-    projection.set_bridge_status("disabled" if DASHBOARD_DISABLE_EVENT_BRIDGE else "connecting")
-
-
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    await _projection_warmup(app)
-    bridge_task: asyncio.Task | None = None
-    if DASHBOARD_DISABLE_EVENT_BRIDGE:
-        logger.warning("[dashboard_bridge] disabled via DASHBOARD_DISABLE_EVENT_BRIDGE")
-    else:
-        bridge_task = asyncio.create_task(
-            run_dashboard_event_bridge(
-                projection=app.state.projection,
-                observer_url=SIM_EVENT_WS_URL,
-            )
-        )
-    try:
-        yield
-    finally:
-        if bridge_task is not None:
-            bridge_task.cancel()
-            with contextlib.suppress(asyncio.CancelledError):
-                await bridge_task
-
-
-app = create_app(container=build_container())
+app = create_app()
 
 
 @app.get("/")
@@ -85,74 +238,73 @@ def index() -> FileResponse:
     return FileResponse(TEMPLATE_FILE, media_type="text/html")
 
 
-@app.get("/api/dashboard")
-async def api_dashboard(
-    request: Request,
-    airport: str = Query(default="LIAG"),
-    window_minutes: int = Query(default=60, ge=5, le=360),
-) -> dict:
-    projection: DashboardProjectionService = request.app.state.projection
-    snapshot = await projection.get_snapshot(airport=airport, window_minutes=window_minutes)
-    return {
-        **snapshot,
-        "logs": projection.get_recent_logs(limit=50),
-    }
+@app.websocket("/ws/events")
+async def events_ws(websocket: WebSocket) -> None:
+    await websocket.accept()
+    await websocket.send_json({"kind": "snapshot", "events": _read_recent_events(limit=20)})
+
+    offset = EVENTS_LOG_FILE.stat().st_size if EVENTS_LOG_FILE.exists() else 0
+
+    try:
+        while True:
+            await asyncio.sleep(1)
+
+            if not EVENTS_LOG_FILE.exists():
+                offset = 0
+                continue
+
+            file_size = EVENTS_LOG_FILE.stat().st_size
+            if file_size < offset:
+                offset = 0
+
+            if file_size == offset:
+                continue
+
+            events, offset = _read_events_since(offset)
+            if events:
+                await websocket.send_json({"kind": "append", "events": events})
+    except WebSocketDisconnect:
+        return
 
 
-@app.get("/api/clock")
-async def api_clock(request: Request) -> dict:
-    projection: DashboardProjectionService = request.app.state.projection
-    payload = projection.current_clock_payload()
-    return payload["clock"]
+@app.websocket("/ws/clock")
+async def clock_ws(websocket: WebSocket) -> None:
+    await websocket.accept()
+    latest = _read_latest_clock_sync()
+    if latest:
+        await websocket.send_json({"kind": "sync", "clock": latest})
+
+    offset = EVENTS_LOG_FILE.stat().st_size if EVENTS_LOG_FILE.exists() else 0
+
+    try:
+        while True:
+            await asyncio.sleep(0.5)
+
+            if not EVENTS_LOG_FILE.exists():
+                offset = 0
+                continue
+
+            file_size = EVENTS_LOG_FILE.stat().st_size
+            if file_size < offset:
+                offset = 0
+
+            if file_size == offset:
+                continue
+
+            syncs, offset = _read_clock_syncs_since(offset)
+            for sync in syncs:
+                await websocket.send_json({"kind": "sync", "clock": sync})
+    except WebSocketDisconnect:
+        return
 
 
-@app.get("/api/flight/{flight_id}")
-def api_flight(flight_id: str, session: OrmSession = Depends(_db_dep)) -> dict:
-    if not isinstance(flight_id, str) or not flight_id.strip():
-        raise HTTPException(status_code=400, detail="Invalid flight id")
+@app.websocket("/ws/window-flights")
+async def window_flights_ws(websocket: WebSocket) -> None:
+    await websocket.accept()
 
-    flight = session.get(models.Flight, flight_id)
-    if flight is None:
-        flight = session.scalars(select(models.Flight).where(models.Flight.icao == flight_id)).first()
-    if flight is None:
-        raise HTTPException(status_code=404, detail="Flight not found")
-    return _flight_to_dict(flight)
-
-
-@app.get("/api/planes")
-def api_planes(session: OrmSession = Depends(_db_dep)) -> dict:
-    planes = list(session.scalars(select(models.Airplane)).all())
-    stands = list(session.scalars(select(models.Stand)).all())
-    paths = list(session.scalars(select(models.Path)).all())
-
-    stand_by_plane = {
-        s.airplane_id: s for s in stands
-        if isinstance(getattr(s, "airplane_id", None), str) and s.airplane_id
-    }
-    path_by_id = {
-        p.id: p for p in paths
-        if isinstance(getattr(p, "id", None), int)
-    }
-
-    def plane_row(p) -> dict:
-        pid = getattr(p, "id", None)
-        stand = stand_by_plane.get(pid) if isinstance(pid, str) else None
-        route_id = getattr(p, "route_id", None)
-        path = path_by_id.get(route_id) if isinstance(route_id, int) else None
-        return {
-            "id": pid,
-            "status": getattr(p, "status", None),
-            "type": getattr(p, "type", None),
-            "range": getattr(p, "range", None),
-            "model": getattr(p, "model", None),
-            "speed": getattr(p, "speed", None),
-            "position": getattr(stand, "position", None),
-            "stand_id": getattr(stand, "id", None),
-            "stand_status": getattr(stand, "status", None),
-            "route_id": route_id,
-            "route_source": getattr(path, "source", None),
-            "route_destination": getattr(path, "destination", None),
-        }
-
-    items = sorted((plane_row(p) for p in planes), key=lambda x: str(x.get("id") or ""))
-    return {"count": len(items), "planes": items}
+    try:
+        while True:
+            await websocket.send_json({"kind": "snapshot", "window": _read_window_flights_snapshot()})
+            await asyncio.sleep(2)
+    except WebSocketDisconnect:
+        return

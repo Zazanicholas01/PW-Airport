@@ -7,7 +7,6 @@ from src.schedulers.spawn_scheduler import SpawnScheduler
 from src.utils.event_log import append_event
 
 from src.transport.session import SessionContext
-from src.transport.command_builders import build_spawn_plane
 
 async def schedule_initial_spawns(ctx: SessionContext) -> None:
     
@@ -19,10 +18,6 @@ async def schedule_initial_spawns(ctx: SessionContext) -> None:
 
     # Append logging event for simulation start
     append_event({
-        "type": "simulation_start",
-        "message": "hello",
-    })
-    await ctx.observer_hub.broadcast({
         "type": "simulation_start",
         "message": "hello",
     })
@@ -45,7 +40,7 @@ async def schedule_initial_spawns(ctx: SessionContext) -> None:
         await ctx.bus.send_command(cmd)
 
     logging.info("Scheduled %d initial spawn commands", len(commands))
-    await ctx.observer_hub.broadcast({
+    append_event({
         "type": "backend_event",
         "event": "initial_spawns_scheduled",
         "count": len(commands),

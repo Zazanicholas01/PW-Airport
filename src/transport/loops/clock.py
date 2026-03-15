@@ -26,7 +26,6 @@ def _clock_event(sync) -> dict:
 async def _publish_clock_snapshot(ctx: SessionContext, sync) -> None:
     event = _clock_event(sync)
     append_event(event)
-    await ctx.observer_hub.broadcast(event)
 
 async def handle_clock_control(ctx: SessionContext, payload: dict) -> bool:
 
