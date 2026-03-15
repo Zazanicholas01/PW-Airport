@@ -1,23 +1,16 @@
-export function createApiService(store) {
+export function createApiService() {
   return {
-    async fetchWindow({ airport, windowMinutes }) {
+    async fetchClock() {
+      const res = await fetch("/api/clock");
+      return await res.json();
+    },
+    async fetchDashboard({ airport, windowMinutes }) {
       const params = new URLSearchParams({
         airport,
         window_minutes: String(windowMinutes),
       });
-      const res = await fetch(`/api/window?${params.toString()}`);
-      const data = await res.json();
-      return {
-        flights: data.flights || [],
-        now: data.now || null,
-        nowSource: data.now_source || null,
-        timeScale: data.time_scale ?? null,
-      };
-    },
-    async fetchPlanes() {
-      const res = await fetch("/api/planes");
-      const data = await res.json();
-      return data.planes || [];
+      const res = await fetch(`/api/dashboard?${params.toString()}`);
+      return await res.json();
     },
     async fetchFlightById(flightId) {
       const res = await fetch(`/api/flight/${encodeURIComponent(String(flightId))}`);

@@ -1,60 +1,64 @@
 import { renderDetailTable } from "../components/detail-table.js";
-import {
-  esc,
-  fmtLocalTimeFromIso,
-  fmtVec3,
-  parseDateMs,
-  planeImageUrlForModel,
-} from "../lib/format.js";
+import { esc, fmtLocalTimeFromIso, fmtVec3, planeImageUrlForModel } from "../lib/format.js";
 import { hrefForSchedule } from "../lib/routes.js";
 
+function parseMs(value) {
+  if (!value) return null;
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function computeReferenceTime(flight, airport) {
+  if (flight.origin === airport) {
+    return {
+      label: "DEP",
+      iso: flight.departure_time || null,
+    };
+  }
+  return {
+    label: "ARR",
+    iso: flight.arrival_time || flight.departure_time || null,
+  };
+}
+
+function computeDeltaMinutes(referenceIso, nowMs) {
+  const refMs = parseMs(referenceIso);
+  if (!Number.isFinite(refMs) || !Number.isFinite(nowMs)) return null;
+  return Math.round((refMs - nowMs) / 60000);
+}
+
 function renderFlightProgress(flight, nowMs) {
-  const now = nowMs != null ? Number(nowMs) : Date.now();
-  const departureMs = parseDateMs(flight.departure_time);
-  const arrivalMs = parseDateMs(flight.arrival_time);
-  const status = String(flight.status || "");
+  const statusText = String(flight.status || "");
+  const depMs = parseMs(flight.departure_time);
+  const arrMs = parseMs(flight.arrival_time);
 
-  if (status === "Completed") {
-    return {
-      completed: true,
-      width: "100%",
-      label: "Progress: completed",
-      indeterminate: false,
-    };
+  if (statusText.toLowerCase().includes("completed")) {
+    return { completed: true, width: "100%", label: "Progress: Completed", indeterminate: false };
   }
 
-  if (status === "Disembarking") {
+  if (statusText.toLowerCase().includes("disembark")) {
     return {
       completed: false,
       width: "100%",
-      label: "Progress: arrived",
+      label: "Progress: Arrived / Disembarking",
       indeterminate: false,
     };
   }
 
-  if (departureMs != null && arrivalMs != null && arrivalMs > departureMs) {
-    const pct = Math.max(0, Math.min(1, (now - departureMs) / (arrivalMs - departureMs))) * 100;
+  if (Number.isFinite(depMs) && Number.isFinite(arrMs) && arrMs > depMs && Number.isFinite(nowMs)) {
+    const percent = Math.max(0, Math.min(100, ((nowMs - depMs) / (arrMs - depMs)) * 100));
     return {
       completed: false,
-      width: `${pct.toFixed(1)}%`,
-      label: `Progress: ${pct.toFixed(0)}%`,
-      indeterminate: false,
-    };
-  }
-
-  if (departureMs != null && now < departureMs) {
-    return {
-      completed: false,
-      width: "0%",
-      label: "Progress: not departed yet",
+      width: `${percent}%`,
+      label: `Progress: ${Math.round(percent)}% en route`,
       indeterminate: false,
     };
   }
 
   return {
     completed: false,
-    width: "30%",
-    label: "Progress: in progress",
+    width: "0%",
+    label: `Progress: ${statusText || "In progress"}`,
     indeterminate: true,
   };
 }
@@ -62,7 +66,7 @@ function renderFlightProgress(flight, nowMs) {
 function renderPlaneDetail(plane) {
   const route =
     plane.route_source && plane.route_destination
-      ? `${plane.route_source} → ${plane.route_destination}`
+      ? `${plane.route_source} -> ${plane.route_destination}`
       : "";
   return `
     <section>
@@ -95,6 +99,7 @@ function renderPlaneDetail(plane) {
                 ["Stand", plane.stand_id],
                 ["Stand status", plane.stand_status],
                 ["Route", route],
+                ["Allocated flight", plane.active_flight_id],
               ])}
             </tbody>
           </table>
@@ -104,10 +109,12 @@ function renderPlaneDetail(plane) {
   `;
 }
 
-function renderFlightDetail(flight, plane, nowMs) {
+function renderFlightDetail(flight, plane, nowMs, airport) {
   const progress = renderFlightProgress(flight, nowMs);
+  const reference = computeReferenceTime(flight, airport);
+  const liveDelta = computeDeltaMinutes(reference.iso, nowMs);
   const routeTitle =
-    flight.origin && flight.destination ? `${flight.origin} → ${flight.destination}` : "Flight";
+    flight.origin && flight.destination ? `${flight.origin} -> ${flight.destination}` : "Flight";
   const mediaHidden = progress.completed ? "hidden" : "";
   const tableHidden = progress.completed ? "hidden" : "";
 
@@ -126,18 +133,18 @@ function renderFlightDetail(flight, plane, nowMs) {
             onerror="this.onerror=null;this.src='/static/planes/_default.png';"
           />
           <div class="muted section-gap-tight">
-            DEP ${fmtLocalTimeFromIso(flight.departure_time) || "—"} · ARR ${fmtLocalTimeFromIso(flight.arrival_time) || "—"}
+            DEP ${fmtLocalTimeFromIso(flight.departure_time) || "-"} · ARR ${fmtLocalTimeFromIso(flight.arrival_time) || "-"}
           </div>
           <div class="flight-progress section-gap-tight ${progress.indeterminate ? "indeterminate" : ""}">
             <div class="flight-progress-bar" style="width:${progress.width};"></div>
           </div>
-          <div class="muted section-gap-tight">${progress.label}</div>
+          <div class="muted section-gap-tight">${esc(progress.label)}</div>
         </div>
 
         <div class="plane-data">
           <h2 style="margin: 0 0 8px;">${esc(routeTitle)}</h2>
           <div class="flight-completed-banner ${progress.completed ? "" : "hidden"}">
-            <div class="flight-completed-check">✓</div>
+            <div class="flight-completed-check">OK</div>
             <div class="flight-completed-text">
               The flight has been completed. Thank you for choosing LIAG airport.
             </div>
@@ -154,6 +161,8 @@ function renderFlightDetail(flight, plane, nowMs) {
                 ["Type", flight.tipo],
                 ["Status", flight.status],
                 ["Airplane", flight.airplane_id],
+                ["Reference", `${reference.label || ""} ${reference.iso || ""}`.trim()],
+                ["Delta minutes", liveDelta],
               ])}
             </tbody>
           </table>
@@ -188,22 +197,22 @@ export const resourceDetailScreen = {
     const { resourceType, id } = route.params;
     const state = store.getState();
 
-    if (resourceType === "plane" && !state.data.planesById.has(String(id))) {
-      await services.refresh.refreshPlanes();
+    if (resourceType === "plane" && !state.dashboard.planesById.has(String(id))) {
+      await services.refresh.refreshDashboard();
     }
 
-    if (resourceType === "flight" && !state.data.flightsById.has(String(id))) {
+    if (resourceType === "flight" && !state.dashboard.flightsById.has(String(id))) {
       const flight = await services.api.fetchFlightById(id);
       if (flight) {
         store.upsertFlight(flight);
       }
     }
 
-    const flight = store.getState().data.flightsById.get(String(id));
-    if (resourceType === "flight" && flight && flight.airplane_id) {
-      const hasPlane = store.getState().data.planesById.has(String(flight.airplane_id));
+    const flight = store.getState().dashboard.flightsById.get(String(id));
+    if (resourceType === "flight" && flight?.airplane_id) {
+      const hasPlane = store.getState().dashboard.planesById.has(String(flight.airplane_id));
       if (!hasPlane) {
-        await services.refresh.refreshPlanes();
+        await services.refresh.refreshDashboard();
       }
     }
   },
@@ -213,17 +222,17 @@ export const resourceDetailScreen = {
     const state = store.getState();
 
     if (resourceType === "plane") {
-      const plane = state.data.planesById.get(String(id));
+      const plane = state.dashboard.planesById.get(String(id));
       return plane ? renderPlaneDetail(plane) : renderMissing(resourceType, id);
     }
 
     if (resourceType === "flight") {
-      const flight = state.data.flightsById.get(String(id));
+      const flight = state.dashboard.flightsById.get(String(id));
       if (!flight) return renderMissing(resourceType, id);
       const plane = flight.airplane_id
-        ? state.data.planesById.get(String(flight.airplane_id)) || null
+        ? state.dashboard.planesById.get(String(flight.airplane_id)) || null
         : null;
-      return renderFlightDetail(flight, plane, state.sim.nowMs);
+      return renderFlightDetail(flight, plane, state.sim.nowMs, state.ui.airport);
     }
 
     return renderUnsupported(resourceType, id);

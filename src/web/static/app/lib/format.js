@@ -12,6 +12,20 @@ const DATE_TIME_FORMAT = {
   minute: "2-digit",
   second: "2-digit",
 };
+const BACKEND_EVENT_LABELS = {
+  departure_assigned: "Departure plane assigned",
+  landing_plane_assigned: "Arrival plane assigned",
+  landing_departed: "Inbound plane departed remote airport",
+  departure_started: "Departure started",
+  landing_stand_reserved: "Arrival stand reserved",
+  landing_spawn: "Inbound plane spawned",
+  landing_approach_started: "Landing approach started",
+  departure_completed: "Departure completed",
+  landing_completed: "Landing completed",
+  plane_left_stand: "Plane left stand",
+  disembark_complete: "Disembark completed",
+  initial_spawns_scheduled: "Initial spawns scheduled",
+};
 
 export function toDate(value) {
   return value ? new Date(value) : null;
@@ -55,9 +69,11 @@ export function fmtWhen(flight, airport) {
 export function statusClass(status) {
   const text = String(status || "").toLowerCase();
   if (text.includes("scheduled")) return "status-scheduled";
-  if (text.includes("boarding")) return "status-boarding";
-  if (text.includes("landing")) return "status-landing";
+  if (text.includes("boarding") || text.includes("depart")) return "status-boarding";
+  if (text.includes("landing") || text.includes("ongoing") || text.includes("flight")) return "status-landing";
+  if (text.includes("reserved")) return "status-boarding";
   if (text.includes("parked")) return "status-parked";
+  if (text.includes("disembarking")) return "status-parked";
   if (text.includes("completed")) return "status-completed";
   return "status-default";
 }
@@ -107,14 +123,68 @@ export function shortTime(value) {
   }
 }
 
+function startCase(value) {
+  return String(value || "")
+    .replaceAll(/[_-]+/g, " ")
+    .replaceAll(/\s+/g, " ")
+    .trim()
+    .replace(/\b\w/g, (match) => match.toUpperCase());
+}
+
+function prettySubsystem(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  if (raw.includes(".")) {
+    return raw.split(".").at(-1) || raw;
+  }
+  return startCase(raw);
+}
+
+function collectFields(event) {
+  if (event.fields && typeof event.fields === "object") {
+    return event.fields;
+  }
+  return Object.fromEntries(
+    Object.entries(event || {}).filter(([key]) =>
+      !["type", "level", "logger", "subsystem", "message", "ts", "sim_ts", "event"].includes(key),
+    ),
+  );
+}
+
+function summarizeFields(fields) {
+  if (!fields || typeof fields !== "object") return "";
+  return Object.entries(fields)
+    .filter(([, value]) => value != null && value !== "")
+    .slice(0, 4)
+    .map(([key, value]) => `${startCase(key)}: ${String(value)}`)
+    .join(" · ");
+}
+
+function humanMessage(event, fields) {
+  if (event.event) {
+    return BACKEND_EVENT_LABELS[event.event] || startCase(event.event);
+  }
+  const raw = String(event.message || event.type || "").trim();
+  if (!raw) {
+    return "";
+  }
+  if (raw.startsWith("backend:")) {
+    return startCase(raw.slice("backend:".length));
+  }
+  return raw;
+}
+
 export function normalizeEvent(obj) {
   const event = obj && typeof obj === "object" ? obj : { type: "raw", message: String(obj ?? "") };
   const levelRaw = String(event.level || event.type || "INFO").toUpperCase();
+  const fields = collectFields(event);
+  const details = summarizeFields(fields);
   return {
     level: ALLOWED_LEVELS.has(levelRaw) ? levelRaw : "INFO",
     ts: event.sim_ts || event.ts || null,
-    subsystem: event.subsystem || event.logger || "",
-    message: event.message || "",
-    fields: event.fields && typeof event.fields === "object" ? event.fields : null,
+    subsystem: prettySubsystem(event.subsystem || event.logger || ""),
+    message: humanMessage(event, fields),
+    details,
+    fields: Object.keys(fields).length ? fields : null,
   };
 }

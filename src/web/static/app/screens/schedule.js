@@ -7,22 +7,22 @@ import { hrefForResource } from "../lib/routes.js";
 
 export const scheduleScreen = {
   async preload({ store, services }) {
-    const { data } = store.getState();
-    if (!data.flightsById.size || !data.planesById.size) {
-      await services.refresh.refreshAll();
+    const { dashboard } = store.getState();
+    if (!dashboard.flightsById.size || !dashboard.planesById.size) {
+      await services.refresh.refreshDashboard();
     }
   },
 
   render({ store }) {
     const state = store.getState();
-    const flights = Array.from(state.data.flightsById.values());
-    const planes = Array.from(state.data.planesById.values());
+    const flights = Array.from(state.dashboard.flightsById.values());
+    const planes = Array.from(state.dashboard.planesById.values());
 
     return `
       <section>
         <div class="row">
           <h2 style="margin: 0;">Scheduling Window</h2>
-          <span class="muted">Auto-refresh on events, plus 5s flights and 2s planes polling</span>
+          <span class="muted">Live board with Python clock, scheduling window, allocated planes and backend events.</span>
         </div>
 
         <div class="row control-row">
@@ -87,7 +87,7 @@ export const scheduleScreen = {
           airport: airportInput.value.trim() || "LIAG",
           windowMinutes: Number(windowInput.value || "60"),
         });
-        services.refresh.refreshAll().catch(() => {});
+        services.events.updateSubscription();
       };
     }
 

@@ -14,7 +14,7 @@ export function renderAppShell({ route, connection, sim, screenHtml }) {
       <div class="app-bar">
         <div>
           <div class="app-title">PW Airport Ops</div>
-          <div class="muted">Route-driven dashboard ready for overview, schedule, resource and KPI views</div>
+          <div class="muted">Live scheduling, plane allocation and backend event monitoring</div>
         </div>
         <nav class="app-nav">
           <a class="${navClass(route.name, "overview")}" href="${hrefForOverview()}">Overview</a>
@@ -24,7 +24,7 @@ export function renderAppShell({ route, connection, sim, screenHtml }) {
       </div>
 
       <div class="app-status">
-        <span id="ws_status" class="pill status-default">WS ${esc(connection.status)}</span>
+        <span id="transport_status" class="pill status-default">Poll ${esc(connection.status)}</span>
         <span id="sim_time" class="app-status-item">Sim Time ${esc(clockLabel)}</span>
         <span id="sim_scale" class="app-status-item">Scale ${esc(scaleLabel)}</span>
       </div>
@@ -45,8 +45,8 @@ export function updateAppShell(root, { route, connection, sim }) {
     link.classList.toggle("active", isActive);
   }
 
-  const wsStatus = root.querySelector("#ws_status");
-  if (wsStatus) wsStatus.textContent = `WS ${connection.status}`;
+  const transportStatus = root.querySelector("#transport_status");
+  if (transportStatus) transportStatus.textContent = `Poll ${connection.status}`;
 
   const simTime = root.querySelector("#sim_time");
   if (simTime) {

@@ -1,44 +1,35 @@
+import { esc } from "../lib/format.js";
+
 export const kpiScreen = {
-  async preload({ store, services }) {
-    const { data } = store.getState();
-    if (!data.flightsById.size || !data.planesById.size) {
-      await services.refresh.refreshAll();
-    }
+  async preload({ services }) {
+    await services.refresh.refreshDashboard();
   },
 
   render({ store }) {
     const state = store.getState();
-    const flights = Array.from(state.data.flightsById.values());
-    const planes = Array.from(state.data.planesById.values());
+    const flights = state.dashboard.flights || [];
+    const planes = state.dashboard.planes || [];
     const completedFlights = flights.filter((flight) => String(flight.status || "") === "Completed");
-    const assignedFlights = flights.filter((flight) => flight.airplane_id);
-    const parkedPlanes = planes.filter((plane) =>
-      String(plane.status || "").toLowerCase().includes("parked"),
-    );
+    const allocatedPlanes = planes.filter((plane) => plane.active_flight_id);
 
     return `
       <section>
-        <div class="row">
-          <h2 style="margin: 0;">KPI View</h2>
-          <span class="muted">Use this screen for throughput, delays, stand occupancy and simulation health.</span>
-        </div>
-
-        <div class="overview-grid section-gap">
+        <div class="overview-grid">
           <article class="placeholder-card">
             <h3>Flights In Window</h3>
-            <div class="metric-value">${flights.length}</div>
+            <div class="metric-value">${esc(flights.length)}</div>
           </article>
           <article class="placeholder-card">
             <h3>Completed Flights</h3>
-            <div class="metric-value">${completedFlights.length}</div>
+            <div class="metric-value">${esc(completedFlights.length)}</div>
           </article>
           <article class="placeholder-card">
-            <h3>Assigned Flights</h3>
-            <div class="metric-value">${assignedFlights.length}</div>
+            <h3>Allocated Planes</h3>
+            <div class="metric-value">${esc(allocatedPlanes.length)}</div>
           </article>
           <article class="placeholder-card">
-            <h3>Parked Planes</h3>
-            <div class="metric-value">${parkedPlanes.length}</div>
+            <h3>Total Planes</h3>
+            <div class="metric-value">${esc(planes.length)}</div>
           </article>
         </div>
       </section>

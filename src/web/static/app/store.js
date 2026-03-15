@@ -4,7 +4,7 @@ export function createStore(initialState) {
     route: initialState.route,
     connection: initialState.connection,
     sim: initialState.sim,
-    data: initialState.data,
+    dashboard: initialState.dashboard,
     ui: initialState.ui,
     logs: initialState.logs,
   };
@@ -16,6 +16,21 @@ export function createStore(initialState) {
   function getState() {
     return state;
   }
+
+  function rebuildIndexes() {
+    state.dashboard.flightsById = new Map(
+      (state.dashboard.flights || [])
+        .map((flight) => [String((flight && (flight.icao || flight.id)) || ""), flight])
+        .filter(([id]) => id),
+    );
+    state.dashboard.planesById = new Map(
+      (state.dashboard.planes || [])
+        .map((plane) => [String((plane && plane.id) || ""), plane])
+        .filter(([id]) => id),
+    );
+  }
+
+  rebuildIndexes();
 
   return {
     getState,
@@ -35,74 +50,47 @@ export function createStore(initialState) {
       state.ui = { ...state.ui, ...partial };
       notify("ui");
     },
-    setFlights(flights) {
-      state.data.flightsById = new Map(
-        (flights || [])
-          .map((flight) => [String((flight && (flight.icao || flight.id)) || ""), flight])
-          .filter(([id]) => id),
-      );
-      notify("flights");
+    setDashboardSnapshot(snapshot) {
+      state.dashboard = {
+        ...state.dashboard,
+        clock: snapshot.clock || state.dashboard.clock,
+        window: snapshot.window || state.dashboard.window,
+        flights: snapshot.flights || [],
+        planes: snapshot.planes || [],
+      };
+      rebuildIndexes();
+      notify("dashboard");
     },
     upsertFlight(flight) {
       const id = String((flight && (flight.icao || flight.id)) || "");
       if (!id) return;
-      state.data.flightsById.set(id, flight);
-      notify("flights");
+      state.dashboard.flightsById.set(id, flight);
+      state.dashboard.flights = Array.from(state.dashboard.flightsById.values());
+      notify("dashboard");
     },
-    setPlanes(planes) {
-      state.data.planesById = new Map(
-        (planes || [])
-          .map((plane) => [String((plane && plane.id) || ""), plane])
-          .filter(([id]) => id),
-      );
-      notify("planes");
+    setSimAnchor({ anchorSimMs, anchorClientMs, timeScale }) {
+      state.sim = {
+        ...state.sim,
+        anchorSimMs: Number.isFinite(anchorSimMs) ? anchorSimMs : state.sim.anchorSimMs,
+        anchorClientMs: Number.isFinite(anchorClientMs) ? anchorClientMs : state.sim.anchorClientMs,
+        timeScale: Number.isFinite(timeScale) ? timeScale : state.sim.timeScale,
+      };
+      notify("sim");
     },
-    waitForSimClock(timeoutMs = 5000) {
-      if (Number.isFinite(state.sim.nowMs)) {
-        return Promise.resolve(state.sim.nowMs);
-      }
-
-      return new Promise((resolve) => {
-        const startedAt = Date.now();
-
-        const unsubscribe = this.subscribe((type) => {
-          if (type === "sim" && Number.isFinite(state.sim.nowMs)) {
-            unsubscribe();
-            resolve(state.sim.nowMs);
-            return;
-          }
-
-          if ((Date.now() - startedAt) >= timeoutMs) {
-            unsubscribe();
-            resolve(null);
-          }
-        });
-      });
-    },
-    setSimClock(nowMs, timeScale) {
+    setDerivedSimNow(nowMs) {
       state.sim = {
         ...state.sim,
         nowMs: Number.isFinite(nowMs) ? nowMs : state.sim.nowMs,
-        timeScale: Number.isFinite(timeScale) ? timeScale : state.sim.timeScale,
       };
-
-      console.log("[clock_sync][WEB SET]", {
-        nowMs: state.sim.nowMs,
-        timeScale: state.sim.timeScale,
-        iso: Number.isFinite(state.sim.nowMs) ? new Date(state.sim.nowMs).toISOString() : null,
-      });
-
       notify("sim");
     },
     addLog(event) {
       state.logs = [...state.logs, event].slice(-200);
       notify("logs");
     },
-    markFlightCompleted(flightId) {
-      const current = state.data.flightsById.get(String(flightId));
-      if (!current) return;
-      state.data.flightsById.set(String(flightId), { ...current, status: "Completed" });
-      notify("flights");
+    setLogs(events) {
+      state.logs = Array.isArray(events) ? events.slice(-200) : [];
+      notify("logs");
     },
   };
 }

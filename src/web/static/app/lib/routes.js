@@ -1,10 +1,13 @@
 export function parseHash(hash) {
-  const value = hash || "#/overview";
+  const value = hash || "#/schedule";
   const resourceMatch = value.match(/^#\/resource\/([^/]+)\/(.+)$/);
   const planeAlias = value.match(/^#plane\/(.+)$/);
   const flightAlias = value.match(/^#flight\/(.+)$/);
 
-  if (value === "#" || value === "" || value === "#/" || value === "#/overview") {
+  if (value === "#" || value === "" || value === "#/" || value === "#/schedule") {
+    return { name: "schedule", params: {}, canonicalHash: "#/schedule" };
+  }
+  if (value === "#/overview") {
     return { name: "overview", params: {}, canonicalHash: "#/overview" };
   }
   if (value === "#/schedule") {

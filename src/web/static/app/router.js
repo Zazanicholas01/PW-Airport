@@ -92,7 +92,7 @@ export function createRouter(mount, store, services) {
         return;
       }
 
-      if (["ui", "flights", "planes", "logs"].includes(type)) {
+      if (["ui", "dashboard", "logs"].includes(type)) {
         renderScreen();
       }
     });

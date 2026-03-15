@@ -89,6 +89,7 @@ services:
       PYTHONPATH: /app
       LOG_DIR: /logs
       SIM_EVENT_WS_URL: ws://host.docker.internal:8765/observer
+      DASHBOARD_DISABLE_EVENT_BRIDGE: "0"
     expose:
       - "8000"
     command: uvicorn src.web.dashboard_app:app --host 0.0.0.0 --port 8000
