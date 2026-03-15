@@ -18,10 +18,12 @@ import logging
 import json
 from pathlib import Path
 
+from src.domain.status_constants import *
+
 logger = logging.getLogger(__name__)
 
 class InitGraph:
-    def __init__(self, airport_id: str = "LIAG"):
+    def __init__(self, airport_id: str = PERSONAL_AIRPORT):
 
         self.master_nodes = []
         self.master_edges = []
@@ -71,7 +73,7 @@ class InitGraph:
         """Construct a list of links between nodes and other splines"""
 
         # Locate and load the JSON schema that describes links between master knots and stand splines
-        schema_path = Path(__file__).resolve().parent.parent / "schema_nodi.json"
+        schema_path = Path(__file__).resolve().parent.parent / NODE_SCHEMA_JSON_PATH
         try:
             with schema_path.open('r', encoding='utf-8') as f:
                 links_schema = json.load(f)
@@ -142,15 +144,10 @@ class InitGraph:
             
             return self.master_edges[start_link:end_link]
 
-        # Define available stands / landing splines / departure splines
-        available_stands = ["O1", "O2", "O3", "O4", "O5", "P1", "P2", "P3", "C1", "C2", "C3"]
-        available_landings = ["LongLanding", "MediumLanding", "ShortLanding"]
-        available_departing = "Departure"
-
-        # Convert logical IDs into Unity naming conventions.
-        available_stands = [f"Spline_{x}" for x in available_stands]
-        available_landings = [f"Spline_{x}" for x in available_landings]
-        available_departing = [f"Spline_Departure"]
+        # Retrieve stands and spline names and add Spline_ for Unity naming convention
+        available_stands = [f"Spline_{x}" for x in AVAILABLE_STANDS]
+        available_landings = [f"Spline_{x}" for x in LANDING_SOURCES]
+        available_departing = [f"Spline_{DEPARTURE_SPLINE}"]
 
         # Build all landing paths:
         # LandingSpline -> MasterSpline slice -> StandSpline (reversed)
@@ -192,13 +189,13 @@ class InitGraph:
                 if master_edges:
                     if start_link > end_link:
                         segments.append({
-                            "name": "MasterSpline",
+                            "name": MASTER_SPLINE,
                             "t_start": master_edges[-1]["t_end"],
                             "t_end": master_edges[0]["t_start"],
                         })
                     else:
                         segments.append({
-                            "name": "MasterSpline",
+                            "name": MASTER_SPLINE,
                             "t_start": master_edges[0]["t_start"],
                             "t_end": master_edges[-1]["t_end"],
                         })
@@ -256,7 +253,7 @@ class InitGraph:
             # Append the master spline slice
             if master_edges:
                 segments.append({
-                    "name": "MasterSpline",
+                    "name": MASTER_SPLINE,
                     "t_start": master_edges[0]["t_start"],
                     "t_end": master_edges[-1]["t_end"]
                 })

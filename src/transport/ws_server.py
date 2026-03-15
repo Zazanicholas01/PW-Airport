@@ -7,6 +7,7 @@ from src.handlers.runtime_bus import RuntimeBusHandler
 from src.handlers.setup_bus import SetupBusHandler
 from src.transport.message_bus import WsMessageBus
 from src.domain.sim_clock import SimulationClock
+from src.domain.status_constants import *
 from src.schedulers.spawn_scheduler import SpawnScheduler
 from src.schedulers.flight_scheduler import FlightSlidingWindowScheduler
 from src.utils.datetimes import as_utc, isoformat_utc_plus1
@@ -89,7 +90,7 @@ async def flight_scheduler_loop(
             parked_count = session.execute(
                 select(func.count())
                 .select_from(models.Airplane)
-                .where(models.Airplane.status == "Parked")
+                .where(models.Airplane.status == AIRPLANE_STATUS.PARKED)
             ).scalar_one()
         if parked_count and parked_count > 0:
             break
@@ -98,12 +99,8 @@ async def flight_scheduler_loop(
             break
         await asyncio.sleep(0.1)
 
-    RANDOM_FLIGHTS_COUNT = 20
-    RandomFlightGenerator(Session).generate_flights(RANDOM_FLIGHTS_COUNT, ensure_in_window=True, window=scheduler.window)
+    RandomFlightGenerator(Session).generate_flights(RANDOM_FLIGHTS_COUNT, ensure_in_window=ENSURE_IN_WINDOW, window=scheduler.window)
     logging.info(f"[flight_scheduler] generated debug flights (n={RANDOM_FLIGHTS_COUNT})")
-
-    last_window_log = 0.0
-    min_poll_real_s = 0.05
 
     while True:
         if clock_lock is None:
@@ -120,21 +117,23 @@ async def flight_scheduler_loop(
             window=scheduler.window,
         )
 
+        last_window_log = 0.0
+
         t = time.monotonic()
         if (t - last_window_log) >= poll_seconds:
             last_window_log = t
             items = [
                 {
-                    "id": getattr(f, "id", None),
-                    "origin": getattr(f, "origin", None),
-                    "destination": getattr(f, "destination", None),
-                    "dep": getattr(f, "departure_time", None),
-                    "arr": getattr(f, "arrival_time", None),
-                    "tipo": getattr(f, "tipo", None),
-                    "status": getattr(f, "status", None),
-                    "airplane_id": getattr(f, "airplane_id", None),
+                    "id": getattr(flight, "id", None),
+                    "origin": getattr(flight, "origin", None),
+                    "destination": getattr(flight, "destination", None),
+                    "dep": getattr(flight, "departure_time", None),
+                    "arr": getattr(flight, "arrival_time", None),
+                    "tipo": getattr(flight, "tipo", None),
+                    "status": getattr(flight, "status", None),
+                    "airplane_id": getattr(flight, "airplane_id", None),
                 }
-                for f in flights
+                for flight in flights
             ]
             logging.info("[flight_scheduler] window now=%s time_scale=%.2f flights_in_window=%d flights=%s",
                 now.isoformat(),
@@ -229,7 +228,7 @@ async def flight_scheduler_loop(
                     )
 
                     await bus.send_command({
-                        "command": "spawn_plane",
+                        "command": BUS_COMMANDS.SPAWN_PLANE,
                         "prefab": prefab,
                         "stand_id": f"landing:{flight_id}",
                         "position": landing_spawn_position,
@@ -247,7 +246,7 @@ async def flight_scheduler_loop(
                         await bus.send_command(cmd)
 
         poll_real_s = poll_seconds / max(time_scale, 1.0)
-        poll_real_s = max(min_poll_real_s, poll_real_s)
+        poll_real_s = max(MIN_POLL_REAL_S, poll_real_s)
 
         if wake_event is None:
             await asyncio.sleep(poll_real_s)
@@ -272,7 +271,7 @@ async def handle_clock_control(
         return False
     cmd = cmd.strip().lower()
 
-    if cmd == "set_time_scale":
+    if cmd == BUS_COMMANDS.SET_TIME_SCALE:
         raw = payload.get("time_scale")
         req_id = payload.get("request_id")
         before_scale = clock.time_scale
@@ -316,14 +315,14 @@ async def handle_clock_control(
         )
         
         await bus.send_command({
-            "command": "clock_sync",
+            "command": BUS_COMMANDS.CLOCK_SYNC,
             "sync_id": sync.sync_id,
             "sim_unix_ms": sync.sim_unix_ms,
             "time_scale": sync.time_scale,
         })
         return True
 
-    if cmd == "set_sim_time":
+    if cmd == BUS_COMMANDS.SET_SIM_TIME:
         raw_ms = payload.get("sim_unix_ms")
         try:
             sim_unix_ms = int(raw_ms)
@@ -345,16 +344,10 @@ async def handle_clock_control(
     return False
 
 
-async def clock_sync_loop(bus: WsMessageBus, clock: SimulationClock, *, hz: float = 10.0, clock_lock=None):
+async def clock_sync_loop(bus: WsMessageBus, clock: SimulationClock, *, clock_lock=None):
     
-    period = 1.0 / hz
-    logging.info("Clock sync loop started: hz=%.1f", hz)
-
-    last_log_t = 0.0
-    log_every_s = 10.0
-
-    last_evt_t = 0.0
-    evt_every_s = 0.5
+    period = 1.0 / CLOCK_HERTZ
+    logging.info("Clock sync loop started: hz=%.1f", CLOCK_HERTZ)
 
     while True:
         if clock_lock is None:
@@ -366,7 +359,7 @@ async def clock_sync_loop(bus: WsMessageBus, clock: SimulationClock, *, hz: floa
                 sim_now = clock.now()
 
         await bus.send_command({
-            "command": "clock_sync",
+            "command": BUS_COMMANDS.CLOCK_SYNC,
             "sync_id": sync.sync_id,
             "sim_unix_ms": sync.sim_unix_ms,
             "time_scale": sync.time_scale,
@@ -375,7 +368,7 @@ async def clock_sync_loop(bus: WsMessageBus, clock: SimulationClock, *, hz: floa
         t = time.monotonic()
 
         # Clock Sync Logging in the CLI
-        if (t - last_log_t) >= log_every_s:
+        if (t - last_log_t) >= LOG_EVERY_S:
             last_log_t = t
             logging.info(
                 "[clock_sync] sim_now=%s sim_unix_ms=%d time_scale=%.2f sync_id=%d",
@@ -386,7 +379,7 @@ async def clock_sync_loop(bus: WsMessageBus, clock: SimulationClock, *, hz: floa
             )
 
         # Event Sync Logging in the Web UI
-        if (t - last_evt_t) >= evt_every_s:
+        if (t - last_evt_t) >= EVT_EVERY_S:
             last_evt_t = t
             append_event({
                 "type": "clock",
@@ -466,7 +459,7 @@ async def echo_handler(websocket, pw_prefab_store, pw_world_state, pw_graph) -> 
     )
 
     spawn_task = asyncio.create_task(schedule_initial_spawns(bus, setup_bus, pw_prefab_store))
-    clock_task = asyncio.create_task(clock_sync_loop(bus, clock, hz=10.0))
+    clock_task = asyncio.create_task(clock_sync_loop(bus, clock))
 
     flight_task = asyncio.create_task(
         flight_scheduler_loop(
@@ -483,7 +476,7 @@ async def echo_handler(websocket, pw_prefab_store, pw_world_state, pw_graph) -> 
 
     try:
         # Handshake verso Unity
-        await bus.send_command({"type": "welcome", "message": "Connected to Python server"})
+        await bus.send_command({"type": BUS_COMMANDS.WELCOME, "message": "Connected to Python server"})
         await bus._recv_task
 
     except websockets.ConnectionClosed:
@@ -546,10 +539,10 @@ async def main(host, port, pw_prefab_store, pw_graph, pw_world_state) -> None:
         _ws_handler,
         host,
         port,
-        max_size=4 * 1024 * 1024,  # allow larger JSON payloads
-        ping_interval=20,
-        ping_timeout=20,
-        max_queue=32,
+        max_size=WEBSOCKET_CONFIG.MAX_SIZE,  # allow larger JSON payloads
+        ping_interval=WEBSOCKET_CONFIG.PING_INTERVAL,
+        ping_timeout=WEBSOCKET_CONFIG.PING_TIMEOUT,
+        max_queue=WEBSOCKET_CONFIG.MAX_QUEUE,
     ):
         logging.info("WebSocket server running on ws://%s:%s", host, port)
         # Keep the server alive forever; replaced by a future that never resolves.

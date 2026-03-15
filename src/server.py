@@ -6,6 +6,7 @@ from src.init_graph import InitGraph
 from src.handlers.setup_bus import SetupBusHandler
 from src.handlers.runtime_bus import RuntimeBusHandler
 from src.domain.world_state import WorldState
+from src.domain.status_constants import *
 from src.transport.ws_server import main
 from src.utils.event_log import append_event
 
@@ -60,11 +61,8 @@ class EventJsonHandler(logging.Handler):
 
 logging.getLogger().addHandler(EventJsonHandler())
 
-HOST = "0.0.0.0"
-PORT = 8765
-
 pw_prefab_store = PrefabStore()
-pw_graph = InitGraph("LIAG")
+pw_graph = InitGraph(PERSONAL_AIRPORT)
 pw_world_state = WorldState()
 #logging.getLogger().setLevel(logging.DEBUG)
 
@@ -79,8 +77,8 @@ if __name__ == "__main__":
     try:
         asyncio.run(
             main(
-                host=HOST, 
-                port=PORT, 
+                host=WEBSOCKET_CONFIG.HOST, 
+                port=WEBSOCKET_CONFIG.PORT, 
                 pw_prefab_store=pw_prefab_store, 
                 pw_graph=pw_graph, 
                 pw_world_state=pw_world_state

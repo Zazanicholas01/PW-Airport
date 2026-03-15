@@ -7,6 +7,12 @@ Real-time airport simulation with:
 - PostgreSQL + Metabase (data persistence and analytics)
 - FastAPI dashboard (flight window, planes, and live logs)
 
+## Documentation
+
+Project documentation is organized under `src/docs` (topic folders, in reading order):
+
+- `src/docs/README.md` (index)
+
 ## Macro Architecture
 
 ### Main components
@@ -177,7 +183,7 @@ Frontend (`dashboard.js`) provides:
 
 ## Status / vocabulary conventions
 
-Canonical values are documented in `standard_vocabulary.txt` and used across code:
+Canonical values are documented in `src/docs/14-message-contracts/standard_vocabulary.md` and used across code:
 
 - Flight statuses: `Unscheduled`, `Scheduled`, `Ongoing`, `Landing`, `Disembarking`, `Completed`, `StandReserved`
 - Airplane statuses: `Parked`, `Reserved`, `InFlight`, `Disembarking`

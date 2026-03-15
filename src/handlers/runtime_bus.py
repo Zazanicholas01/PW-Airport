@@ -10,10 +10,11 @@ from src.db import models
 
 from src.db.engine import get_engine
 
+from src.domain.status_constants import *
+
 _engine = get_engine()
 Session = sessionmaker(bind=_engine, future=True)
 
-DISEMBARK_SIM_SECONDS = 5 * 60
 
 class RuntimeBusHandler:
     def __init__(
@@ -119,22 +120,22 @@ class RuntimeBusHandler:
                 airplane = session.get(models.Airplane, airplane_id)
                 if airplane is None:
                     return
-                if getattr(airplane, "status", None) != "Disembarking":
+                if getattr(airplane, "status", None) != AIRPLANE_STATUS.DISEMBARKING:
                     return
                 
                 # Update status from Disembarking to Parked
-                airplane.status = "Parked"
+                airplane.status = AIRPLANE_STATUS.PARKED
 
                 # Update also the flight linked to that airplane from Disembarking to Completed
                 flight = session.scalars(
                     select(models.Flight)
                     .where(models.Flight.airplane_id == airplane_id)
-                    .where(models.Flight.status.in_(("Disembarking", "Landing")))
+                    .where(models.Flight.status.in_((FLIGHT_STATUS.DISEMBARKING, FLIGHT_STATUS.LANDING)))
                     .order_by(models.Flight.arrival_time.desc())
                 ).first()
 
                 if flight is not None:
-                    flight.status = "Completed"
+                    flight.status = FLIGHT_STATUS.COMPLETED
 
                 session.commit()
             
@@ -193,7 +194,7 @@ class RuntimeBusHandler:
             stand_id = self._find_stand_id_by_airplane_id(session, airplane_id)
 
             # Path Completed Event Handling
-            if evt == "path_completed":
+            if evt == RUNTIME_EVENTS.PATH_COMPLETED:
 
                 # Get airplane by ID and sanity check on route exists
                 airplane = session.get(models.Airplane, airplane_id)
@@ -216,23 +217,23 @@ class RuntimeBusHandler:
                 # ARRIVAL LOGIC
                 else:
                     # Update airplane status from Landing --> Disembarking
-                    airplane.status = "Disembarking"
+                    airplane.status = AIRPLANE_STATUS.DISEMBARKING
 
                     # Get flight linked to the airplane and change from Landing --> Disembarking
                     flight = session.scalars(
                         select(models.Flight)
                         .where(models.Flight.airplane_id == airplane_id)
-                        .where(models.Flight.status.in_(("Landing", "Disembarking")))
+                        .where(models.Flight.status.in_((FLIGHT_STATUS.DISEMBARKING, FLIGHT_STATUS.LANDING)))
                         .order_by(models.Flight.arrival_time.desc())
                     ).first()
                     if flight is not None:
-                        flight.status = "Disembarking"
+                        flight.status = FLIGHT_STATUS.DISEMBARKING
 
                     # Update stand status from Reserved --> Occupied
                     if stand_id is not None:
                         stand = session.get(models.Stand, stand_id)
                         if stand is not None and stand.airplane_id == airplane_id:
-                            stand.status = "Occupied"
+                            stand.status = STAND_STATUS.OCCUPIED
                     
                     # Commit session, Logging and Start disembarking timer
                     session.commit()
@@ -242,7 +243,7 @@ class RuntimeBusHandler:
                     return
 
             # Plane Left Stand Event Handling
-            if evt == "plane_left_stand":
+            if evt == RUNTIME_EVENTS.PLANE_LEFT_STAND:
 
                 # Sanity check on stand to be linked to the right airplane and to exist
                 if stand_id is None:
@@ -254,6 +255,6 @@ class RuntimeBusHandler:
 
                 # Release stand and set status from Occupied --> Available
                 stand.airplane_id = None
-                stand.status = "Available"
+                stand.status = STAND_STATUS.AVAILABLE
                 session.commit()
                 return
