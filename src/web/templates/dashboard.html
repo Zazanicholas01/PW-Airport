@@ -10,30 +10,33 @@
       <div class="panel">
         <div id="app">
           <div class="app-shell">
-            <div class="app-bar">
-              <div>
+            <aside class="app-sidebar">
+              <div class="app-sidebar-head">
                 <div class="app-title">PW Airport Ops</div>
+                <div class="app-sidebar-copy">Twin, radar, map, schedule and analytics modules organized in a single amber ops rail.</div>
               </div>
               <nav class="app-nav">
                 <span class="app-nav-link">Twin</span>
                 <span class="app-nav-link">Radar</span>
+                <span class="app-nav-link">Map</span>
                 <a class="app-nav-link active" href="#">Schedule</a>
                 <a class="app-nav-link" href="#">Analytics</a>
               </nav>
-            </div>
+            </aside>
 
-            <div class="app-status">
-              <span class="pill status-default">Static Baseline</span>
-              <span class="app-status-item" id="sim-time-status">Sim Time: --:--:--</span>
-              <span class="app-status-item" id="sim-scale-status">Scale: --</span>
-            </div>
+            <section class="app-main">
+              <div class="meta-card">
+                <div class="app-status">
+                  <span class="pill status-default">Static Baseline</span>
+                  <span class="app-status-item" id="sim-time-status">Sim Time: --:--:--</span>
+                  <span class="app-status-item" id="sim-scale-status">Scale: --</span>
+                </div>
 
-            <section>
-
-              <div class="row control-row">
-                <label>Airport <input id="window-airport" value="LIAG" size="6" readonly /></label>
-                <label>Window (min) <input id="window-minutes" value="60" size="4" readonly /></label>
-                <button type="button">Refresh</button>
+                <div class="row control-row">
+                  <label>Airport <input id="window-airport" value="LIAG" size="6" readonly /></label>
+                  <label>Window (min) <input id="window-minutes" value="60" size="4" readonly /></label>
+                  <button type="button">Refresh</button>
+                </div>
               </div>
 
               <div class="board-block">
