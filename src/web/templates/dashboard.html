@@ -13,12 +13,12 @@
             <div class="app-bar">
               <div>
                 <div class="app-title">PW Airport Ops</div>
-                <div class="muted">Dashboard layout baseline preserved for rebuild.</div>
               </div>
               <nav class="app-nav">
-                <a class="app-nav-link" href="#">Overview</a>
+                <span class="app-nav-link">Twin</span>
+                <span class="app-nav-link">Radar</span>
                 <a class="app-nav-link active" href="#">Schedule</a>
-                <a class="app-nav-link" href="#">KPI</a>
+                <a class="app-nav-link" href="#">Analytics</a>
               </nav>
             </div>
 
@@ -29,10 +29,6 @@
             </div>
 
             <section>
-              <div class="row">
-                <h2 style="margin: 0;">Scheduling Window</h2>
-                <span class="muted">Static shell extracted from the previous dashboard so the visual layout remains intact during the reset.</span>
-              </div>
 
               <div class="row control-row">
                 <label>Airport <input id="window-airport" value="LIAG" size="6" readonly /></label>
@@ -41,12 +37,12 @@
               </div>
 
               <div class="board-block">
-                <div class="board-title">Flight Information</div>
+                <div class="board-title">Departures</div>
                 <table class="board-table flights-board">
                   <thead>
                     <tr>
-                      <th>Dir</th>
-                      <th>When</th>
+                      <th>Dep Time</th>
+                      <th>Arr Time</th>
                       <th>Delta Min</th>
                       <th>Flight</th>
                       <th>Route</th>
@@ -55,33 +51,37 @@
                       <th>Airplane</th>
                     </tr>
                   </thead>
-                  <tbody id="rows">
+                  <tbody id="departure_rows">
                     <tr>
-                      <td class="muted">[DEP]</td>
-                      <td class="muted">Template</td>
-                      <td class="muted">--</td>
-                      <td>AZ100</td>
-                      <td>LIAG -> LIMC</td>
-                      <td>PAX</td>
-                      <td><span class="pill status-scheduled">Scheduled</span></td>
-                      <td class="muted">A320-01</td>
-                    </tr>
-                    <tr>
-                      <td class="muted">[ARR]</td>
-                      <td class="muted">Template</td>
-                      <td class="muted">--</td>
-                      <td>LH220</td>
-                      <td>EDDF -> LIAG</td>
-                      <td>PAX</td>
-                      <td><span class="pill status-boarding">Boarding</span></td>
-                      <td class="muted">E190-02</td>
-                    </tr>
-                    <tr>
-                      <td colspan="8" class="muted">Replace these placeholder rows with the new implementation.</td>
+                      <td colspan="8" class="muted">Waiting for departure snapshot...</td>
                     </tr>
                   </tbody>
                 </table>
               </div>
+
+              <div class="board-block section-gap">
+                <div class="board-title">Arrivals</div>
+                <table class="board-table flights-board">
+                  <thead>
+                    <tr>
+                      <th>Dep Time</th>
+                      <th>Arr Time</th>
+                      <th>Delta Min</th>
+                      <th>Flight</th>
+                      <th>Route</th>
+                      <th>Type</th>
+                      <th>Status</th>
+                      <th>Airplane</th>
+                    </tr>
+                  </thead>
+                  <tbody id="arrival_rows">
+                    <tr>
+                      <td colspan="8" class="muted">Waiting for arrival snapshot...</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+
 
               <div class="board-block section-gap">
                 <div class="board-title">Planes On Ground</div>
@@ -148,14 +148,16 @@
     <script>
       (function () {
         const eventsRoot = document.getElementById("events");
-        const flightsRows = document.getElementById("rows");
+        const departureRows = document.getElementById("departure_rows");
+        const arrivalRows = document.getElementById("arrival_rows");
+        const planesRows = document.getElementById("plane_rows");
         const airportField = document.getElementById("window-airport");
         const windowField = document.getElementById("window-minutes");
         const simTimeStatus = document.getElementById("sim-time-status");
         const simScaleStatus = document.getElementById("sim-scale-status");
         const maxRows = 20;
         let clockAnchor = null;
-
+        let latestFlightRows = [];
         function makeCell(className, value) {
           const node = document.createElement("div");
           node.className = className;
@@ -242,33 +244,96 @@
           ]);
         });
 
-        function renderFlightsSnapshot(windowSnapshot) {
-          const rows = (windowSnapshot && windowSnapshot.rows) || [];
-          airportField.value = windowSnapshot && windowSnapshot.airport_icao ? windowSnapshot.airport_icao : "LIAG";
-          windowField.value = windowSnapshot && windowSnapshot.window_minutes ? String(windowSnapshot.window_minutes) : "60";
-          flightsRows.innerHTML = "";
+        function currentSimUnixMs() {
+          if (!clockAnchor) {
+            return null;
+          }
+          const elapsedRealMs = Date.now() - clockAnchor.receivedAtMs;
+          return clockAnchor.simUnixMs + elapsedRealMs * clockAnchor.timeScale;
+        }
+
+        function formatDeltaMinutes(referenceUnixMs) {
+          const simUnixMs = currentSimUnixMs();
+          if (simUnixMs === null || referenceUnixMs === null || referenceUnixMs === undefined) {
+            return "--";
+          }
+          return String(Math.round((referenceUnixMs - simUnixMs) / 60000));
+        }
+
+        function renderFlightRows(targetBody, rows, emptyMessage) {
+          targetBody.innerHTML = "";
 
           if (!rows.length) {
             const emptyRow = document.createElement("tr");
-            emptyRow.innerHTML = '<td colspan="8" class="muted">No flights currently in the scheduling window.</td>';
-            flightsRows.appendChild(emptyRow);
+            emptyRow.innerHTML = `<td colspan="8" class="muted">${emptyMessage}</td>`;
+            targetBody.appendChild(emptyRow);
             return;
           }
 
           rows.forEach((row) => {
             const tr = document.createElement("tr");
+            tr.className = "clickable-row";
+            tr.addEventListener("click", () => {
+              window.location.href = `/flight/${encodeURIComponent(row.id)}`;
+            });
             tr.innerHTML = `
-              <td class="muted">${row.direction || "--"}</td>
-              <td>${row.when || "--:--"}</td>
-              <td class="muted">${row.delta_min}</td>
+              <td>${row.dep_time || "--:--"}</td>
+              <td>${row.arr_time || "--:--"}</td>
+              <td class="muted" data-role="delta-min" data-reference-unix-ms="${row.reference_unix_ms ?? ""}">
+                ${formatDeltaMinutes(row.reference_unix_ms)}
+              </td>
               <td>${row.flight || "--"}</td>
               <td>${row.route || "--"}</td>
               <td>${row.type || "--"}</td>
               <td><span class="pill ${row.status_class || "status-default"}">${row.status || "--"}</span></td>
               <td class="muted">${row.airplane || "--"}</td>
             `;
-            flightsRows.appendChild(tr);
+            targetBody.appendChild(tr);
           });
+        }
+
+        function renderPlanesSnapshot(planesSnapshot) {
+          const rows = (planesSnapshot && planesSnapshot.rows) || [];
+          planesRows.innerHTML = "";
+
+          if (!rows.length) {
+            const emptyRow = document.createElement("tr");
+            emptyRow.innerHTML = '<td colspan="8" class="muted">No planes currently tracked on ground.</td>';
+            planesRows.appendChild(emptyRow);
+            return;
+          }
+
+          rows.forEach((row) => {
+            const tr = document.createElement("tr");
+            tr.className = "clickable-row";
+            tr.addEventListener("click", () => {
+              window.location.href = `/plane/${encodeURIComponent(row.airplane)}`;
+            });
+            tr.innerHTML = `
+              <td>${row.airplane || "--"}</td>
+              <td><span class="pill ${row.status_class || "status-default"}">${row.status || "--"}</span></td>
+              <td class="muted">${row.model || "--"}</td>
+              <td>${row.type || "--"}</td>
+              <td>${row.range || "--"}</td>
+              <td class="muted">${row.speed || "--"}</td>
+              <td class="muted">${row.stand || "--"}</td>
+              <td class="muted">${row.route || "--"}</td>
+            `;
+            planesRows.appendChild(tr);
+          });
+        }
+
+        function renderFlightsSnapshot(windowSnapshot) {
+          const rows = (windowSnapshot && windowSnapshot.rows) || [];
+          latestFlightRows = rows;
+          airportField.value = windowSnapshot && windowSnapshot.airport_icao ? windowSnapshot.airport_icao : "LIAG";
+          windowField.value = windowSnapshot && windowSnapshot.window_minutes ? String(windowSnapshot.window_minutes) : "60";
+
+          const departures = rows.filter((row) => row.direction === "departure");
+          const arrivals = rows.filter((row) => row.direction === "arrival");
+
+          renderFlightRows(departureRows, departures, "No departures currently in the scheduling window.");
+          renderFlightRows(arrivalRows, arrivals, "No arrivals currently in the scheduling window.");
         }
 
         function formatSimTime(date) {
@@ -285,10 +350,23 @@
             return;
           }
 
-          const elapsedRealMs = Date.now() - clockAnchor.receivedAtMs;
-          const simUnixMs = clockAnchor.simUnixMs + elapsedRealMs * clockAnchor.timeScale;
+          const simUnixMs = currentSimUnixMs();
           simTimeStatus.textContent = "Sim Time: " + formatSimTime(new Date(simUnixMs));
           simScaleStatus.textContent = "Scale: x" + clockAnchor.timeScale.toFixed(2);
+        }
+
+        function refreshFlightDeltas() {
+          const allBodies = [departureRows, arrivalRows];
+
+          for (const body of allBodies) {
+            const deltaCells = body.querySelectorAll('[data-role="delta-min"]');
+            deltaCells.forEach((cell) => {
+              const referenceUnixMs = Number(cell.dataset.referenceUnixMs || "");
+              cell.textContent = Number.isFinite(referenceUnixMs)
+                ? formatDeltaMinutes(referenceUnixMs)
+                : "--";
+            });
+          }
         }
 
         function applyClockSync(clock) {
@@ -329,8 +407,23 @@
           renderFlightsSnapshot({ rows: [] });
         });
 
+        const planesScheme = window.location.protocol === "https:" ? "wss" : "ws";
+        const planesSocket = new WebSocket(`${planesScheme}://${window.location.host}/ws/planes-ground`);
+
+        planesSocket.addEventListener("message", (messageEvent) => {
+          const payload = JSON.parse(messageEvent.data);
+          if (payload.kind === "snapshot" && payload.planes) {
+            renderPlanesSnapshot(payload.planes);
+          }
+        });
+
+        planesSocket.addEventListener("close", () => {
+          renderPlanesSnapshot({ rows: [] });
+        });
+
         renderClock();
         window.setInterval(renderClock, 250);
+        window.setInterval(refreshFlightDeltas, 250);
       })();
     </script>
   </body>

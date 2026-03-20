@@ -243,7 +243,7 @@ table {
 
 .flights-board th:nth-child(1),
 .flights-board td:nth-child(1) {
-  width: 15%;
+  width: 8%;
 }
 
 .flights-board th:nth-child(2),
@@ -253,28 +253,34 @@ table {
 
 .flights-board th:nth-child(3),
 .flights-board td:nth-child(3) {
-  width: 13%;
+  width: 8%;
 }
 
 .flights-board th:nth-child(4),
 .flights-board td:nth-child(4) {
-  width: 24%;
+  width: 22%;
 }
 
 .flights-board th:nth-child(5),
 .flights-board td:nth-child(5) {
-  width: 10%;
+  width: 16%;
 }
 
 .flights-board th:nth-child(6),
 .flights-board td:nth-child(6) {
-  width: 18%;
+  width: 10%;
 }
 
 .flights-board th:nth-child(7),
 .flights-board td:nth-child(7) {
-  width: 12%;
+  width: 14%;
 }
+
+.flights-board th:nth-child(8),
+.flights-board td:nth-child(8) {
+  width: 14%;
+}
+
 
 .planes-board th:nth-child(1),
 .planes-board td:nth-child(1) {
@@ -352,13 +358,11 @@ table {
 .flights-board td:nth-child(1),
 .flights-board td:nth-child(2),
 .flights-board td:nth-child(3),
+.flights-board td:nth-child(4),
 .flights-board td:nth-child(5),
 .flights-board td:nth-child(6),
-.flights-board td:nth-child(7) {
-  text-align: center;
-}
-
-.flights-board td:nth-child(4) {
+.flights-board td:nth-child(7),
+.flights-board td:nth-child(8) {
   text-align: center;
 }
 
@@ -370,12 +374,33 @@ table {
   text-align: center;
 }
 
+.clickable-row {
+  cursor: pointer;
+}
+
+.clickable-row td {
+  transition: background 120ms ease;
+}
+
+.clickable-row:hover td {
+  background: rgba(255, 176, 64, 0.08);
+}
+
+.clickable-row:active td {
+  background: rgba(255, 176, 64, 0.12);
+}
+
+.flights-board th:nth-child(1),
+.flights-board th:nth-child(2),
 .flights-board th:nth-child(3),
 .flights-board th:nth-child(4),
+.flights-board td:nth-child(1),
+.flights-board td:nth-child(2),
 .flights-board td:nth-child(3),
 .flights-board td:nth-child(4) {
   letter-spacing: 0.04em;
 }
+
 
 .board-table tbody tr:nth-child(even) {
   background: rgba(255, 176, 64, 0.025);
