@@ -3,6 +3,9 @@
   <head>
     <meta charset="utf-8" />
     <title>PW Airport - Scheduling Window</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="/static/dashboard.css?v=10" />
   </head>
   <body>
@@ -13,29 +16,135 @@
             <aside class="app-sidebar">
               <div class="app-sidebar-head">
                 <div class="app-title">PW Airport Ops</div>
-                <div class="app-sidebar-copy">Twin, radar, map, schedule and analytics modules organized in a single amber ops rail.</div>
+                <div class="app-sidebar-avatar">
+                  <span class="app-sidebar-avatar-ring">
+                    <svg class="app-sidebar-avatar-core" viewBox="0 0 64 64" aria-hidden="true">
+                      <circle cx="32" cy="22" r="13"></circle>
+                      <path d="M15 54c2-11 10-18 17-18s15 7 17 18"></path>
+                    </svg>
+                  </span>
+                </div>
+                <div class="app-sidebar-user">LIAG Admin</div>
               </div>
               <nav class="app-nav">
-                <span class="app-nav-link">Twin</span>
-                <span class="app-nav-link">Radar</span>
-                <span class="app-nav-link">Map</span>
-                <a class="app-nav-link active" href="#">Schedule</a>
-                <a class="app-nav-link" href="#">Analytics</a>
+                <span class="app-nav-link">
+                  <span class="app-nav-icon">
+                    <svg viewBox="0 0 24 24" aria-hidden="true">
+                      <path d="M6 8.5 12 5l6 3.5-6 3.5Z"></path>
+                      <path d="M6 8.5V15l6 3.5V12"></path>
+                      <path d="M18 8.5V15l-6 3.5"></path>
+                    </svg>
+                  </span>
+                  <span class="app-nav-text">
+                    <span class="app-nav-label">Twin</span>
+                  </span>
+                </span>
+                <span class="app-nav-link">
+                  <span class="app-nav-icon">
+                    <svg viewBox="0 0 24 24" aria-hidden="true">
+                      <path d="M12 20s6-5.4 6-10a6 6 0 1 0-12 0c0 4.6 6 10 6 10Z"></path>
+                      <circle cx="12" cy="10" r="1.8"></circle>
+                    </svg>
+                  </span>
+                  <span class="app-nav-text">
+                    <span class="app-nav-label">Radar</span>
+                  </span>
+                </span>
+                <span class="app-nav-link">
+                  <span class="app-nav-icon">
+                    <svg viewBox="0 0 24 24" aria-hidden="true">
+                      <path d="M4.5 6.5 9 4l6 2.5 4.5-2v13L15 20l-6-2.5-4.5 2Z"></path>
+                      <path d="M9 4v13.5"></path>
+                      <path d="M15 6.5V20"></path>
+                    </svg>
+                  </span>
+                  <span class="app-nav-text">
+                    <span class="app-nav-label">Map</span>
+                  </span>
+                </span>
+                <a class="app-nav-link active" href="#">
+                  <span class="app-nav-icon">
+                    <svg viewBox="0 0 24 24" aria-hidden="true">
+                      <rect x="4.5" y="5.5" width="15" height="14" rx="2"></rect>
+                      <path d="M8 3.8v3.4"></path>
+                      <path d="M16 3.8v3.4"></path>
+                      <path d="M4.5 9.5h15"></path>
+                    </svg>
+                  </span>
+                  <span class="app-nav-text">
+                    <span class="app-nav-label">Schedule</span>
+                  </span>
+                </a>
+                <a class="app-nav-link" href="#">
+                  <span class="app-nav-icon">
+                    <svg viewBox="0 0 24 24" aria-hidden="true">
+                      <path d="M5 18.5V12"></path>
+                      <path d="M10 18.5V8.5"></path>
+                      <path d="M15 18.5V10.5"></path>
+                      <path d="M20 18.5V5.5"></path>
+                      <path d="M3.5 18.5h18"></path>
+                    </svg>
+                  </span>
+                  <span class="app-nav-text">
+                    <span class="app-nav-label">Analytics</span>
+                  </span>
+                </a>
               </nav>
+              <div class="app-nav app-nav-bottom">
+                <span class="app-nav-link">
+                  <span class="app-nav-icon">
+                    <svg viewBox="0 0 24 24" aria-hidden="true">
+                      <circle cx="12" cy="12" r="3.2"></circle>
+                      <path d="M12 4.5v2"></path>
+                      <path d="M12 17.5v2"></path>
+                      <path d="m6.7 6.7 1.4 1.4"></path>
+                      <path d="m15.9 15.9 1.4 1.4"></path>
+                      <path d="M4.5 12h2"></path>
+                      <path d="M17.5 12h2"></path>
+                      <path d="m6.7 17.3 1.4-1.4"></path>
+                      <path d="m15.9 8.1 1.4-1.4"></path>
+                    </svg>
+                  </span>
+                  <span class="app-nav-text">
+                    <span class="app-nav-label">Settings</span>
+                  </span>
+                </span>
+                <span class="app-nav-link">
+                  <span class="app-nav-icon">
+                    <svg viewBox="0 0 24 24" aria-hidden="true">
+                      <path d="M10 6H6.5A1.5 1.5 0 0 0 5 7.5v9A1.5 1.5 0 0 0 6.5 18H10"></path>
+                      <path d="M13 8.5 18 12l-5 3.5"></path>
+                      <path d="M18 12H9"></path>
+                    </svg>
+                  </span>
+                  <span class="app-nav-text">
+                    <span class="app-nav-label">Logout</span>
+                  </span>
+                </span>
+              </div>
             </aside>
 
             <section class="app-main">
               <div class="meta-card">
-                <div class="app-status">
-                  <span class="pill status-default">Static Baseline</span>
-                  <span class="app-status-item" id="sim-time-status">Sim Time: --:--:--</span>
-                  <span class="app-status-item" id="sim-scale-status">Scale: --</span>
+                <div class="meta-stat meta-stat-primary">
+                  <div class="meta-stat-label">Sim Time</div>
+                  <div class="meta-stat-value" id="sim-time-status">--:--:--</div>
                 </div>
-
-                <div class="row control-row">
-                  <label>Airport <input id="window-airport" value="LIAG" size="6" readonly /></label>
-                  <label>Window (min) <input id="window-minutes" value="60" size="4" readonly /></label>
-                  <button type="button">Refresh</button>
+                <div class="meta-stat">
+                  <div class="meta-stat-label">Time Scale</div>
+                  <div class="meta-stat-value" id="sim-scale-status">--</div>
+                </div>
+                <div class="meta-stat">
+                  <div class="meta-stat-label">Airport</div>
+                  <div class="meta-stat-value" id="airport-status">LIAG</div>
+                </div>
+                <div class="meta-stat">
+                  <div class="meta-stat-label">Flights Count</div>
+                  <div class="meta-stat-value" id="flights-count-status">0</div>
+                </div>
+                <div class="meta-stat">
+                  <div class="meta-stat-label">Weather</div>
+                  <div class="meta-stat-value" id="weather-status">Unavailable</div>
                 </div>
               </div>
 
@@ -154,13 +263,15 @@
         const departureRows = document.getElementById("departure_rows");
         const arrivalRows = document.getElementById("arrival_rows");
         const planesRows = document.getElementById("plane_rows");
-        const airportField = document.getElementById("window-airport");
-        const windowField = document.getElementById("window-minutes");
         const simTimeStatus = document.getElementById("sim-time-status");
         const simScaleStatus = document.getElementById("sim-scale-status");
+        const airportStatus = document.getElementById("airport-status");
+        const flightsCountStatus = document.getElementById("flights-count-status");
+        const weatherStatus = document.getElementById("weather-status");
         const maxRows = 20;
         let clockAnchor = null;
         let latestFlightRows = [];
+        weatherStatus.textContent = "Unavailable";
         function makeCell(className, value) {
           const node = document.createElement("div");
           node.className = className;
@@ -280,10 +391,12 @@
               window.location.href = `/flight/${encodeURIComponent(row.id)}`;
             });
             tr.innerHTML = `
-              <td>${row.dep_time || "--:--"}</td>
-              <td>${row.arr_time || "--:--"}</td>
-              <td class="muted" data-role="delta-min" data-reference-unix-ms="${row.reference_unix_ms ?? ""}">
-                ${formatDeltaMinutes(row.reference_unix_ms)}
+              <td><span class="display-cell display-time">${row.dep_time || "--:--"}</span></td>
+              <td><span class="display-cell display-time">${row.arr_time || "--:--"}</span></td>
+              <td>
+                <span class="display-cell display-delta" data-role="delta-min" data-reference-unix-ms="${row.reference_unix_ms ?? ""}">
+                  ${formatDeltaMinutes(row.reference_unix_ms)}
+                </span>
               </td>
               <td>${row.flight || "--"}</td>
               <td>${row.route || "--"}</td>
@@ -329,8 +442,8 @@
         function renderFlightsSnapshot(windowSnapshot) {
           const rows = (windowSnapshot && windowSnapshot.rows) || [];
           latestFlightRows = rows;
-          airportField.value = windowSnapshot && windowSnapshot.airport_icao ? windowSnapshot.airport_icao : "LIAG";
-          windowField.value = windowSnapshot && windowSnapshot.window_minutes ? String(windowSnapshot.window_minutes) : "60";
+          airportStatus.textContent = windowSnapshot && windowSnapshot.airport_icao ? windowSnapshot.airport_icao : "LIAG";
+          flightsCountStatus.textContent = String(rows.length);
 
           const departures = rows.filter((row) => row.direction === "departure");
           const arrivals = rows.filter((row) => row.direction === "arrival");
@@ -354,8 +467,8 @@
           }
 
           const simUnixMs = currentSimUnixMs();
-          simTimeStatus.textContent = "Sim Time: " + formatSimTime(new Date(simUnixMs));
-          simScaleStatus.textContent = "Scale: x" + clockAnchor.timeScale.toFixed(2);
+          simTimeStatus.textContent = formatSimTime(new Date(simUnixMs));
+          simScaleStatus.textContent = "x" + clockAnchor.timeScale.toFixed(2);
         }
 
         function refreshFlightDeltas() {
