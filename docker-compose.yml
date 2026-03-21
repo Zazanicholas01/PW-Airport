@@ -108,24 +108,28 @@ services:
       - ./src/web/static:/var/www/static:ro
     restart: unless-stopped
   
-  pgadmin:
-    image: dpage/pgadmin4:latest
-    container_name: pw_airport_pgadmin
+  dbgate:
+    image: dbgate/dbgate
+    container_name: pw_airport_dbgate
     depends_on:
       postgres:
         condition: service_healthy
-    environment:
-      PGADMIN_DEFAULT_EMAIL: admin@example.com
-      PGADMIN_DEFAULT_PASSWORD: ghiaccio123
-      PGADMIN_CONFIG_SERVER_MODE: "False"
     ports:
-      - "5051:80"
+      - "5051:3000"
     volumes:
-      - pgadmin-dashboard-data:/var/lib/pgadmin
-      - ./docker/pgadmin/servers.json:/pgadmin4/servers.json:ro
-      - ./docker/pgadmin/pgpass:/pgpass:ro
+      - dbgate-data:/root/.dbgate
+    environment:
+      CONNECTIONS: airport
+
+      LABEL_airport: PW Airport Postgres
+      SERVER_airport: postgres
+      PORT_airport: 5432
+      USER_airport: airport
+      PASSWORD_airport: airport
+      DEFAULT_DATABASE_airport: Airport
+      ENGINE_airport: postgres@dbgate-plugin-postgres
     restart: unless-stopped
 
 volumes:
   postgres-dashboard-data:
-  pgadmin-dashboard-data:
+  dbgate-data:

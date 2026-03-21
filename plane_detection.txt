@@ -1,12 +1,4 @@
 
-PROXY
-
-    - Phone --> ws://<Phone_IP>:8765
-    - Proxy from Windows --> WSL
-    - netsh interface portproxy delete v4tov4 listenport=8765 listenaddress=0.0.0.0
-    - netsh interface portproxy add v4tov4 listenport=8765 listenaddress=0.0.0.0 connectport=8765 connectadress=<WSL_IP>
-    - netsh interface portproxy show all
-
 UNITY FIXES:
 
     - Disable Vulkan, Activate OpenGSL3 ??
@@ -17,7 +9,7 @@ UNITY FIXES:
     - WSL Mirrored doesn't work. 2 Options:
         --> Run Python backend in Windows
         --> Proxy from windows interface to WSL on port 8765 and open firewall to that route
-    
+
 ADB LOGCAT:
 
     - $adb = "C:\Program Files\Unity\Hub\Editor\6000.2.14f1\Editor\Data\PlaybackEngines\AndroidPlayer\SDK\platform-tools\adb.exe"
