@@ -1,0 +1,64 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>{{TITLE}} - PW Airport</title>
+    <link rel="stylesheet" href="/static/detail-page.css?v=1" />
+  </head>
+  <body>
+    <div class="page" data-detail-api-path="{{DETAIL_API_PATH}}">
+      <a class="back-link" href="/">Back to Dashboard</a>
+
+      <div class="detail-layout">
+        <aside class="detail-panel detail-visual">
+          <img class="detail-image" src="{{IMAGE_URL}}" alt="{{IMAGE_ALT}}" />
+
+          <div
+            class="detail-progress"
+            data-progress-start-unix-ms="{{PROGRESS_START_UNIX_MS}}"
+            data-progress-end-unix-ms="{{PROGRESS_END_UNIX_MS}}"
+            style="--progress-percent: {{PROGRESS_PERCENT}};"
+          >
+            <div class="detail-progress-meta">
+              <span class="js-progress-label">{{PROGRESS_LABEL}}</span>
+              <span class="js-progress-percent">{{PROGRESS_PERCENT}}%</span>
+            </div>
+
+            <div class="detail-progress-track">
+              <div class="detail-progress-bar js-progress-bar"></div>
+              <div class="detail-progress-plane js-progress-plane" aria-hidden="true">
+                <svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
+                  <defs>
+                    <linearGradient id="planeGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+                      <stop offset="0%" stop-color="#ffe29f"/>
+                      <stop offset="55%" stop-color="#ffb040"/>
+                      <stop offset="100%" stop-color="#ff8a1f"/>
+                    </linearGradient>
+                  </defs>
+                  <path fill="url(#planeGrad)" d="M58 29.5c1.7 0 3 1.3 3 3s-1.3 3-3 3H39.8l-8.5 18.8c-.5 1.1-1.7 1.7-2.9 1.4l-3.3-.8a2.5 2.5 0 0 1-1.6-3.5L29 35.5H18.7l-4.3 5.2c-.6.7-1.5 1-2.4.8l-3.5-.8c-1.7-.4-2.4-2.5-1.3-3.9l4.2-4.7H6c-1.7 0-3-1.3-3-3s1.3-3 3-3h5.4l-4.2-4.7c-1.1-1.3-.4-3.5 1.3-3.9l3.5-.8c.9-.2 1.8.1 2.4.8l4.3 5.2H29l-5.5-15.9a2.5 2.5 0 0 1 1.6-3.5l3.3-.8c1.2-.3 2.4.3 2.9 1.4l8.5 18.8H58Z"/>
+                  <path fill="rgba(255,255,255,0.22)" d="M30 12.5 35.8 25H29.9l-3.5-10.4c-.2-.7.2-1.4.9-1.6l1.7-.4c.4-.1.8.1 1 .5Z"/>
+                </svg>
+              </div>
+            </div>
+
+            <div class="detail-progress-times">
+              <span>{{PROGRESS_START_LABEL}}</span>
+              <span>{{PROGRESS_END_LABEL}}</span>
+            </div>
+          </div>
+        </aside>
+
+        <section class="detail-panel">
+          <div class="detail-copy">
+            <div class="detail-kicker">PW Airport Detail</div>
+            <h1 class="detail-title">{{TITLE}}</h1>
+            <p class="detail-subtitle">{{SUBTITLE}}</p>
+            <div class="detail-grid">{{FIELDS}}</div>
+          </div>
+        </section>
+      </div>
+    </div>
+
+    <script src="/static/detail-page.js?v=1"></script>
+  </body>
+</html>
