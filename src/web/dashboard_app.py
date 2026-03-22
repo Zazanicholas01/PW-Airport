@@ -1,10 +1,9 @@
-import asyncio
-import html
-import json
-import logging
+import asyncio, html, json, logging
 from collections import deque
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+import contextlib, time
+from dataclasses import dataclass, field
 
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, HTMLResponse
@@ -26,6 +25,308 @@ PLANE_MODELS_DIR = PLANES_DIR / "models"
 WINDOW_AIRPORT_ICAO = PERSONAL_AIRPORT
 WINDOW_DURATION = timedelta(hours=WINDOW_TIMEDELTA_HOURS)
 DASHBOARD_SESSION = sessionmaker(bind=get_engine(), future=True)
+
+DETAIL_CACHE_TTL_SECONDS = 2.0
+FLIGHT_DETAIL_CACHE = {}
+PLANE_DETAIL_CACHE = {}
+
+
+def _cache_get(cache, key) -> dict[str, object] | None:
+
+    # Retrieve cache data by key
+    cached = cache.get(key)
+    if cached is None:
+        return None
+    
+    # Separate timestamp and payload
+    cached_at, payload = cached
+
+    # Check TTL on cache to pop and cleanup
+    if time.monotonic() - cached_at > DETAIL_CACHE_TTL_SECONDS:
+        cache.pop(key, None)
+        return None
+    
+    return payload
+
+
+def _read_flight_detail_snapshot(flight_id: str) -> dict[str, object]:
+    with DASHBOARD_SESSION() as session:
+        flight = session.get(models.Flight, flight_id)
+        if flight is None:
+            raise HTTPException(status_code=404, detail="Flight not found")
+
+        airplane_id = getattr(flight, "airplane_id", None)
+        airplane = session.get(models.Airplane, airplane_id) if airplane_id else None
+
+        dep = getattr(flight, "departure_time", None)
+        arr = getattr(flight, "arrival_time", None)
+
+        dep_label = dep.astimezone().strftime("%Y-%m-%d %H:%M:%S") if dep else "--"
+        arr_label = arr.astimezone().strftime("%Y-%m-%d %H:%M:%S") if arr else "--"
+
+        model = getattr(airplane, "model", None) if airplane else None
+        progress_percent, progress_label = _flight_progress(
+            now_utc=_current_sim_now_utc(),
+            departure_time=dep,
+            arrival_time=arr,
+        )
+
+        return {
+            "title": str(getattr(flight, "icao", None) or flight_id),
+            "subtitle": f"{getattr(flight, 'origin', '--')} -> {getattr(flight, 'destination', '--')}",
+            "fields": [
+                ("Flight ID", str(flight_id), "flight_id"),
+                ("Status", str(getattr(flight, "status", "--") or "--"), "status"),
+                ("Type", str(getattr(flight, "tipo", "--") or "--"), "type"),
+                ("Origin", str(getattr(flight, "origin", "--") or "--"), "origin"),
+                ("Destination", str(getattr(flight, "destination", "--") or "--"), "destination"),
+                ("Departure", dep_label, "departure"),
+                ("Arrival", arr_label, "arrival"),
+                ("Airplane", str(airplane_id or "--"), "airplane"),
+                ("Plane Model", str(model or "--"), "plane_model"),
+                ("Airline", str(getattr(flight, "airline_code", "--") or "--"), "airline"),
+            ],
+            "image_url": _plane_image_url(model),
+            "image_alt": str(model or "Default plane"),
+            "progress_percent": progress_percent,
+            "progress_label": progress_label,
+            "progress_start_label": _progress_time_label(dep),
+            "progress_end_label": _progress_time_label(arr),
+            "progress_start_unix_ms": int(dep.timestamp() * 1000) if dep else None,
+            "progress_end_unix_ms": int(arr.timestamp() * 1000) if arr else None,
+            "detail_api_path": f"/api/flight/{flight_id}",
+        }
+    
+
+def _get_flight_detail_snapshot_cached(flight_id: str) -> dict[str, object]:
+    cached = _cache_get(FLIGHT_DETAIL_CACHE, flight_id)
+    if cached is not None:
+        return cached
+
+    snapshot = _read_flight_detail_snapshot(flight_id)
+    FLIGHT_DETAIL_CACHE[flight_id] = (time.monotonic(), snapshot)
+    return snapshot
+
+
+def _read_plane_detail_snapshot(airplane_id: str) -> dict[str, object]:
+    with DASHBOARD_SESSION() as session:
+        airplane = session.get(models.Airplane, airplane_id)
+        if airplane is None:
+            raise HTTPException(status_code=404, detail="Plane not found")
+
+        stand_id = session.execute(
+            select(models.Stand.id).where(models.Stand.airplane_id == airplane_id)
+        ).scalar_one_or_none()
+
+        route_id = getattr(airplane, "route_id", None)
+        path = session.get(models.Path, route_id) if route_id is not None else None
+
+        latest_flight = session.execute(
+            select(models.Flight)
+            .where(models.Flight.airplane_id == airplane_id)
+            .order_by(models.Flight.departure_time.desc(), models.Flight.arrival_time.desc())
+        ).scalars().first()
+
+        dep = getattr(latest_flight, "departure_time", None) if latest_flight else None
+        arr = getattr(latest_flight, "arrival_time", None) if latest_flight else None
+
+        progress_percent, progress_label = _flight_progress(
+            now_utc=_current_sim_now_utc(),
+            departure_time=dep,
+            arrival_time=arr,
+        )
+
+        return {
+            "title": str(airplane_id),
+            "subtitle": f"{getattr(airplane, 'model', '--')} / {getattr(airplane, 'status', '--')}",
+            "fields": [
+                ("Airplane ID", str(airplane_id), "airplane_id"),
+                ("Status", str(getattr(airplane, "status", "--") or "--"), "status"),
+                ("Model", str(getattr(airplane, "model", "--") or "--"), "model"),
+                ("Type", str(getattr(airplane, "type", "--") or "--"), "type"),
+                ("Range", str(getattr(airplane, "range", "--") or "--"), "range"),
+                ("Speed", f"{float(getattr(airplane, 'speed', 0.0)):.2f}", "speed"),
+                ("Stand", str(stand_id or "--"), "stand"),
+                ("Route", _path_endpoints_label(path), "route"),
+                ("Route ID", str(route_id or "--"), "route_id"),
+                ("Flight", str(getattr(latest_flight, 'icao', None) or '--'), "flight"),
+            ],
+            "image_url": _plane_image_url(getattr(airplane, "model", None)),
+            "image_alt": str(getattr(airplane, "model", "Default plane")),
+            "progress_percent": progress_percent,
+            "progress_label": progress_label,
+            "progress_start_label": _progress_time_label(dep),
+            "progress_end_label": _progress_time_label(arr),
+            "progress_start_unix_ms": int(dep.timestamp() * 1000) if dep else None,
+            "progress_end_unix_ms": int(arr.timestamp() * 1000) if arr else None,
+            "detail_api_path": f"/api/plane/{airplane_id}",
+        }
+
+
+
+def _get_plane_detail_snapshot_cached(airplane_id: str) -> dict[str, object]:
+    cached = _cache_get(PLANE_DETAIL_CACHE, airplane_id)
+    if cached is not None:
+        return cached
+
+    snapshot = _read_plane_detail_snapshot(airplane_id)
+    PLANE_DETAIL_CACHE[airplane_id] = (time.monotonic(), snapshot)
+    return snapshot
+
+
+def _detail_page_from_snapshot(snapshot: dict[str, object]) -> HTMLResponse:
+    return _detail_page(
+        title=str(snapshot["title"]),
+        subtitle=str(snapshot["subtitle"]),
+        fields=list(snapshot["fields"]),
+        image_url=str(snapshot["image_url"]),
+        image_alt=str(snapshot["image_alt"]),
+        progress_percent=int(snapshot["progress_percent"]),
+        progress_label=str(snapshot["progress_label"]),
+        progress_start_label=str(snapshot["progress_start_label"]),
+        progress_end_label=str(snapshot["progress_end_label"]),
+        progress_start_unix_ms=snapshot["progress_start_unix_ms"],
+        progress_end_unix_ms=snapshot["progress_end_unix_ms"],
+        detail_api_path=str(snapshot.get("detail_api_path") or ""),
+    )
+
+
+
+
+@dataclass
+class DashboardState:
+    latest_events: list[dict[str, str]] = field(default_factory=list)
+    latest_clock: dict[str, float | int | str] | None = None
+    latest_window: dict[str, object] = field(default_factory=lambda: {"rows": []})
+    latest_planes: dict[str, object] = field(default_factory=lambda: {"rows": []})
+
+    events_clients: set[WebSocket] = field(default_factory=set)
+    clock_clients: set[WebSocket] = field(default_factory=set)
+    window_clients: set[WebSocket] = field(default_factory=set)
+    planes_clients: set[WebSocket] = field(default_factory=set)
+
+    events_offset: int = 0
+    clock_offset: int = 0
+
+    events_task: asyncio.Task | None = None
+    snapshots_task: asyncio.Task | None = None
+
+
+dashboard_state = DashboardState()
+
+
+async def _broadcast_json(clients: set[WebSocket], payload) -> None:
+
+    stale: list[WebSocket] = []
+
+    for client in list(clients):
+        try:
+            await client.send_json(payload)
+        except Exception:
+            stale.append(client)
+    
+    for client in stale:
+        clients.discard(client)
+
+
+def _snapshot_signature(snapshot) -> str:
+    return json.dumps(snapshot, sort_keys=True, default=str)
+
+
+async def _events_clock_loop() -> None:
+
+    if EVENTS_LOG_FILE.exists():
+        dashboard_state.latest_events = _read_recent_events(limit=20)
+        dashboard_state.latest_clock = _read_latest_clock_sync()
+        dashboard_state.events_offset = EVENTS_LOG_FILE.stat().st_size
+        dashboard_state.clock_offset = dashboard_state.events_offset
+    
+    last_clock_sync_id = (
+        int(dashboard_state.latest_clock["sync_id"])
+        if dashboard_state.latest_clock and dashboard_state.latest_clock.get("sync_id") is not None
+        else None
+    )
+
+    while True:
+        try:
+
+            # Wait for events log file to exist
+            if not EVENTS_LOG_FILE.exists():
+                await asyncio.sleep(1.0)
+                continue
+
+            file_size = EVENTS_LOG_FILE.stat().st_size
+            if file_size < dashboard_state.events_offset:
+                dashboard_state.events_offset = 0
+                dashboard_state.clock_offset = 0
+            
+            if file_size > dashboard_state.events_offset:
+                new_events, new_offset = _read_events_since(dashboard_state.events_offset)
+                dashboard_state.events_offset = new_offset
+
+                if new_events:
+                    dashboard_state.latest_events = (dashboard_state.latest_events + new_events)[-20:]
+                    await _broadcast_json(
+                        dashboard_state.events_clients,
+                        {"kind": "append", "events": new_events},
+                    )
+            
+            if file_size > dashboard_state.clock_offset:
+                new_syncs, new_offset = _read_clock_syncs_since(dashboard_state.clock_offset)
+                dashboard_state.clock_offset = new_offset
+
+                for sync in new_syncs:
+                    sync_id = int(sync["sync_id"])
+                    if last_clock_sync_id == sync_id:
+                        continue
+
+                    last_clock_sync_id = sync_id
+                    dashboard_state.latest_clock = sync
+                    await _broadcast_json(
+                        dashboard_state.clock_clients,
+                        {"kind": "sync", "clock": sync},
+                    )
+            
+            await asyncio.sleep(0.5)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logging.exception("[dashboard] events/clock loop failed")
+            await asyncio.sleep(1.0)
+
+
+async def _snapshot_loop() -> None:
+    last_window_sig = ""
+    last_planes_sig = ""
+
+    while True:
+        try:
+            window_snapshot = _read_window_flights_snapshot()
+            window_sig = _snapshot_signature(window_snapshot)
+            if window_sig != last_window_sig:
+                last_window_sig = window_sig
+                dashboard_state.latest_window = window_snapshot
+                await _broadcast_json(
+                    dashboard_state.window_clients,
+                    {"kind": "snapshot", "window": window_snapshot},
+                )
+            
+            planes_snapshot = _read_planes_on_ground_snapshot()
+            planes_sig = _snapshot_signature(planes_snapshot)
+            if planes_sig != last_planes_sig:
+                last_planes_sig = planes_sig
+                dashboard_state.latest_planes = planes_snapshot
+                await _broadcast_json(
+                    dashboard_state.planes_clients,
+                    {"kind": "snapshot", "planes": planes_snapshot},
+                )
+            
+            await asyncio.sleep(2.0)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logging.exception("[dashboard] Snapshot loop failed")
+            await asyncio.sleep(2.0)
 
 
 def _format_log_timestamp(raw_ts: str | None) -> str:
@@ -321,13 +622,15 @@ def _plane_image_url(model: str | None) -> str:
     return "/static/planes/_default.png"
 
 
-def _detail_field(label: str, value: str) -> str:
+def _detail_field(label: str, value: str, field_key: str | None = None) -> str:
+    attr = f' data-field-key="{html.escape(field_key)}"' if field_key else ""
     return (
-        '<div class="detail-field">'
+        f'<div class="detail-field"{attr}>'
         f'<div class="detail-label">{html.escape(label)}</div>'
         f'<div class="detail-value">{html.escape(value)}</div>'
         "</div>"
     )
+
 
 
 def _flight_progress(*, now_utc: datetime, departure_time: datetime | None, arrival_time: datetime | None) -> tuple[int, str]:
@@ -360,7 +663,7 @@ def _progress_time_label(value: datetime | None) -> str:
 def _detail_page(
     title: str,
     subtitle: str,
-    fields: list[tuple[str, str]],
+    fields: list[tuple[str, str] | tuple[str, str, str]],
     image_url: str,
     image_alt: str,
     *,
@@ -368,8 +671,20 @@ def _detail_page(
     progress_label: str = "Tracking unavailable",
     progress_start_label: str = "--:--",
     progress_end_label: str = "--:--",
+    progress_start_unix_ms: int | None = None,
+    progress_end_unix_ms: int | None = None,
+    detail_api_path: str | None = None,
 ) -> HTMLResponse:
-    fields_markup = "".join(_detail_field(label, value) for label, value in fields)
+    
+    rendered_fields = []
+    for field in fields:
+        if len(field) == 3:
+            label, value, field_key = field
+            rendered_fields.append(_detail_field(label, value, field_key))
+        else:
+            label, value = field
+            rendered_fields.append(_detail_field(label, value))
+    fields_markup = "".join(rendered_fields)
     return HTMLResponse(
         f"""<!doctype html>
 <html>
@@ -496,6 +811,7 @@ def _detail_page(
         filter: drop-shadow(0 24px 38px rgba(0, 0, 0, 0.28));
       }}
       .detail-progress {{
+        --progress-percent: {max(0, min(100, progress_percent))};
         position: relative;
         width: min(92%, 520px);
         margin-top: 24px;
@@ -521,15 +837,16 @@ def _detail_page(
       }}
       .detail-progress-bar {{
         height: 100%;
-        width: {max(0, min(100, progress_percent))}%;
+        width: calc(var(--progress-percent) * 1%);
         border-radius: inherit;
         background: linear-gradient(90deg, #ff9f1c, #ffd089);
         box-shadow: 0 0 18px rgba(255, 176, 64, 0.28);
       }}
+
       .detail-progress-plane {{
         position: absolute;
         top: 50%;
-        left: {max(0, min(100, progress_percent))}%;
+        left: calc(var(--progress-percent) * 1%);
         width: 30px;
         height: 30px;
         transform: translate(-50%, -58%);
@@ -561,19 +878,23 @@ def _detail_page(
     </style>
   </head>
   <body>
-    <div class="page">
+    <div class="page" data-detail-api-path="{html.escape(detail_api_path or '')}">
       <a class="back-link" href="/">← Back to Dashboard</a>
       <div class="detail-layout">
         <aside class="detail-panel detail-visual">
           <img class="detail-image" src="{html.escape(image_url)}" alt="{html.escape(image_alt)}" />
-          <div class="detail-progress">
+          <div
+            class="detail-progress"
+            data-progress-start-unix-ms="{'' if progress_start_unix_ms is None else progress_start_unix_ms}"
+            data-progress-end-unix-ms="{'' if progress_end_unix_ms is None else progress_end_unix_ms}"
+          >
             <div class="detail-progress-meta">
-              <span>{html.escape(progress_label)}</span>
-              <span>{max(0, min(100, progress_percent))}%</span>
+              <span class="js-progress-label">{html.escape(progress_label)}</span>
+              <span class="js-progress-percent">{max(0, min(100, progress_percent))}%</span>
             </div>
             <div class="detail-progress-track">
-              <div class="detail-progress-bar"></div>
-              <div class="detail-progress-plane" aria-hidden="true">
+              <div class="detail-progress-bar js-progress-bar"></div>
+              <div class="detail-progress-plane js-progress-plane" aria-hidden="true">
                 <svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
                   <defs>
                     <linearGradient id="planeGrad" x1="0%" y1="0%" x2="100%" y2="100%">
@@ -603,98 +924,180 @@ def _detail_page(
         </section>
       </div>
     </div>
+      <script>
+      (function () {{
+        const progressRoot = document.querySelector(".detail-progress");
+        if (!progressRoot) return;
+
+        const startRaw = progressRoot.dataset.progressStartUnixMs;
+        const endRaw = progressRoot.dataset.progressEndUnixMs;
+        const labelEl = progressRoot.querySelector(".js-progress-label");
+        const percentEl = progressRoot.querySelector(".js-progress-percent");
+
+        const startMs = startRaw ? Number(startRaw) : null;
+        const endMs = endRaw ? Number(endRaw) : null;
+
+        if (!Number.isFinite(startMs) || !Number.isFinite(endMs) || endMs <= startMs) {{
+          return;
+        }}
+
+        let latestClock = null;
+
+        function computeProgress(nowMs) {{
+          const total = Math.max(1, endMs - startMs);
+          const elapsed = nowMs - startMs;
+          const percent = Math.max(0, Math.min(100, Math.round((elapsed / total) * 100)));
+
+          let label = "Live Tracking";
+          if (nowMs < startMs) {{
+            label = "Scheduled";
+          }} else if (nowMs > endMs) {{
+            label = "Arrived";
+          }}
+
+          return {{ percent, label }};
+        }}
+
+        function getNowMs() {{
+          if (!latestClock) {{
+            return Date.now();
+          }}
+
+          const elapsedRealMs = Math.max(0, Date.now() - latestClock.receivedAtMs);
+          return latestClock.simUnixMs + (elapsedRealMs * latestClock.timeScale);
+        }}
+
+        function renderProgress() {{
+          const result = computeProgress(getNowMs());
+          progressRoot.style.setProperty("--progress-percent", String(result.percent));
+
+          if (labelEl) {{
+            labelEl.textContent = result.label;
+          }}
+
+          if (percentEl) {{
+            percentEl.textContent = String(result.percent) + "%";
+          }}
+        }}
+
+        const scheme = window.location.protocol === "https:" ? "wss" : "ws";
+        const socketUrl = scheme + "://" + window.location.host + "/ws/clock";
+        const socket = new WebSocket(socketUrl);
+
+        socket.addEventListener("message", function (event) {{
+          try {{
+            const payload = JSON.parse(event.data);
+            if (payload.kind !== "sync" || !payload.clock) {{
+              return;
+            }}
+
+            latestClock = {{
+              simUnixMs: Number(payload.clock.sim_unix_ms),
+              timeScale: Number(payload.clock.time_scale ?? 1),
+              receivedAtMs: Date.now(),
+            }};
+
+            renderProgress();
+          }} catch (_) {{
+          }}
+        }});
+
+        socket.addEventListener("open", renderProgress);
+        window.setInterval(renderProgress, 250);
+        renderProgress();
+      }})();
+    </script>
+        <script>
+      (function () {{
+        const pageRoot = document.querySelector(".page");
+        if (!pageRoot) return;
+
+        const apiPath = pageRoot.dataset.detailApiPath;
+        if (!apiPath) return;
+
+        const titleEl = document.querySelector(".detail-title");
+        const subtitleEl = document.querySelector(".detail-subtitle");
+        const imageEl = document.querySelector(".detail-image");
+
+        function fieldMap() {{
+          const map = new Map();
+          document.querySelectorAll(".detail-field[data-field-key]").forEach((node) => {{
+            const key = node.dataset.fieldKey;
+            const valueNode = node.querySelector(".detail-value");
+            if (key && valueNode) {{
+              map.set(key, valueNode);
+            }}
+          }});
+          return map;
+        }}
+
+        const fields = fieldMap();
+
+        function applySnapshot(snapshot) {{
+          if (!snapshot) return;
+
+          if (titleEl && snapshot.title) {{
+            titleEl.textContent = snapshot.title;
+          }}
+
+          if (subtitleEl && snapshot.subtitle) {{
+            subtitleEl.textContent = snapshot.subtitle;
+          }}
+
+          if (imageEl && snapshot.image_url) {{
+            imageEl.src = snapshot.image_url;
+          }}
+
+          if (imageEl && snapshot.image_alt) {{
+            imageEl.alt = snapshot.image_alt;
+          }}
+
+          const incomingFields = Array.isArray(snapshot.fields) ? snapshot.fields : [];
+          incomingFields.forEach((field) => {{
+            if (!Array.isArray(field) || field.length < 3) return;
+            const key = field[2];
+            const value = field[1];
+            const node = fields.get(key);
+            if (node) {{
+              node.textContent = value ?? "";
+            }}
+          }});
+        }}
+
+        async function refreshDetail() {{
+          try {{
+            const response = await fetch(apiPath, {{
+              method: "GET",
+              headers: {{ "Accept": "application/json" }},
+              cache: "no-store",
+            }});
+
+            if (!response.ok) return;
+
+            const snapshot = await response.json();
+            applySnapshot(snapshot);
+          }} catch (_) {{
+          }}
+        }}
+
+        window.setInterval(refreshDetail, 3000);
+      }})();
+    </script>
+
+
   </body>
 </html>"""
     )
 
 
 def flight_detail(flight_id: str) -> HTMLResponse:
-    with DASHBOARD_SESSION() as session:
-        flight = session.get(models.Flight, flight_id)
-        if flight is None:
-            raise HTTPException(status_code=404, detail="Flight not found")
-
-        airplane_id = getattr(flight, "airplane_id", None)
-        airplane = session.get(models.Airplane, airplane_id) if airplane_id else None
-        dep = getattr(flight, "departure_time", None)
-        arr = getattr(flight, "arrival_time", None)
-        dep_label = dep.astimezone().strftime("%Y-%m-%d %H:%M:%S") if dep else "--"
-        arr_label = arr.astimezone().strftime("%Y-%m-%d %H:%M:%S") if arr else "--"
-        model = getattr(airplane, "model", None) if airplane else None
-        progress_percent, progress_label = _flight_progress(
-            now_utc=_current_sim_now_utc(),
-            departure_time=dep,
-            arrival_time=arr,
-        )
-
-        return _detail_page(
-            title=str(getattr(flight, "icao", None) or flight_id),
-            subtitle=f"{getattr(flight, 'origin', '--')} -> {getattr(flight, 'destination', '--')}",
-            fields=[
-                ("Flight ID", str(flight_id)),
-                ("Status", str(getattr(flight, "status", "--") or "--")),
-                ("Type", str(getattr(flight, "tipo", "--") or "--")),
-                ("Origin", str(getattr(flight, "origin", "--") or "--")),
-                ("Destination", str(getattr(flight, "destination", "--") or "--")),
-                ("Departure", dep_label),
-                ("Arrival", arr_label),
-                ("Airplane", str(airplane_id or "--")),
-                ("Plane Model", str(model or "--")),
-                ("Airline", str(getattr(flight, "airline_code", "--") or "--")),
-            ],
-            image_url=_plane_image_url(model),
-            image_alt=str(model or "Default plane"),
-            progress_percent=progress_percent,
-            progress_label=progress_label,
-            progress_start_label=_progress_time_label(dep),
-            progress_end_label=_progress_time_label(arr),
-        )
+    snapshot = _get_flight_detail_snapshot_cached(flight_id)
+    return _detail_page_from_snapshot(snapshot)
 
 
 def plane_detail(airplane_id: str) -> HTMLResponse:
-    with DASHBOARD_SESSION() as session:
-        airplane = session.get(models.Airplane, airplane_id)
-        if airplane is None:
-            raise HTTPException(status_code=404, detail="Plane not found")
-
-        stand_id = session.execute(
-            select(models.Stand.id).where(models.Stand.airplane_id == airplane_id)
-        ).scalar_one_or_none()
-        route_id = getattr(airplane, "route_id", None)
-        path = session.get(models.Path, route_id) if route_id is not None else None
-        latest_flight = session.execute(
-            select(models.Flight)
-            .where(models.Flight.airplane_id == airplane_id)
-            .order_by(models.Flight.departure_time.desc(), models.Flight.arrival_time.desc())
-        ).scalars().first()
-        progress_percent, progress_label = _flight_progress(
-            now_utc=_current_sim_now_utc(),
-            departure_time=getattr(latest_flight, "departure_time", None) if latest_flight else None,
-            arrival_time=getattr(latest_flight, "arrival_time", None) if latest_flight else None,
-        )
-
-        return _detail_page(
-            title=str(airplane_id),
-            subtitle=f"{getattr(airplane, 'model', '--')} / {getattr(airplane, 'status', '--')}",
-            fields=[
-                ("Airplane ID", str(airplane_id)),
-                ("Status", str(getattr(airplane, "status", "--") or "--")),
-                ("Model", str(getattr(airplane, "model", "--") or "--")),
-                ("Type", str(getattr(airplane, "type", "--") or "--")),
-                ("Range", str(getattr(airplane, "range", "--") or "--")),
-                ("Speed", f"{float(getattr(airplane, 'speed', 0.0)):.2f}"),
-                ("Stand", str(stand_id or "--")),
-                ("Route", _path_endpoints_label(path)),
-                ("Route ID", str(route_id or "--")),
-                ("Flight", str(getattr(latest_flight, 'icao', None) or '--')),
-            ],
-            image_url=_plane_image_url(getattr(airplane, "model", None)),
-            image_alt=str(getattr(airplane, "model", "Default plane")),
-            progress_percent=progress_percent,
-            progress_label=progress_label,
-            progress_start_label=_progress_time_label(getattr(latest_flight, "departure_time", None) if latest_flight else None),
-            progress_end_label=_progress_time_label(getattr(latest_flight, "arrival_time", None) if latest_flight else None),
-        )
+    snapshot = _get_plane_detail_snapshot_cached(airplane_id)
+    return _detail_page_from_snapshot(snapshot)
 
 
 def create_app() -> FastAPI:
@@ -718,82 +1121,95 @@ app.get("/plane/{airplane_id}")(plane_detail)
 @app.websocket("/ws/events")
 async def events_ws(websocket: WebSocket) -> None:
     await websocket.accept()
-    await websocket.send_json({"kind": "snapshot", "events": _read_recent_events(limit=20)})
-
-    offset = EVENTS_LOG_FILE.stat().st_size if EVENTS_LOG_FILE.exists() else 0
+    dashboard_state.events_clients.add(websocket)
 
     try:
+        await websocket.send_json({"kind": "snapshot", "events": dashboard_state.latest_events})
         while True:
-            await asyncio.sleep(1)
-
-            if not EVENTS_LOG_FILE.exists():
-                offset = 0
-                continue
-
-            file_size = EVENTS_LOG_FILE.stat().st_size
-            if file_size < offset:
-                offset = 0
-
-            if file_size == offset:
-                continue
-
-            events, offset = _read_events_since(offset)
-            if events:
-                await websocket.send_json({"kind": "append", "events": events})
+            await websocket.receive_text()
     except WebSocketDisconnect:
-        return
+        pass
+    finally:
+        dashboard_state.events_clients.discard(websocket)
 
 
 @app.websocket("/ws/clock")
 async def clock_ws(websocket: WebSocket) -> None:
     await websocket.accept()
-    latest = _read_latest_clock_sync()
-    if latest:
-        await websocket.send_json({"kind": "sync", "clock": latest})
-
-    offset = EVENTS_LOG_FILE.stat().st_size if EVENTS_LOG_FILE.exists() else 0
+    dashboard_state.clock_clients.add(websocket)
 
     try:
+        if dashboard_state.latest_clock:
+            await websocket.send_json({"kind": "sync", "clock": dashboard_state.latest_clock})
         while True:
-            await asyncio.sleep(0.5)
-
-            if not EVENTS_LOG_FILE.exists():
-                offset = 0
-                continue
-
-            file_size = EVENTS_LOG_FILE.stat().st_size
-            if file_size < offset:
-                offset = 0
-
-            if file_size == offset:
-                continue
-
-            syncs, offset = _read_clock_syncs_since(offset)
-            for sync in syncs:
-                await websocket.send_json({"kind": "sync", "clock": sync})
+            await websocket.receive_text()
     except WebSocketDisconnect:
-        return
+        pass
+    finally:
+        dashboard_state.clock_clients.discard(websocket)
 
 
 @app.websocket("/ws/window-flights")
 async def window_flights_ws(websocket: WebSocket) -> None:
     await websocket.accept()
+    dashboard_state.window_clients.add(websocket)
 
     try:
+        await websocket.send_json({"kind": "snapshot", "window": dashboard_state.latest_window})
         while True:
-            await websocket.send_json({"kind": "snapshot", "window": _read_window_flights_snapshot()})
-            await asyncio.sleep(2)
+            await websocket.receive_text()
     except WebSocketDisconnect:
-        return
+        pass
+    finally:
+        dashboard_state.window_clients.discard(websocket)
 
 
 @app.websocket("/ws/planes-ground")
 async def planes_ground_ws(websocket: WebSocket) -> None:
     await websocket.accept()
+    dashboard_state.planes_clients.add(websocket)
 
     try:
+        await websocket.send_json({"kind": "snapshot", "planes": dashboard_state.latest_planes})
         while True:
-            await websocket.send_json({"kind": "snapshot", "planes": _read_planes_on_ground_snapshot()})
-            await asyncio.sleep(2)
+            await websocket.receive_text()
     except WebSocketDisconnect:
-        return
+        pass
+    finally:
+        dashboard_state.planes_clients.discard(websocket)
+
+@app.get("/api/status")
+def status() -> dict[str, object]:
+    return {
+        "database_ok": True,
+        "events_log_exists": EVENTS_LOG_FILE.exists(),
+        "events_log_path": str(EVENTS_LOG_FILE),
+        "latest_clock": _read_latest_clock_sync(),
+        "window_rows": len(_read_window_flights_snapshot()["rows"]),
+        "plane_rows": len(_read_planes_on_ground_snapshot()["rows"]),
+    }
+
+@app.on_event("startup")
+async def startup_dashboard_state() -> None:
+    dashboard_state.events_task = asyncio.create_task(_events_clock_loop())
+    dashboard_state.snapshots_task = asyncio.create_task(_snapshot_loop())
+
+
+@app.on_event("shutdown")
+async def shutdown_dashboard_state() -> None:
+    for task in (dashboard_state.events_task, dashboard_state.snapshots_task):
+        if task is None:
+            continue
+        task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await task
+
+
+@app.get("/api/flight/{flight_id}")
+def flight_detail_api(flight_id: str) -> dict[str, object]:
+    return _get_flight_detail_snapshot_cached(flight_id)
+
+
+@app.get("/api/plane/{airplane_id}")
+def plane_detail_api(airplane_id: str) -> dict[str, object]:
+    return _get_plane_detail_snapshot_cached(airplane_id)

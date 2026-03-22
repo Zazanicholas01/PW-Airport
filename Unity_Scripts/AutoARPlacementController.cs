@@ -6,6 +6,7 @@ using UnityEngine.Events;
 using UnityEngine.InputSystem;
 using UnityEngine.XR.ARFoundation;
 using UnityEngine.XR.ARSubsystems;
+using System.Threading.Tasks.Dataflow;
 
 public class AutoARPlacementController : MonoBehaviour
 {
@@ -24,6 +25,11 @@ public class AutoARPlacementController : MonoBehaviour
     [SerializeField] private bool keepPlaneTrackingAfterPlacement = true;
     [SerializeField] private bool spawnDebugMarker = false;
 
+    [Header("Editor Debug")]
+    [SerializeField] private Transform debugPlacementPose;
+    [SerializeField] private GameObject debugSimulationButton;
+    [SerializeField] private bool enableDebugSimulationInEditor = true;
+
     [Header("Optional Debug")]
     [SerializeField] private bool logDebug = true;
 
@@ -32,6 +38,7 @@ public class AutoARPlacementController : MonoBehaviour
     public UnityEvent OnPlacementReset;
 
     private ARAnchor currentAnchor;
+    private TransformBlock fallbackAnchor;
     private bool placed;
     private bool placementPromptLogged;
 
@@ -59,6 +66,10 @@ public class AutoARPlacementController : MonoBehaviour
 
         if (airportRoot != null)
             airportRoot.gameObject.SetActive(false);
+
+        bool showDebugButton = enableDebugSimulationInEditor && ApplicationException.isEditor;
+        if (debugSimulationButton != null)
+            debugSimulationButton.SetActive(showDebugButton);
     }
 
     private void Update()
@@ -313,6 +324,12 @@ public class AutoARPlacementController : MonoBehaviour
             currentAnchor = null;
         }
 
+        if (fallbackAnchor != null)
+        {
+            Destroy(fallbackAnchor.gameObject);
+            fallbackAnchor = null;
+        }
+
         placed = false;
         placementPromptLogged = false;
 
@@ -320,6 +337,9 @@ public class AutoARPlacementController : MonoBehaviour
 
         if (logDebug)
             Debug.Log("[AutoARPlacement] Placement reset.");
+        
+        if (debugSimulationButton != null)
+            debugSimulationButton.SetActive(enableDebugSimulationInEditor && Application.isEditor);
 
         OnPlacementReset?.Invoke();
     }
@@ -352,4 +372,53 @@ public class AutoARPlacementController : MonoBehaviour
         for (int i = 0; i < root.childCount; i++)
             SetHierarchyActive(root.GetChild(i), isActive);
     }
+
+        public void StartDebugSimulation()
+    {
+        if (!Application.isEditor || !enableDebugSimulationInEditor)
+            return;
+
+        if (placed)
+        {
+            if (logDebug)
+                Debug.Log("[AutoARPlacement] Debug simulation ignored because placement already exists.");
+            return;
+        }
+
+        if (debugPlacementPose == null)
+        {
+            Debug.LogError("[AutoARPlacement] Debug simulation requires a debugPlacementPose.");
+            return;
+        }
+
+        StartCoroutine(PlaceAtDebugPose());
+    }
+
+    private IEnumerator PlaceAtDebugPose()
+    {
+        placed = true;
+        OnPlacementStarted?.Invoke();
+
+        var anchorObject = new GameObject("EditorDebugAnchor");
+        anchorObject.transform.SetPositionAndRotation(
+            debugPlacementPose.position,
+            debugPlacementPose.rotation
+        );
+
+        fallbackAnchor = anchorObject.transform;
+
+        airportRoot.SetParent(fallbackAnchor, worldPositionStays: false);
+        airportRoot.localPosition = Vector3.up * placementHeightOffset;
+        airportRoot.localRotation = Quaternion.identity;
+        airportRoot.localScale = Vector3.one * airportScale;
+
+        SetHierarchyActive(airportRoot, true);
+
+        if (logDebug)
+            Debug.Log("[AutoARPlacement] Debug simulation placement completed.");
+
+        OnPlacementCompleted?.Invoke();
+        yield return null;
+    }
+
 }

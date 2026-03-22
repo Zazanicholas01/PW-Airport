@@ -178,4 +178,12 @@ public class AirportSimulationBootstrap : MonoBehaviour {
             Debug.LogError($"[WS] Connect failed: {ex.GetType().Name} | {ex.Message}");
         }
     }
+
+    public void StartEditorDebugSimulation()
+    {
+        if (placementController == null)
+            placementController = FindObjectOfType<AutoARPlacementController>();
+
+        placementController?.StartDebugSimulation();
+    }
 }

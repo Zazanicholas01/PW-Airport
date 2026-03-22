@@ -4,3 +4,4 @@ data/
 .venv/
 .venv-dashboard/pyvenv.cfg
 src/__init__.py
+.venv-dashboard/pyvenv.cfg
