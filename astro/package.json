@@ -3,19 +3,12 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "sync-docs": "node ./scripts/sync-docs.mjs",
-    "dev": "concurrently \"bun run dev:watch-docs\" \"bun run dev:astro\"",
-    "dev:astro": "astro dev --host 0.0.0.0 --port 4321",
-    "dev:watch-docs": "chokidar \"$DOCS_WATCH_DIR/**/*\" -c \"bun run sync-docs\" --initial",
-    "build": "bun run sync-docs && astro build",
+    "dev": "astro dev --host 0.0.0.0 --port 4321",
+    "build": "astro build",
     "preview": "astro preview --host 0.0.0.0 --port 4321"
   },
   "dependencies": {
     "astro": "^5.7.0",
     "@astrojs/mdx": "^4.3.0"
-  },
-  "devDependencies": {
-    "chokidar-cli": "^3.0.0",
-    "concurrently": "^9.1.2"
   }
 }

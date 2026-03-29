@@ -1,0 +1,373 @@
+import DocsSteps from '../DocsSteps.astro';
+import TransportCodeBlock from './TransportCodeBlock.astro';
+
+export const wsServerTimeline = [
+  {
+    title: 'Shared Runtime Bootstrap',
+    body: 'Transport bootstraps setup/runtime handlers, clock state, ActiveUnityBus, ServerRuntime, and the long-lived background tasks once for the process.',
+  },
+  {
+    title: 'Reconnect-Safe Bus Proxy',
+    body: 'Global tasks send through a stable proxy bus instead of a per-connection socket object, so reconnect does not require rebuilding the runtime.',
+  },
+  {
+    title: 'Long-Lived Runtime State',
+    body: 'The runtime object carries the shared buses, clock primitives, task handles, and reconnect flags that survive across websocket sessions.',
+  },
+  {
+    title: 'WebSocket Handler Exposure',
+    body: 'The websocket server accepts connections and forwards each one into echo_handler(...), keeping connection attachment separate from bootstrap.',
+  },
+  {
+    title: 'Client Attachment',
+    body: 'A fresh WsMessageBus is started for the websocket, installed as the active bus, and wrapped in a SessionContext for this attachment.',
+  },
+  {
+    title: 'Inbound Message Routing',
+    body: 'Incoming messages are intercepted for clock control first, then forwarded to setup_bus or runtime_bus depending on setup completion state.',
+  },
+  {
+    title: 'Disconnect Cleanup',
+    body: 'Dispatch is cancelled, the active bus is cleared if needed, simulation is paused, and the websocket bus is stopped cleanly.',
+  },
+];
+
+## `ws_server.py`
+
+This page follows the file as a runtime timeline, not as isolated definitions. Read it top to bottom as: bootstrap once, accept a client, attach the client to the shared runtime, then keep routing inbound messages until disconnect.
+
+## Call Timeline
+
+<DocsSteps items={wsServerTimeline} variant="timeline" />
+
+<div class="transport-code-stack ws-server-panel">
+<section class="transport-code-section">
+
+## Shared Runtime Bootstrap
+
+`main(...)` is the top-level wrapper. It does not serve one client directly. Its job is to create the long-lived objects that survive reconnects:
+
+- `setup_bus`
+- `runtime_bus`
+- `SimulationClock`
+- `ActiveUnityBus`
+- `ServerRuntime`
+- the background tasks for spawn scheduling, clock sync, and flight scheduling
+
+This means the transport runtime is assembled once and then reused across websocket sessions.
+
+<TransportCodeBlock title="ws_server.py">
+```python
+async def main(host, port, *, container=None) -> None:
+    if container is None:
+        raise TypeError("main() missing required keyword argument: 'container'")
+
+    db_functions.configure_session_factory(container.Session)
+
+    setup_bus = SetupBusHandler(
+        prefab_store=container.prefab_store,
+        init_graph=container.graph,
+        session_factory=container.Session,
+    )
+    await setup_bus.start()
+
+    flight_actions = build_flight_actions(Session=container.Session)
+
+    clock = SimulationClock(sim_start=datetime.now(timezone.utc), time_scale=1.0)
+    clock_lock = asyncio.Lock()
+    clock_changed = asyncio.Event()
+    active_unity_bus = ActiveUnityBus()
+
+    runtime_bus = RuntimeBusHandler(
+        container.prefab_store,
+        session_factory=container.Session,
+        bus=active_unity_bus,
+        commands=container.commands,
+        clock=clock,
+        clock_lock=clock_lock,
+        clock_changed=clock_changed,
+    )
+    await runtime_bus.start()
+```
+</TransportCodeBlock>
+
+</section>
+
+<section class="transport-code-section">
+
+## Reconnect-Safe Bus Proxy
+
+The global loops created in `main(...)` need a stable object they can send through even if the websocket connection disappears and later comes back. That stable object is `ActiveUnityBus`.
+
+Its job is simple:
+
+- hold the currently active `WsMessageBus`
+- swap it atomically with a lock
+- ignore outgoing commands if no Unity client is attached
+
+Without this wrapper, the global runtime would need to be rebuilt every time Unity reconnects.
+
+<TransportCodeBlock title="ws_server.py">
+```python
+class ActiveUnityBus:
+    def __init__(self) -> None:
+        self._bus = None
+        self._lock = asyncio.Lock()
+
+    async def set_bus(self, bus) -> None:
+        async with self._lock:
+            self._bus = bus
+
+    async def clear_bus(self, bus) -> bool:
+        async with self._lock:
+            if self._bus is bus:
+                self._bus = None
+                return True
+            return False
+
+    async def send_command(self, payload: dict) -> None:
+        async with self._lock:
+            bus = self._bus
+
+        if bus is None:
+            return
+
+        await bus.send_command(payload)
+```
+</TransportCodeBlock>
+
+</section>
+
+<section class="transport-code-section">
+
+## Long-Lived Runtime State
+
+After `main(...)` creates the shared objects, it stores them in `ServerRuntime`. This dataclass is the container for the transport process state that lives longer than a single connection.
+
+The important fields are:
+
+- shared buses and clock state
+- background task handles
+- reconnect bookkeeping flags like `unity_attached` and `auto_paused_on_disconnect`
+
+<TransportCodeBlock title="ws_server.py">
+```python
+@dataclass
+class ServerRuntime:
+    bus: ActiveUnityBus
+    setup_bus: Any
+    runtime_bus: Any
+    clock: Any
+    clock_lock: asyncio.Lock
+    clock_changed: asyncio.Event
+    spawn_task: asyncio.Task | None = None
+    clock_task: asyncio.Task | None = None
+    flight_task: asyncio.Task | None = None
+    unity_attached: bool = False
+    auto_paused_on_disconnect: bool = False
+    resume_time_scale: float = 1.0
+```
+</TransportCodeBlock>
+
+</section>
+
+<section class="transport-code-section">
+
+## WebSocket Handler Exposure
+
+Once the shared runtime exists, `main(...)` starts the transport-owned loops and defines the small wrapper `_ws_handler(...)`. That wrapper does not contain business logic. It just forwards each new websocket connection into `echo_handler(...)`.
+
+This is the handoff from server bootstrap into per-connection attachment.
+
+<TransportCodeBlock title="ws_server.py">
+```python
+server_runtime = ServerRuntime(
+    bus=active_unity_bus,
+    setup_bus=setup_bus,
+    runtime_bus=runtime_bus,
+    clock=clock,
+    clock_lock=clock_lock,
+    clock_changed=clock_changed,
+)
+
+server_runtime.spawn_task = asyncio.create_task(schedule_initial_spawns(global_ctx))
+server_runtime.clock_task = asyncio.create_task(clock_sync_loop(global_ctx))
+server_runtime.flight_task = asyncio.create_task(
+    flight_scheduler_loop(global_ctx, poll_seconds=30.0)
+)
+
+async def _ws_handler(websocket, path=None):
+    await echo_handler(
+        websocket,
+        server_runtime=server_runtime,
+        prefab_store=container.prefab_store,
+        world_state=container.world_state,
+        graph=container.graph,
+        Session=container.Session,
+        flight_actions=flight_actions,
+        commands=container.commands
+    )
+
+async with websockets.serve(
+    _ws_handler,
+    host,
+    port,
+    max_size=WEBSOCKET_CONFIG.MAX_SIZE,
+    ping_interval=WEBSOCKET_CONFIG.PING_INTERVAL,
+    ping_timeout=WEBSOCKET_CONFIG.PING_TIMEOUT,
+    max_queue=WEBSOCKET_CONFIG.MAX_QUEUE,
+):
+    logging.info("WebSocket server running on ws://%s:%s", WEBSOCKET_CONFIG.HOST, WEBSOCKET_CONFIG.PORT)
+    await asyncio.Future()
+```
+</TransportCodeBlock>
+
+</section>
+
+<section class="transport-code-section">
+
+## Client Attachment
+
+When a Unity client connects, `_ws_handler(...)` calls `echo_handler(...)`. This is where the connection becomes live.
+
+The logic flow is:
+
+1. log the peer
+2. create a `WsMessageBus` for this websocket
+3. start the bus receive/send tasks
+4. add the outgoing spawn-tracking hook
+5. install this bus into `server_runtime.bus`
+6. resume simulation if it had been paused on disconnect
+7. validate `airport_icao`
+8. create a per-connection `SessionContext`
+9. start `incoming_dispatch_loop(...)`
+
+So `echo_handler(...)` is the connection attachment layer between a new websocket and the already-running transport runtime.
+
+<TransportCodeBlock title="ws_server.py">
+```python
+async def echo_handler(
+        websocket,
+        server_runtime: ServerRuntime,
+        *,
+        prefab_store,
+        world_state,
+        graph,
+        Session,
+        flight_actions: FlightActions,
+        commands
+    ) -> None:
+    peer = websocket.remote_address
+    logging.info("Client connected: %s", peer)
+
+    ws_bus = WsMessageBus()
+    await ws_bus.start(websocket=websocket)
+
+    ws_bus.add_outgoing_hook(make_spawn_tracking_hook(world_state=world_state, Session=Session))
+
+    await server_runtime.bus.set_bus(ws_bus)
+    await resume_simulation_after_reconnect(server_runtime=server_runtime)
+
+    airport_icao = getattr(graph, "airport_id", None)
+    if not isinstance(airport_icao, str) or not airport_icao:
+        raise RuntimeError("InitGraph airport_id missing / invalid")
+
+    ctx = SessionContext(
+        bus=server_runtime.bus,
+        setup_bus=server_runtime.setup_bus,
+        runtime_bus=server_runtime.runtime_bus,
+        clock=server_runtime.clock,
+        clock_lock=server_runtime.clock_lock,
+        clock_changed=server_runtime.clock_changed,
+        prefab_store=prefab_store,
+        graph=graph,
+        world_state=world_state,
+        Session=Session,
+        airport_icao=airport_icao,
+        flight_actions=flight_actions,
+        commands=commands
+    )
+
+    dispatch_task = asyncio.create_task(incoming_dispatch_loop(ctx, ws_bus.incoming))
+```
+</TransportCodeBlock>
+
+</section>
+
+<section class="transport-code-section">
+
+## Inbound Message Routing
+
+Once `echo_handler(...)` starts the dispatch task, all inbound payloads from `ws_bus.incoming` pass through this loop.
+
+Its routing logic is intentionally narrow:
+
+- first, intercept clock-control payloads inside transport
+- second, if setup is not complete, enqueue into `setup_bus`
+- otherwise, enqueue into `runtime_bus`
+
+That keeps clock changes local to transport while still splitting setup traffic from runtime traffic.
+
+<TransportCodeBlock title="ws_server.py">
+```python
+async def incoming_dispatch_loop(ctx: SessionContext, incoming_queue: asyncio.Queue) -> None:
+    while True:
+        payload = await incoming_queue.get()
+        try:
+            if isinstance(payload, dict) and await handle_clock_control(ctx, payload):
+                continue
+
+            if not ctx.setup_bus.setup_completed:
+                await ctx.setup_bus.enqueue(payload)
+            else:
+                await ctx.runtime_bus.enqueue(payload)
+        finally:
+            incoming_queue.task_done()
+```
+</TransportCodeBlock>
+
+</section>
+
+<section class="transport-code-section">
+
+## Disconnect Cleanup
+
+After the connection is attached and dispatch is running, `echo_handler(...)` sends the welcome command and waits for the websocket receive task to finish. That is the steady-state lifetime of the connection.
+
+When the connection ends:
+
+1. cancel the dispatch task
+2. await its cancellation
+3. clear the active bus only if this bus is still the current one
+4. pause simulation if the disconnected bus was the active client
+5. stop the websocket bus
+
+This cleanup is what allows reconnect without restarting the whole transport runtime.
+
+<TransportCodeBlock title="ws_server.py">
+```python
+try:
+    await server_runtime.bus.send_command(
+        commands.welcome(message="Connected to Python server")
+    )
+    await ws_bus._recv_task
+except websockets.ConnectionClosed:
+    logging.info("Client %s disconnected", peer)
+
+finally:
+    dispatch_task.cancel()
+    try:
+        await dispatch_task
+    except asyncio.CancelledError:
+        pass
+
+    was_active = await server_runtime.bus.clear_bus(ws_bus)
+    if was_active:
+        await pause_simulation_for_disconnect(server_runtime=server_runtime)
+
+    await ws_bus.stop()
+```
+</TransportCodeBlock>
+
+</section>
+</div>

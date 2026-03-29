@@ -1,0 +1,211 @@
+import DocsSteps from '../DocsSteps.astro';
+import TransportCodeBlock from './TransportCodeBlock.astro';
+
+export const actionsCommandsTimeline = [
+  {
+    title: 'Action Surface',
+    body: 'FlightActions defines the scheduling-facing capability surface for assigning airplanes, reserving stands, and marking operational transitions.',
+  },
+  {
+    title: 'Action Injection',
+    body: 'Transport receives FlightActions as a prebuilt dependency so loops can call domain operations without binding to lower-level service implementations.',
+  },
+  {
+    title: 'Command Builders',
+    body: 'Command builder functions define the websocket payload shapes transport sends to Unity.',
+  },
+  {
+    title: 'Command Bundle',
+    body: 'CommandBuilders groups those builders into one dependency so transport code emits commands through a stable interface.',
+  },
+];
+
+## `flight_actions.py` + `command_builders.py`
+
+These two files form the action-and-command seam in transport. `FlightActions` is the decision-side interface used by scheduling and transport loops to modify backend state. `CommandBuilders` is the outbound-shape interface used to turn those decisions into Unity commands.
+
+## Call Timeline
+
+<DocsSteps items={actionsCommandsTimeline} variant="timeline" />
+
+<div class="transport-code-stack actions-commands-panel">
+<section class="transport-code-section">
+
+## Action Surface
+
+`FlightActions` is not an implementation class with logic inside it. In this project it is a frozen bundle of callable operations that the transport layer is allowed to invoke.
+
+That matters because transport loops like `flight_scheduler_loop(...)` only need a clean action surface:
+
+- query flights in the active window
+- assign airplanes and paths
+- reserve stands
+- mark lifecycle transitions
+- generate debug flights
+
+So the transport layer depends on "what can be done" instead of "how it is implemented below."
+
+<TransportCodeBlock title="flight_actions.py">
+```python
+@dataclass(frozen=True)
+class FlightActions:
+    list_flights_in_sliding_window: Callable[..., list]
+    normalize_flight_type: Callable[[Any], str | None]
+
+    assign_airplane_to_departure_flight: Callable[..., tuple[str, str] | None]
+    assign_path_to_airplane: Callable[..., None]
+
+    create_and_assign_airplane_for_landing_departure: Callable[..., str | None]
+
+    mark_landing_departed: Callable[..., None]
+    mark_departure_started: Callable[..., None]
+
+    reserve_stand_and_link_airplane_for_landing_arrival: Callable[..., str | None]
+    assign_landing_path_for_airplane: Callable[..., None]
+
+    get_airplane_prefab: Callable[..., str | None]
+
+    count_parked_airplanes: Callable[[], int]
+    generate_debug_flights: Callable[[int, bool, timedelta], None]
+```
+</TransportCodeBlock>
+
+</section>
+
+<section class="transport-code-section">
+
+## Action Injection
+
+Transport never constructs those action callables inline inside the loops. Instead, `ws_server.py` receives the prebuilt action bundle and threads it into `SessionContext`.
+
+That means scheduling logic can stay focused on orchestration while the underlying action implementations remain replaceable and testable elsewhere.
+
+<TransportCodeBlock title="ws_server.py">
+```python
+flight_actions = build_flight_actions(Session=container.Session)
+
+global_ctx = SessionContext(
+    bus=active_unity_bus,
+    setup_bus=setup_bus,
+    runtime_bus=runtime_bus,
+    clock=clock,
+    clock_lock=clock_lock,
+    clock_changed=clock_changed,
+    prefab_store=container.prefab_store,
+    graph=container.graph,
+    world_state=container.world_state,
+    Session=container.Session,
+    airport_icao=airport_icao,
+    flight_actions=flight_actions,
+    commands=container.commands,
+)
+```
+</TransportCodeBlock>
+
+</section>
+
+<section class="transport-code-section">
+
+## Command Builders
+
+`command_builders.py` plays the symmetric role on the outbound side. Instead of hand-assembling websocket payload dicts across transport loops, the project centralizes those shapes in builder functions.
+
+That keeps the transport command contract consistent for:
+
+- welcome messages
+- clock sync payloads
+- plane spawns
+- path starts
+- despawns
+
+<TransportCodeBlock title="command_builders.py">
+```python
+def build_welcome(*, message: str) -> dict[str, Any]:
+    return {
+        "command": BUS_COMMANDS.WELCOME,
+        "type": BUS_COMMANDS.WELCOME,
+        "message": message
+    }
+
+
+def build_clock_sync(*, sync_id: int, sim_unix_ms: int, time_scale: float) -> dict[str, Any]:
+    return {
+        "command": BUS_COMMANDS.CLOCK_SYNC,
+        "sync_id": sync_id,
+        "sim_unix_ms": sim_unix_ms,
+        "time_scale": time_scale
+    }
+```
+</TransportCodeBlock>
+
+<TransportCodeBlock title="command_builders.py">
+```python
+def build_spawn_plane(
+        *,
+        prefab: str,
+        stand_id: str,
+        position: dict | None,
+        airplane_id: str,
+        spawn_context: str,
+) -> dict[str, Any]:
+
+    return {
+        "command": BUS_COMMANDS.SPAWN_PLANE,
+        "prefab": prefab,
+        "stand_id": stand_id,
+        "position": position,
+        "airplane_id": airplane_id,
+        "spawn_context": spawn_context
+    }
+
+
+def build_start_path_command(*, airplane_id: str, route_id: str, segments: list, speed: float) -> dict[str, Any]:
+    return {
+        "command": BUS_COMMANDS.START_PATH,
+        "airplane_id": airplane_id,
+        "route_id": route_id,
+        "speed": speed,
+        "segments": segments,
+    }
+```
+</TransportCodeBlock>
+
+</section>
+
+<section class="transport-code-section">
+
+## Command Bundle
+
+`CommandBuilders` packages those builder functions into one injected dependency, just like `FlightActions` does for backend-side operations.
+
+So transport code can emit commands through a stable interface like:
+
+- `ctx.commands.clock_sync(...)`
+- `ctx.commands.spawn_plane(...)`
+
+instead of importing and calling raw builder functions everywhere.
+
+<TransportCodeBlock title="command_builders.py">
+```python
+@dataclass
+class CommandBuilders:
+    welcome: callable
+    clock_sync: callable
+    spawn_plane: callable
+    start_path: callable
+    despawn_plane: callable
+
+
+def default_command_builders() -> CommandBuilders:
+    return CommandBuilders(
+        welcome=build_welcome,
+        clock_sync=build_clock_sync,
+        spawn_plane=build_spawn_plane,
+        start_path=build_start_path_command,
+        despawn_plane=build_despawn_plane,
+    )
+```
+</TransportCodeBlock>
+
+</section>
+</div>

@@ -2,10 +2,11 @@
 
 This directory contains a standalone plain Astro + MDX site for project documentation.
 
-## Intended source of truth
+## Source of truth
 
-- Source docs stay in `../src/docs`
-- Synced Astro pages are written to `./src/pages`
+- Edit docs directly in `./src/pages`
+- The Astro app serves those pages directly
+- There is no sync step from `../src/docs`
 
 ## Local usage
 
@@ -14,12 +15,3 @@ cd astro
 bun install
 bun run dev
 ```
-
-## Sync docs manually
-
-```bash
-cd astro
-bun run sync-docs
-```
-
-The sync script copies the `../src/docs` tree into `src/pages/docs`, preserves nested `.md` and `.mdx` files, and injects the shared docs layout frontmatter when needed.

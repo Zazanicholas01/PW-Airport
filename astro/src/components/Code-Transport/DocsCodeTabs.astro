@@ -1,0 +1,217 @@
+---
+const {
+  tabs = [],
+  queryKey = 'tab',
+} = Astro.props as {
+  tabs?: Array<{ id: string; label: string }>;
+  queryKey?: string;
+};
+
+const tabsId = `code-tabs-${Math.random().toString(36).slice(2, 10)}`;
+---
+
+<div class="docs-code-tabs" data-tabs-id={tabsId} data-query-key={queryKey}>
+  <div class="docs-code-tab-list" role="tablist" aria-label="Code Transport Tabs">
+    {tabs.map((tab, index) => (
+      <button
+        type="button"
+        class="docs-code-tab-button"
+        role="tab"
+        id={`${tabsId}-tab-${tab.id}`}
+        data-tab={tab.id}
+        aria-selected={index === 0 ? 'true' : 'false'}
+        aria-controls={`${tabsId}-panel-${tab.id}`}
+        tabindex={index === 0 ? '0' : '-1'}
+      >
+        {tab.label}
+      </button>
+    ))}
+  </div>
+
+  {tabs[0] && (
+    <section
+      class="docs-code-tab-panel"
+      role="tabpanel"
+      id={`${tabsId}-panel-${tabs[0].id}`}
+      data-panel={tabs[0].id}
+      aria-labelledby={`${tabsId}-tab-${tabs[0].id}`}
+    >
+      <slot name="panel-ws-server" />
+    </section>
+  )}
+
+  {tabs[1] && (
+    <section
+      class="docs-code-tab-panel"
+      role="tabpanel"
+      id={`${tabsId}-panel-${tabs[1].id}`}
+      data-panel={tabs[1].id}
+      aria-labelledby={`${tabsId}-tab-${tabs[1].id}`}
+      hidden
+    >
+      <slot name="panel-message-bus" />
+    </section>
+  )}
+
+  {tabs[2] && (
+    <section
+      class="docs-code-tab-panel"
+      role="tabpanel"
+      id={`${tabsId}-panel-${tabs[2].id}`}
+      data-panel={tabs[2].id}
+      aria-labelledby={`${tabsId}-tab-${tabs[2].id}`}
+      hidden
+    >
+      <slot name="panel-session" />
+    </section>
+  )}
+
+  {tabs[3] && (
+    <section
+      class="docs-code-tab-panel"
+      role="tabpanel"
+      id={`${tabsId}-panel-${tabs[3].id}`}
+      data-panel={tabs[3].id}
+      aria-labelledby={`${tabsId}-tab-${tabs[3].id}`}
+      hidden
+    >
+      <slot name="panel-clock" />
+    </section>
+  )}
+
+  {tabs[4] && (
+    <section
+      class="docs-code-tab-panel"
+      role="tabpanel"
+      id={`${tabsId}-panel-${tabs[4].id}`}
+      data-panel={tabs[4].id}
+      aria-labelledby={`${tabsId}-tab-${tabs[4].id}`}
+      hidden
+    >
+      <slot name="panel-flight-scheduling" />
+    </section>
+  )}
+
+  {tabs[5] && (
+    <section
+      class="docs-code-tab-panel"
+      role="tabpanel"
+      id={`${tabsId}-panel-${tabs[5].id}`}
+      data-panel={tabs[5].id}
+      aria-labelledby={`${tabsId}-tab-${tabs[5].id}`}
+      hidden
+    >
+      <slot name="panel-spawn" />
+    </section>
+  )}
+
+  {tabs[6] && (
+    <section
+      class="docs-code-tab-panel"
+      role="tabpanel"
+      id={`${tabsId}-panel-${tabs[6].id}`}
+      data-panel={tabs[6].id}
+      aria-labelledby={`${tabsId}-tab-${tabs[6].id}`}
+      hidden
+    >
+      <slot name="panel-actions-commands" />
+    </section>
+  )}
+</div>
+
+<script is:inline>
+  (() => {
+    function initTabs(root) {
+      if (!root || root.dataset.tabsInitialized === 'true') return;
+      root.dataset.tabsInitialized = 'true';
+
+      const queryKey = root.getAttribute('data-query-key') || 'tab';
+      const buttons = Array.from(root.querySelectorAll('.docs-code-tab-button'));
+      const panels = Array.from(root.querySelectorAll('.docs-code-tab-panel'));
+      if (!buttons.length || !panels.length) return;
+
+      function setActive(tabId, syncUrl = true) {
+        buttons.forEach((button) => {
+          const isActive = button.getAttribute('data-tab') === tabId;
+          button.setAttribute('aria-selected', isActive ? 'true' : 'false');
+          button.setAttribute('tabindex', isActive ? '0' : '-1');
+          button.classList.toggle('is-active', isActive);
+        });
+
+        panels.forEach((panel) => {
+          panel.hidden = panel.getAttribute('data-panel') !== tabId;
+        });
+
+        if (syncUrl) {
+          const url = new URL(window.location.href);
+          url.searchParams.set(queryKey, tabId);
+          window.history.replaceState({}, '', url);
+        }
+      }
+
+      const requestedTab = new URL(window.location.href).searchParams.get(queryKey);
+      const defaultTab = buttons[0].getAttribute('data-tab');
+      const activeTab = buttons.some((button) => button.getAttribute('data-tab') === requestedTab)
+        ? requestedTab
+        : defaultTab;
+
+      if (activeTab) setActive(activeTab, false);
+
+      buttons.forEach((button) => {
+        button.addEventListener('click', () => {
+          const tabId = button.getAttribute('data-tab');
+          if (tabId) setActive(tabId);
+        });
+      });
+    }
+
+    function boot() {
+      document.querySelectorAll('.docs-code-tabs').forEach((root) => initTabs(root));
+    }
+
+    boot();
+    document.addEventListener('astro:page-load', boot);
+  })();
+</script>
+
+<style>
+  .docs-code-tabs {
+    margin-top: 1.4rem;
+  }
+
+  .docs-code-tab-list {
+    display: inline-flex;
+    align-items: stretch;
+    gap: 0;
+    margin-bottom: 1.4rem;
+    padding: 0 0.8rem;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.14);
+    border-radius: 0;
+  }
+
+  .docs-code-tab-button {
+    display: flex;
+    align-items: center;
+    padding: 0.82rem 1rem 0.74rem;
+    border: 0;
+    border-bottom: 2px solid transparent;
+    border-radius: 0;
+    background: transparent;
+    color: rgba(255, 255, 255, 0.86);
+    font: inherit;
+    font-weight: 600;
+    cursor: pointer;
+    transition: color 140ms ease, border-color 140ms ease, background 140ms ease;
+  }
+
+  .docs-code-tab-button:hover {
+    color: #f5fbff;
+  }
+
+  .docs-code-tab-button.is-active {
+    border-bottom-color: #6fd8ff;
+    background: transparent;
+    color: #8fe3ff;
+    text-shadow: 0 0 0.75rem rgba(111, 216, 255, 0.18);
+  }
+</style>

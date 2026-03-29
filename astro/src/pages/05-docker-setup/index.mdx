@@ -1,46 +1,180 @@
 ---
 title: Docker Setup
 layout: ../../layouts/DocsLayout.astro
+description: Real container topology, ingress routes, startup order, and operational commands for the local stack.
 ---
 
-# Docker setup
+import DocsTopicGrid from '../../components/DocsTopicGrid.astro';
+import DocsSteps from '../../components/DocsSteps.astro';
 
-This topic documents `../../../docker-compose.yml` and related init scripts.
+export const endpoints = [
+  {
+    kicker: 'Public',
+    title: 'Dashboard',
+    summary: 'Primary public entrypoint served through nginx.',
+    tone: 'cyan',
+    icon: 'monitor',
+    meta: 'http://localhost:8001/',
+  },
+  {
+    kicker: 'Public',
+    title: 'Docs',
+    summary: 'Astro docs served through the nginx /docs/ proxy.',
+    tone: 'sky',
+    icon: 'book',
+    meta: 'http://localhost:8001/docs/',
+  },
+  {
+    kicker: 'Data',
+    title: 'Postgres',
+    summary: 'Host-published database port for direct local access.',
+    tone: 'emerald',
+    icon: 'database',
+    meta: 'localhost:5433',
+  },
+  {
+    kicker: 'Tooling',
+    title: 'DBGate',
+    summary: 'Browser-accessible database UI.',
+    tone: 'amber',
+    icon: 'globe',
+    meta: 'http://localhost:5051/',
+  },
+];
 
-## Services
+export const services = [
+  {
+    kicker: 'Long-Running',
+    title: 'postgres',
+    summary: 'Primary application database with named-volume persistence and init SQL mount.',
+    tone: 'emerald',
+    meta: '5433 -> 5432',
+  },
+  {
+    kicker: 'One-Shot',
+    title: 'db-init',
+    summary: 'Schema initialization job that waits for Postgres health and runs init_db.py.',
+    tone: 'amber',
+    meta: 'depends on postgres',
+  },
+  {
+    kicker: 'One-Shot',
+    title: 'db-seed',
+    summary: 'Static data seed job that runs only after schema initialization succeeds.',
+    tone: 'amber',
+    meta: 'depends on db-init',
+  },
+  {
+    kicker: 'Long-Running',
+    title: 'dashboard-app',
+    summary: 'FastAPI dashboard backend, internal to the Compose network.',
+    tone: 'cyan',
+    meta: 'internal :8000',
+  },
+  {
+    kicker: 'Long-Running',
+    title: 'nginx',
+    summary: 'Public ingress for dashboard routes, docs proxying, websocket upgrades, and static assets.',
+    tone: 'violet',
+    meta: '8001 -> 80',
+  },
+  {
+    kicker: 'Long-Running',
+    title: 'docs-site',
+    summary: 'Bun-based Astro docs container, exposed only inside the Compose network.',
+    tone: 'sky',
+    meta: 'internal :4321',
+  },
+  {
+    kicker: 'Long-Running',
+    title: 'dbgate',
+    summary: 'Database browser UI preconfigured for the internal Airport Postgres service.',
+    tone: 'rose',
+    meta: '5051 -> 3000',
+  },
+];
 
-### `postgres`
+export const routes = [
+  {
+    kicker: 'Ingress',
+    title: '/',
+    summary: 'nginx forwards the main dashboard route to dashboard-app.',
+    tone: 'cyan',
+    meta: 'nginx -> dashboard-app:8000',
+  },
+  {
+    kicker: 'Ingress',
+    title: '/docs/',
+    summary: 'nginx proxies docs traffic to the Astro docs development container.',
+    tone: 'sky',
+    meta: 'nginx -> docs-site:4321/docs/',
+  },
+  {
+    kicker: 'Ingress',
+    title: '/ws/',
+    summary: 'Websocket traffic is upgraded and forwarded to the dashboard backend.',
+    tone: 'violet',
+    meta: 'nginx -> dashboard-app:8000',
+  },
+  {
+    kicker: 'Ingress',
+    title: '/api/stream',
+    summary: 'Streaming endpoint is proxied without buffering for live updates.',
+    tone: 'amber',
+    meta: 'nginx -> dashboard-app:8000',
+  },
+];
 
-- Image: `postgres:16-alpine`
-- Exposes: `5432:5432`
-- Mounts:
-  - `../../../docker/initdb/` into `/docker-entrypoint-initdb.d`
-  - `postgres-data` volume for persistence
+export const startupSteps = [
+  {
+    title: 'Postgres becomes healthy',
+    body: 'The database starts first and must pass its healthcheck before dependent jobs continue.',
+  },
+  {
+    title: 'db-init creates or resets schema',
+    body: 'The schema initialization container runs scripts/init_db.py and exits.',
+  },
+  {
+    title: 'db-seed loads static bootstrap data',
+    body: 'The seed container runs scripts/startup.py after schema initialization completes successfully.',
+  },
+  {
+    title: 'dashboard-app starts',
+    body: 'The FastAPI dashboard backend comes up once the database and seed flow are ready.',
+  },
+  {
+    title: 'docs-site starts',
+    body: 'The Astro docs container comes up as a separate internal service.',
+  },
+  {
+    title: 'nginx exposes the stack',
+    body: 'nginx serves as the public entrypoint for dashboard routes and proxied docs.',
+  },
+];
 
-### `airportdb-init`
+# Docker Setup
 
-One-shot job that waits for Postgres healthcheck, then runs:
+This page documents the actual local container topology in `docker-compose.yml` and the nginx routing layer in `docker/nginx/dashboard.conf`.
 
-- `../../../scripts/init_db.py` (schema creation/reset)
+## Stack At A Glance
 
-### `metabase`
+<DocsTopicGrid items={endpoints} variant="featured" />
 
-Metabase instance bound to `localhost:3000`, with its own internal DB in Postgres.
+## Service Topology
 
-### `metabase-setup`
+<DocsTopicGrid items={services} compact />
 
-One-shot automation that:
+## Ingress Routing
 
-- completes Metabase initial setup (if needed)
-- sets reporting timezone
-- provisions the “Airport DB” connection
+<DocsTopicGrid items={routes} compact />
 
-### `airport-startup`
+## Startup Sequence
 
-One-shot job that installs `../../../requirements.txt` and runs:
+<DocsSteps items={startupSteps} variant="timeline" />
 
-- `../../../scripts/startup.py` (seed static data + any bootstrap tasks)
+## Notes
 
-## Logs volume
-
-`../../../data/logs` is bind-mounted into the container at `/logs` and used via `LOG_DIR`.
+- `dashboard-app` is intended to be reached through nginx, not directly by a host-published port.
+- `docs-site` is internal to Compose and is exposed publicly through `/docs/`.
+- `db-init` and `db-seed` are one-shot operational containers, not persistent services.
+- `./data/logs` is mounted into the Python containers and used through `LOG_DIR=/logs`.

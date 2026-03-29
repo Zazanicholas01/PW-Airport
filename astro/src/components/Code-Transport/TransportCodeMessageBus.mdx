@@ -1,0 +1,299 @@
+import DocsSteps from '../DocsSteps.astro';
+import TransportCodeBlock from './TransportCodeBlock.astro';
+
+export const messageBusTimeline = [
+  {
+    title: 'Bus Construction',
+    body: 'Creates the incoming/outgoing queues, task handles, closed flag, and outgoing hook list that define the bus state.',
+  },
+  {
+    title: 'Session Attachment',
+    body: 'In ws_server.py, one WsMessageBus instance is created per websocket session and then exposed to the rest of transport through SessionContext and ActiveUnityBus.',
+  },
+  {
+    title: 'Bus Startup',
+    body: 'Starts the receive and send loops as background tasks bound to the current websocket.',
+  },
+  {
+    title: 'Outbound Command Enqueue',
+    body: 'Runs the outgoing hooks, checks whether the bus is closed, and enqueues payloads into the outgoing queue.',
+  },
+  {
+    title: 'Inbound Receive Loop',
+    body: 'Consumes raw websocket frames, decodes JSON payloads, and pushes valid messages into the incoming queue.',
+  },
+  {
+    title: 'Outbound Send Loop',
+    body: 'Consumes queued outbound payloads, serializes them to JSON, and sends them to Unity until shutdown.',
+  },
+  {
+    title: 'Bus Shutdown',
+    body: 'Marks the bus as closed, injects the sentinel value, and cancels both loop tasks cleanly.',
+  },
+  {
+    title: 'Outgoing Hook Registration',
+    body: 'Registers payload hooks that run before a command enters the outgoing queue.',
+  },
+];
+
+## `message_bus.py`
+
+This page explains `WsMessageBus` in its project role: it is the transport boundary between the Unity websocket and the rest of the backend runtime. Its job is to turn raw socket traffic into queue-driven application flow so transport, handlers, schedulers, and clock logic do not operate directly on the websocket object.
+
+## Call Timeline
+
+<DocsSteps items={messageBusTimeline} variant="timeline" />
+
+<div class="transport-code-stack message-bus-panel">
+<section class="transport-code-section">
+
+## Bus Construction
+
+In this project, construction is where the transport boundary is defined. The bus creates two explicit channels:
+
+- `incoming` is the queue that `incoming_dispatch_loop(...)` consumes from in `ws_server.py`
+- `outgoing` is the queue that transport and runtime code write commands into
+- `_recv_task` and `_send_task` become the private workers that keep socket IO off the main runtime path
+- `closed` is the shared shutdown signal
+- `_before_send` lets transport attach project-specific outgoing side effects before Unity sees a payload
+
+<TransportCodeBlock title="message_bus.py">
+```python
+class WsMessageBus:
+    def __init__(self) -> None:
+        self.incoming: asyncio.Queue = asyncio.Queue()
+        self.outgoing: asyncio.Queue = asyncio.Queue()
+        self._recv_task = None
+        self._send_task = None
+        self.closed = asyncio.Event()
+        self._before_send: list[Callable[[dict], None]] = []
+```
+</TransportCodeBlock>
+
+</section>
+
+<section class="transport-code-section">
+
+## Session Attachment
+
+`WsMessageBus` is not global runtime state. In this project it is per attached Unity session.
+
+That distinction matters:
+
+- `ServerRuntime` survives reconnects
+- `ActiveUnityBus` points at whichever `WsMessageBus` is currently attached
+- `SessionContext` gives the current transport flow access to that bus through `ctx.bus`
+- `incoming_dispatch_loop(...)` consumes from `ws_bus.incoming`, which belongs to one specific websocket attachment
+
+So the message bus is the per-session boundary, while the rest of transport is designed to survive session churn.
+
+<TransportCodeBlock title="ws_server.py">
+```python
+ws_bus = WsMessageBus()
+await ws_bus.start(websocket=websocket)
+
+await server_runtime.bus.set_bus(ws_bus)
+
+ctx = SessionContext(
+    bus=server_runtime.bus,
+    setup_bus=server_runtime.setup_bus,
+    runtime_bus=server_runtime.runtime_bus,
+    clock=server_runtime.clock,
+    clock_lock=server_runtime.clock_lock,
+    clock_changed=server_runtime.clock_changed,
+    prefab_store=prefab_store,
+    graph=graph,
+    world_state=world_state,
+    Session=Session,
+    airport_icao=airport_icao,
+    flight_actions=flight_actions,
+    commands=commands
+)
+
+dispatch_task = asyncio.create_task(incoming_dispatch_loop(ctx, ws_bus.incoming))
+```
+</TransportCodeBlock>
+
+</section>
+
+<section class="transport-code-section">
+
+## Bus Startup
+
+`start(...)` is the moment this websocket becomes a project runtime boundary. The bus is now attached to one Unity connection and immediately splits responsibilities into two long-lived workers:
+
+- `_recv_loop(...)` is responsible for websocket -> queue flow
+- `_send_loop(...)` is responsible for queue -> websocket flow
+
+That split is important in this codebase because the rest of transport code wants queue semantics, not direct socket semantics.
+
+<TransportCodeBlock title="message_bus.py">
+```python
+async def start(self, websocket):
+    self._recv_task = asyncio.create_task(self._recv_loop(websocket))
+    self._send_task = asyncio.create_task(self._send_loop(websocket))
+```
+</TransportCodeBlock>
+
+</section>
+
+<section class="transport-code-section">
+
+## Outbound Command Enqueue
+
+`send_command(...)` is the write-side API that the rest of the backend uses. In this project, global loops and transport handlers do not push JSON onto the websocket directly. They call `ctx.bus.send_command(...)`, and that eventually lands here.
+
+The flow is:
+
+1. return immediately if the bus is already closed
+2. run each registered outgoing hook
+3. log and continue if a hook fails
+4. enqueue the payload into `outgoing`
+
+In other words, this function is the handoff point from backend logic into transport delivery.
+
+<TransportCodeBlock title="message_bus.py">
+```python
+async def send_command(self, payload: dict) -> None:
+    if self.closed.is_set():
+        return
+
+    for hook in self._before_send:
+        try:
+            hook(payload)
+        except Exception:
+            logging.exception("Outgoing hook failed for payload: %r", payload)
+
+    await self.outgoing.put(payload)
+```
+</TransportCodeBlock>
+
+</section>
+
+<section class="transport-code-section">
+
+## Inbound Receive Loop
+
+The receive loop is how Unity enters the backend runtime. Its project role is not just "read the socket", but "normalize Unity traffic into the queue that transport dispatch consumes."
+
+The important behaviors are:
+
+- invalid JSON is skipped instead of crashing the bus
+- `ConnectionClosed` is treated as a normal shutdown path
+- the `finally` block marks the bus as closed and pushes `None` into `outgoing` so the send loop can stop too
+
+That last point is what keeps the project's send and receive halves coupled during disconnect: if Unity disappears, the outbound side is told to stop too.
+
+<TransportCodeBlock title="message_bus.py">
+```python
+async def _recv_loop(self, websocket):
+    peer = getattr(websocket, "remote_address", None)
+    logging.info("[ws.recv] Start peer=%s", peer)
+
+    try:
+        async for raw in websocket:
+            try:
+                payload = json.loads(raw)
+            except Exception:
+                logging.info("Invalid JSON from Unity")
+                continue
+
+            await self.incoming.put(payload)
+
+    except ConnectionClosed as e:
+        logging.warning("[ws.recv] connection closed peer=%s code=%s reason=%r", peer, e.code, e.reason)
+
+    except Exception:
+        logging.exception("[ws.recv] crashed peer=%s", peer)
+
+    finally:
+        logging.warning("[ws.recv] stopping peer=%s", peer)
+        self.closed.set()
+        await self.outgoing.put(None)
+```
+</TransportCodeBlock>
+
+</section>
+
+<section class="transport-code-section">
+
+## Outbound Send Loop
+
+The send loop is the outbound half of the transport boundary. Its role in this project is to serialize backend-generated commands only after they have already been routed, built, and optionally decorated by hooks.
+
+The sentinel `None` is the stop signal. When it appears, the send loop exits.
+
+So the bus becomes the place where structured project payloads finally turn into websocket frames.
+
+<TransportCodeBlock title="message_bus.py">
+```python
+async def _send_loop(self, websocket):
+    while True:
+        payload = await self.outgoing.get()
+        try:
+            if payload is None:
+                return
+
+            await websocket.send(json.dumps(payload))
+
+        except ConnectionClosed as e:
+            logging.info("Websocket closed (%s); Stopping send Loop", e)
+            return
+
+        except Exception:
+            logging.exception("Error sending command to Unity")
+
+        finally:
+            self.outgoing.task_done()
+```
+</TransportCodeBlock>
+
+</section>
+
+<section class="transport-code-section">
+
+## Bus Shutdown
+
+`stop(...)` is the explicit teardown path used when transport detaches a connection. Its role is to shut down the websocket boundary without forcing the rest of the server runtime to die with it.
+
+1. set the `closed` flag
+2. push `None` into `outgoing` so `_send_loop(...)` can exit
+3. cancel and await both loop tasks
+
+That is exactly why reconnect works in this project: the per-connection bus stops, while the shared runtime in `ws_server.py` keeps running.
+
+<TransportCodeBlock title="message_bus.py">
+```python
+async def stop(self):
+    self.closed.set()
+    await self.outgoing.put(None)
+
+    for task in (self._recv_task, self._send_task):
+        if task is not None:
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+```
+</TransportCodeBlock>
+
+</section>
+
+<section class="transport-code-section">
+
+## Outgoing Hook Registration
+
+This is the extension point transport uses to inject project-specific behavior into the outbound path. In this codebase, `ws_server.py` uses it to register spawn tracking so outbound payloads can update backend-side state before they are sent to Unity.
+
+So this method matters less as a generic utility and more as the place where websocket delivery can be augmented with backend-side side effects.
+
+<TransportCodeBlock title="message_bus.py">
+```python
+def add_outgoing_hook(self, hook: Callable[[dict], None]) -> None:
+    self._before_send.append(hook)
+```
+</TransportCodeBlock>
+
+</section>
+</div>

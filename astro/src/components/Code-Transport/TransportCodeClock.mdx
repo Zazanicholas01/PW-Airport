@@ -1,0 +1,196 @@
+import DocsSteps from '../DocsSteps.astro';
+import TransportCodeBlock from './TransportCodeBlock.astro';
+
+export const clockTimeline = [
+  {
+    title: 'Clock Event Shape',
+    body: 'Defines the lightweight clock payload that transport writes into the event log for dashboard consumers.',
+  },
+  {
+    title: 'Snapshot Publishing',
+    body: 'Converts clock sync state into event-log snapshots so the web side can observe the current simulation clock.',
+  },
+  {
+    title: 'Inbound Clock Control',
+    body: 'Intercepts time-control commands in transport before setup/runtime handler routing.',
+  },
+  {
+    title: 'Continuous Clock Sync',
+    body: 'Runs the background loop that periodically emits authoritative clock_sync payloads to Unity.',
+  },
+];
+
+## `loops/clock.py`
+
+This file gives transport direct ownership of simulation time. In this project, clock changes are not treated like generic runtime messages. They are intercepted at the transport boundary, applied under the shared clock lock, then published back out to Unity and the event log.
+
+## Call Timeline
+
+<DocsSteps items={clockTimeline} variant="timeline" />
+
+<div class="transport-code-stack clock-panel">
+<section class="transport-code-section">
+
+## Clock Event Shape
+
+`_clock_event(...)` defines the compact project-level clock snapshot written to the event log. This is not the Unity transport command itself. It is the event representation used for dashboard-facing observation.
+
+That split matters:
+
+- `ctx.commands.clock_sync(...)` builds the websocket command for Unity
+- `_clock_event(...)` builds the event payload for backend-side logging and web consumers
+
+<TransportCodeBlock title="loops/clock.py">
+```python
+def _clock_event(sync) -> dict:
+    return {
+        "type": "clock",
+        "sim_unix_ms": sync.sim_unix_ms,
+        "time_scale": sync.time_scale,
+        "sync_id": sync.sync_id,
+    }
+```
+</TransportCodeBlock>
+
+</section>
+
+<section class="transport-code-section">
+
+## Snapshot Publishing
+
+`_publish_clock_snapshot(...)` is the bridge from transport clock state into the event log. Its project role is to make the current clock observable outside the websocket connection itself.
+
+That means the same transport-owned clock state can be surfaced both to:
+
+- Unity over the websocket bus
+- dashboard/event-log consumers through `append_event(...)`
+
+<TransportCodeBlock title="loops/clock.py">
+```python
+async def _publish_clock_snapshot(ctx: SessionContext, sync) -> None:
+    event = _clock_event(sync)
+    append_event(event)
+```
+</TransportCodeBlock>
+
+</section>
+
+<section class="transport-code-section">
+
+## Inbound Clock Control
+
+`handle_clock_control(...)` is why clock commands never fall through to the normal setup/runtime message path in `ws_server.py`. Transport intercepts them first, validates the payload, updates the shared `SimulationClock`, wakes any listeners with `clock_changed`, and immediately publishes a fresh `clock_sync`.
+
+In this project, that makes time control a transport concern rather than a generic handler concern.
+
+<TransportCodeBlock title="loops/clock.py">
+```python
+async def handle_clock_control(ctx: SessionContext, payload: dict) -> bool:
+    cmd = payload.get("command")
+    if not isinstance(cmd, str):
+        return False
+    cmd = cmd.strip().lower()
+
+    if cmd == BUS_COMMANDS.SET_TIME_SCALE:
+        raw = payload.get("time_scale")
+        req_id = payload.get("request_id")
+
+        before_scale = ctx.clock.time_scale
+        before_now = ctx.clock.now().astimezone(timezone.utc)
+
+        logging.info("[clock][IN] set_time_scale requested=%r request_id=%r before_scale=%.3f before_now=%s",
+            payload.get("time_scale"),
+            req_id,
+            before_scale,
+            isoformat_utc_plus1(before_now, timespec="seconds"),
+        )
+
+        try:
+            scale = float(raw)
+        except (TypeError, ValueError):
+            return True
+
+        if not math.isfinite(scale) or scale < 0.0:
+            return True
+
+        async with ctx.clock_lock:
+            ctx.clock.set_time_scale(scale)
+            sync = ctx.clock.make_sync()
+
+        ctx.clock_changed.set()
+
+        await ctx.bus.send_command(
+            ctx.commands.clock_sync(
+                sync_id=sync.sync_id,
+                sim_unix_ms=sync.sim_unix_ms,
+                time_scale=sync.time_scale
+            )
+        )
+        await _publish_clock_snapshot(ctx, sync)
+        return True
+```
+</TransportCodeBlock>
+
+</section>
+
+<section class="transport-code-section">
+
+## Continuous Clock Sync
+
+`clock_sync_loop(...)` is the long-lived transport task that keeps Unity aligned with backend simulation time. It repeatedly snapshots the shared clock, sends `clock_sync` over the active bus, and rate-limits both CLI logging and event-log publishing.
+
+So this loop is the steady-state outbound half of transport-owned time synchronization.
+
+<TransportCodeBlock title="loops/clock.py">
+```python
+async def clock_sync_loop(ctx: SessionContext) -> None:
+    period = 1.0 / CLOCK_HERTZ
+    logging.info("Clock sync loop started: hz=%.1f", CLOCK_HERTZ)
+
+    last_log_t = 0.0
+    last_evt_t = 0.0
+
+    while True:
+        try:
+            async with ctx.clock_lock:
+                sync = ctx.clock.make_sync()
+                sim_now = ctx.clock.now()
+
+            await ctx.bus.send_command(
+                ctx.commands.clock_sync(
+                    sync_id=sync.sync_id,
+                    sim_unix_ms=sync.sim_unix_ms,
+                    time_scale=sync.time_scale,
+                )
+            )
+
+            t = time.monotonic()
+
+            if (t - last_log_t) >= LOG_EVERY_S:
+                last_log_t = t
+                logging.info(
+                    "[clock_sync] sim_now=%s sim_unix_ms=%d time_scale=%.2f sync_id=%d",
+                    isoformat_utc_plus1(sim_now, timespec="seconds"),
+                    sync.sim_unix_ms,
+                    sync.time_scale,
+                    sync.sync_id,
+                )
+
+            if (t - last_evt_t) >= EVT_EVERY_S:
+                last_evt_t = t
+                await _publish_clock_snapshot(ctx, sync)
+
+            await asyncio.sleep(period)
+
+        except asyncio.CancelledError:
+            logging.info("[clock_sync] Loop cancelled")
+            raise
+
+        except Exception:
+            logging.exception("[clock_sync] Loop crashed")
+            await asyncio.sleep(1.0)
+```
+</TransportCodeBlock>
+
+</section>
+</div>

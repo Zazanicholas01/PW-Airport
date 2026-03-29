@@ -1,0 +1,119 @@
+---
+const { items = [], compact = false, variant = 'default' } = Astro.props as {
+  items?: Array<{
+    href: string;
+    title: string;
+    summary: string;
+    kicker?: string;
+    tone?: string;
+    icon?: string;
+    meta?: string;
+  }>;
+  compact?: boolean;
+  variant?: 'default' | 'subsystems' | 'featured';
+};
+
+function iconPath(name: string) {
+  switch (name) {
+    case 'database':
+      return 'M12 4C7.6 4 4 5.8 4 8v8c0 2.2 3.6 4 8 4s8-1.8 8-4V8c0-2.2-3.6-4-8-4Zm0 2c3.5 0 6 .9 6 2s-2.5 2-6 2-6-.9-6-2 2.5-2 6-2Zm0 12c-3.5 0-6-.9-6-2v-2c1.4 1.1 3.8 1.7 6 1.7s4.6-.6 6-1.7v2c0 1.1-2.5 2-6 2Z';
+    case 'cube':
+      return 'm12 3 7 4v10l-7 4-7-4V7l7-4Zm0 2.3L7 8v8l5 2.7 5-2.7V8l-5-2.7Z';
+    case 'signal':
+      return 'M5 18h2v-3H5v3Zm4 0h2v-6H9v6Zm4 0h2V9h-2v9Zm4 0h2V6h-2v12Z';
+    case 'bolt':
+      return 'M13 2 6 13h5l-1 9 7-11h-5l1-9Z';
+    case 'clock':
+      return 'M12 4a8 8 0 1 0 0 16 8 8 0 0 0 0-16Zm1 4h-2v5l4 2 1-1.7-3-1.5V8Z';
+    case 'orbit':
+      return 'M12 12m-2.2 0a2.2 2.2 0 1 0 4.4 0a2.2 2.2 0 1 0-4.4 0M4 12c2-4 14-4 16 0-2 4-14 4-16 0Zm8-8c4 2 4 14 0 16-4-2-4-14 0-16Z';
+    case 'layers':
+      return 'm12 4 8 4-8 4-8-4 8-4Zm-8 7 8 4 8-4M4 15l8 4 8-4';
+    case 'panel':
+      return 'M4 5h16v14H4V5Zm2 2v10h5V7H6Zm7 0v3h5V7h-5Zm0 5v5h5v-5h-5Z';
+    case 'message':
+      return 'M5 6h14v9H9l-4 3v-3H5V6Zm2 2v5h10V8H7Z';
+    case 'wrench':
+      return 'M14 5a4 4 0 0 0-5 5l-5 5 2 2 5-5a4 4 0 0 0 5-5l-2 2-2-2 2-2Z';
+    case 'globe':
+      return 'M12 3a9 9 0 1 0 0 18a9 9 0 0 0 0-18Zm6.8 8h-3.1a15 15 0 0 0-1.2-5A7.03 7.03 0 0 1 18.8 11ZM12 5c.9 0 2.2 2 2.9 6H9.1c.7-4 2-6 2.9-6ZM9.5 6a15 15 0 0 0-1.2 5H5.2A7.03 7.03 0 0 1 9.5 6ZM5.2 13h3.1a15 15 0 0 0 1.2 5A7.03 7.03 0 0 1 5.2 13ZM12 19c-.9 0-2.2-2-2.9-6h5.8c-.7 4-2 6-2.9 6Zm2.5-1a15 15 0 0 0 1.2-5h3.1A7.03 7.03 0 0 1 14.5 18Z';
+    case 'book':
+      return 'M6 5.5A2.5 2.5 0 0 1 8.5 3H19v15H8.5A2.5 2.5 0 0 0 6 20.5V5.5Zm2.5-.5A1.5 1.5 0 0 0 7 6.5v10.6c.42-.38.97-.6 1.5-.6H17V5H8.5Z';
+    case 'monitor':
+      return 'M4 5h16v10H4V5Zm2 2v6h12V7H6Zm4 10h4l.8 2H9.2l.8-2Z';
+    case 'network':
+      return 'M12 4a2 2 0 1 0 0 4a2 2 0 0 0 0-4ZM5 16a2 2 0 1 0 0 4a2 2 0 0 0 0-4Zm14 0a2 2 0 1 0 0 4a2 2 0 0 0 0-4ZM11 8h2v4.2l4.1 3l-1.2 1.6L12 14l-3.9 2.8l-1.2-1.6l4.1-3V8Z';
+    default:
+      return 'M12 5v14M5 12h14';
+  }
+}
+---
+<div class:list={[
+  'docs-topic-grid',
+  compact && 'is-compact',
+  variant === 'subsystems' && 'is-subsystems',
+  variant === 'featured' && 'is-featured'
+]}>
+  {items.map((item) => (
+    <a
+      class:list={[
+        'docs-topic-card',
+        variant === 'featured' && 'docs-topic-card-featured',
+        variant === 'subsystems' && 'docs-topic-card-subsystem',
+        item.tone && variant === 'featured' && `tone-featured-${item.tone}`,
+        item.tone && variant === 'subsystems' && `tone-subsystem-${item.tone}`,
+      ]}
+      href={item.href}
+    >
+      {variant === 'featured' ? (
+        <>
+          <div class="docs-topic-featured-top">
+            <div>
+              {item.kicker && <span class="docs-topic-kicker">{item.kicker}</span>}
+              {item.meta && <span class="docs-topic-meta">{item.meta}</span>}
+            </div>
+            {item.icon ? (
+              <span class="docs-topic-featured-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24">
+                  <path d={iconPath(item.icon)} />
+                </svg>
+              </span>
+            ) : (
+              <span class="docs-topic-arrow" aria-hidden="true">
+                <svg viewBox="0 0 24 24">
+                  <path d="M7 17 17 7"></path>
+                  <path d="M9 7h8v8"></path>
+                </svg>
+              </span>
+            )}
+          </div>
+          <strong>{item.title}</strong>
+          <p>{item.summary}</p>
+        </>
+      ) : variant === 'subsystems' ? (
+        <>
+          <div class="docs-topic-card-head">
+            {item.icon && (
+              <span class="docs-topic-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24">
+                  <path d={iconPath(item.icon)} />
+                </svg>
+              </span>
+            )}
+            <div>
+              {item.kicker && <span class="docs-topic-kicker">{item.kicker}</span>}
+              <strong>{item.title}</strong>
+            </div>
+          </div>
+          <p>{item.summary}</p>
+        </>
+      ) : (
+        <>
+          {item.kicker && <span class="docs-topic-kicker">{item.kicker}</span>}
+          <strong>{item.title}</strong>
+          <p>{item.summary}</p>
+        </>
+      )}
+    </a>
+  ))}
+</div>

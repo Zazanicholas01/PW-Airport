@@ -1,36 +1,116 @@
 ---
 title: General Overview
 layout: ../../layouts/DocsLayout.astro
+description: Broad system view of the airport simulation before diving into architecture and workflows.
 ---
 
-# General overview
+import DocsIntroHero from '../../components/DocsIntroHero.astro';
+import DocsTopicGrid from '../../components/DocsTopicGrid.astro';
+import DocsSteps from '../../components/DocsSteps.astro';
 
-PW-Airport is a real-time airport simulation with:
+export const platformPillars = [
+  {
+    kicker: 'Core Runtime',
+    title: 'Python Backend',
+    summary: 'Authoritative scheduling, world state, persistence orchestration, and simulation clock control.',
+    tone: 'cyan',
+    meta: 'Scheduling + state',
+  },
+  {
+    kicker: 'Client',
+    title: 'Unity Scene',
+    summary: 'Scene setup, prefab spawning, spline-driven movement, and real-time simulation visualization.',
+    tone: 'violet',
+    meta: 'Visual runtime',
+  },
+  {
+    kicker: 'Persistence',
+    title: 'PostgreSQL + Analytics',
+    summary: 'Operational state storage, historical traceability, and analytics access through Metabase.',
+    tone: 'emerald',
+    meta: 'Data layer',
+  },
+  {
+    kicker: 'Operations',
+    title: 'FastAPI Dashboard',
+    summary: 'Read-only operator view for flights, planes, runtime activity, and troubleshooting signals.',
+    tone: 'amber',
+    meta: 'Inspection surface',
+  },
+];
 
-- Python backend: authoritative scheduling, DB state, simulation clock
-- Unity client: scene setup, prefab spawning, spline movement
-- PostgreSQL + Metabase: persistence and analytics
-- FastAPI dashboard: read-only inspection (flights, planes, live logs)
+export const keyEntrypoints = [
+  {
+    title: 'Backend server entrypoint',
+    body: 'The main backend process starts here and boots the application runtime.',
+    href: '/docs/01-architecture/',
+    label: '`server.py` and architecture',
+  },
+  {
+    title: 'WebSocket orchestration',
+    body: 'Unity and backend coordination flows through the transport layer and message handling path.',
+    href: '/docs/08-transport-websocket/',
+    label: 'Transport details',
+  },
+  {
+    title: 'Dashboard application',
+    body: 'The web dashboard is a separate operator-facing surface for observation rather than control.',
+    href: '/docs/13-dashboard-web/',
+    label: 'Dashboard docs',
+  },
+];
 
-## Key entrypoints
+export const nextReads = [
+  {
+    href: '/docs/01-architecture/',
+    title: 'Architecture',
+    summary: 'Move from high-level system understanding into runtime boundaries and component responsibilities.',
+    tone: 'sky',
+    meta: 'Next step',
+  },
+  {
+    href: '/docs/03-end-to-end-workflows/',
+    title: 'End-to-End Workflows',
+    summary: 'Trace the full operational path from inbound setup events to scheduling, movement, and updates.',
+    tone: 'rose',
+    meta: 'Flow tracing',
+  },
+  {
+    href: '/docs/04-local-run/',
+    title: 'Operational Commands',
+    summary: 'Use the command runbook when you need backend, docs, Docker, or database commands.',
+    tone: 'emerald',
+    meta: 'Developer setup',
+  },
+];
 
-- Backend server entrypoint: `../../server.py`
-- WebSocket orchestration: `../../transport/ws_server.py`
-- Dashboard app: `../../web/dashboard_app.py`
-- Unity scripts: `../../../Unity_Scripts`
+<DocsIntroHero
+  eyebrow="Overview"
+  lead="PW-Airport is a real-time airport simulation platform. The backend owns authoritative runtime state, Unity renders the simulation world, PostgreSQL stores operational data, and the dashboard exposes a read-only operator-facing view."
+  primaryAction={{ href: '/docs/01-architecture/', label: 'Open Architecture' }}
+  secondaryAction={{ href: '/docs/03-end-to-end-workflows/', label: 'Follow Runtime Flows' }}
+  meta={['Backend-authoritative', 'Unity-integrated', 'Database-backed', 'Operator-visible']}
+/>
 
-## What “setup” means
+## Platform Pillars
 
-At runtime, Unity “bootstraps” the backend by sending:
+<DocsTopicGrid items={platformPillars} variant="featured" />
 
-- spline definitions (including a `MasterSpline`)
-- prefab catalog
+## What “Setup” Means
 
-The backend uses these to generate movement routes and persist them in the DB as `Path`/`Percorso` rows.
+> At runtime, Unity bootstraps the backend by sending the world-building inputs the scheduler needs before aircraft movement can be generated.
 
-## Next reads
+The setup phase sends:
 
-- Architecture: `../01-architecture/`
-- End-to-end workflows: `../03-end-to-end-workflows/`
-- Local run: `../04-local-run/`
+- spline definitions, including a `MasterSpline`
+- prefab catalog data used to map simulation assets
 
+The backend converts that setup payload into persistent routing information and stores the resulting movement structures as `Path` and `Percorso` rows in the database.
+
+## Key Entrypoints
+
+<DocsSteps items={keyEntrypoints} />
+
+## Recommended Next Reads
+
+<DocsTopicGrid items={nextReads} />

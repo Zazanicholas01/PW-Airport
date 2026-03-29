@@ -101,10 +101,10 @@ These should not be deleted first, but they will become misleading once the old 
 
 - `README.md`
 - `src/web/README.md`
-- `src/docs/00-general-overview/index.mdx`
-- `src/docs/01-architecture/index.mdx`
-- `src/docs/04-local-run/index.mdx`
-- `src/docs/13-dashboard-web/index.mdx`
+- `astro/src/pages/00-general-overview/index.mdx`
+- `astro/src/pages/01-architecture/index.mdx`
+- `astro/src/pages/04-local-run/index.mdx`
+- `astro/src/pages/13-dashboard-web/index.mdx`
 - `src/db/README.md`
 - `src/domain/README.md`
 - `tasks_activity.txt`

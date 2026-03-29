@@ -1,0 +1,7 @@
+---
+const { title } = Astro.props as { title: string };
+---
+
+<div class="transport-code-block" data-code-title={title}>
+  <slot />
+</div>

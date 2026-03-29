@@ -1,0 +1,275 @@
+import DocsSteps from '../DocsSteps.astro';
+import TransportCodeBlock from './TransportCodeBlock.astro';
+
+export const flightSchedulingTimeline = [
+  {
+    title: 'Setup Gating',
+    body: 'The loop waits until transport setup is complete so it can rely on graph-derived state and landing spawn data.',
+  },
+  {
+    title: 'Scheduler Bootstrap',
+    body: 'Builds the sliding-window scheduler and initial debug-flight state used to drive the simulation.',
+  },
+  {
+    title: 'Window Evaluation',
+    body: 'Reads the current simulation time, queries flights in the active window, and logs the current scheduling view.',
+  },
+  {
+    title: 'Departure Decisions',
+    body: 'Assigns parked airplanes, paths, and movement starts for departure flights when they enter the correct phase.',
+  },
+  {
+    title: 'Landing Decisions',
+    body: 'Assigns remote landing airplanes, reserves stands, spawns arrivals, and starts landing approach movement.',
+  },
+  {
+    title: 'Clock-Aware Sleep',
+    body: 'Converts simulation polling to real-world sleep duration and wakes early when the clock changes.',
+  },
+];
+
+## `loops/flight_scheduling.py`
+
+This loop is where transport becomes operational. Its role in the project is to translate simulation time plus backend flight state into concrete transport actions: assign airplanes, reserve stands, spawn arrivals, and send movement commands to Unity.
+
+## Call Timeline
+
+<DocsSteps items={flightSchedulingTimeline} variant="timeline" />
+
+<div class="transport-code-stack flight-scheduling-panel">
+<section class="transport-code-section">
+
+## Setup Gating
+
+The loop does not start scheduling immediately. It first waits for setup to complete, because transport cannot make flight decisions until the graph, spawn points, and setup-derived state are available.
+
+That makes this loop explicitly dependent on the setup phase in `ws_server.py`.
+
+<TransportCodeBlock title="loops/flight_scheduling.py">
+```python
+async def flight_scheduler_loop(
+    ctx: SessionContext,
+    *,
+    poll_seconds: float = 30.0,
+    window: timedelta = timedelta(hours=WINDOW_TIMEDELTA_HOURS),
+    ) -> None:
+
+    while not ctx.setup_bus.state.setup_completed:
+        await asyncio.sleep(0.1)
+
+    landing_spawn_position = ctx.setup_bus.state.landing_spawn_position
+    logging.info("[spawn_scheduler] landing_spawn_position=%s", landing_spawn_position)
+```
+</TransportCodeBlock>
+
+</section>
+
+<section class="transport-code-section">
+
+## Scheduler Bootstrap
+
+After setup is ready, transport creates the sliding-window scheduler and seeds the simulation with debug flights. In this project, that means the loop is not only evaluating state, it is also responsible for bootstrapping the initial operational workload.
+
+<TransportCodeBlock title="loops/flight_scheduling.py">
+```python
+scheduler = FlightSlidingWindowScheduler(
+    airport_icao=ctx.airport_icao,
+    window=window,
+)
+
+start_wait = time.monotonic()
+while True:
+    parked_count = ctx.flight_actions.count_parked_airplanes()
+    if parked_count > 0:
+        break
+
+    if (time.monotonic() - start_wait) > WAIT_FOR_PARKED_TIMEOUT_S:
+        logging.warning("[flight_scheduler] no parked airplanes after %.1fs; generating flights anyway", WAIT_FOR_PARKED_TIMEOUT_S)
+        break
+    await asyncio.sleep(0.1)
+
+ctx.flight_actions.generate_debug_flights(RANDOM_FLIGHTS_COUNT, ensure_in_window=ENSURE_IN_WINDOW, window=scheduler.window)
+logging.info(f"[flight_scheduler] generated debug flights (n={RANDOM_FLIGHTS_COUNT})")
+append_event({
+    "type": "backend_event",
+    "event": "debug_flights_generated",
+    "count": RANDOM_FLIGHTS_COUNT,
+})
+```
+</TransportCodeBlock>
+
+</section>
+
+<section class="transport-code-section">
+
+## Window Evaluation
+
+Each pass through the loop reads the current simulation time under the shared clock lock, then queries flights inside the active scheduling window. This is the core "what should transport act on right now?" view.
+
+So the scheduler loop is driven by simulation time, not wall-clock time.
+
+<TransportCodeBlock title="loops/flight_scheduling.py">
+```python
+async with ctx.clock_lock:
+    now = as_utc(ctx.clock.now())
+    time_scale = float(getattr(ctx.clock, "time_scale", 1.0))
+
+flights = ctx.flight_actions.list_flights_in_sliding_window(
+    airport_icao=ctx.airport_icao,
+    now_utc=now,
+    window=scheduler.window,
+)
+
+t = time.monotonic()
+if (t - last_window_log) >= poll_seconds:
+    last_window_log = t
+    items = [
+        {
+            "id": getattr(flight, "id", None),
+            "origin": getattr(flight, "origin", None),
+            "destination": getattr(flight, "destination", None),
+            "dep": getattr(flight, "departure_time", None),
+            "arr": getattr(flight, "arrival_time", None),
+            "tipo": getattr(flight, "tipo", None),
+            "status": getattr(flight, "status", None),
+            "airplane_id": getattr(flight, "airplane_id", None),
+        }
+        for flight in flights
+    ]
+```
+</TransportCodeBlock>
+
+</section>
+
+<section class="transport-code-section">
+
+## Departure Decisions
+
+For departures, transport first assigns a compatible parked airplane and path, then later emits the actual `start_path` movement command when the flight reaches the correct phase.
+
+So this loop owns the transport transition from scheduled departure state into actual movement on the Unity side.
+
+<TransportCodeBlock title="loops/flight_scheduling.py">
+```python
+if scheduler.should_schedule_departure(flight=flight, now_utc=now):
+    required_type = ctx.flight_actions.normalize_flight_type(getattr(flight, "tipo", None))
+
+    assignment = ctx.flight_actions.assign_airplane_to_departure_flight(
+        flight_id=flight_id,
+        required_type=required_type
+    )
+    if assignment is None:
+        logging.info("[flight_scheduler] no compatible parked airplane flight_id=%s", flight_id)
+        continue
+
+    airplane_id, stand_id = assignment
+    ctx.flight_actions.assign_path_to_airplane(
+        airplane_id=airplane_id,
+        source=stand_id,
+        destination="Departure",
+    )
+```
+</TransportCodeBlock>
+
+<TransportCodeBlock title="loops/flight_scheduling.py">
+```python
+if scheduler.should_start_departure_movement(flight=flight, now_utc=now):
+    airplane_id = getattr(flight, "airplane_id", None)
+
+    if isinstance(airplane_id, str):
+        cmd = make_start_path_command(airplane_id=airplane_id, Session=ctx.Session)
+        if cmd is None:
+            logging.warning("[start_path][SKIP] flight_id=%s airplane_id=%s (no route/segments)", flight_id, airplane_id)
+        else:
+            ctx.flight_actions.mark_departure_started(flight_id=flight_id)
+            await ctx.bus.send_command(cmd)
+```
+</TransportCodeBlock>
+
+</section>
+
+<section class="transport-code-section">
+
+## Landing Decisions
+
+For landings, the loop handles several different project-level phases:
+
+- create/link the remote airplane
+- mark the remote departure state
+- reserve the arrival stand
+- spawn the airplane into Unity
+- start the landing approach path
+
+This is why the loop feels transport-owned even though much of the lower decision logic lives in helper services.
+
+<TransportCodeBlock title="loops/flight_scheduling.py">
+```python
+if scheduler.should_assign_landing_plane(flight=flight, now_utc=now):
+    airplane_id = ctx.flight_actions.create_and_assign_airplane_for_landing_departure(
+        flight_id=flight_id,
+        prefab_picker=ctx.prefab_store.pick_plane_prefab
+    )
+```
+</TransportCodeBlock>
+
+<TransportCodeBlock title="loops/flight_scheduling.py">
+```python
+if scheduler.should_reserve_landing_stand(flight=flight, now_utc=now):
+    stand_id = ctx.flight_actions.reserve_stand_and_link_airplane_for_landing_arrival(flight_id=flight_id)
+    if stand_id is None:
+        logging.warning("[flight_scheduler] landing_arr: no available stands flight_id=%s", flight_id)
+        continue
+
+    airplane_id = getattr(flight, "airplane_id", None)
+    if isinstance(airplane_id, str):
+        ctx.flight_actions.assign_landing_path_for_airplane(
+            airplane_id=airplane_id,
+            stand_id=stand_id,
+        )
+```
+</TransportCodeBlock>
+
+<TransportCodeBlock title="loops/flight_scheduling.py">
+```python
+if scheduler.should_spawn_landing_plane(flight=flight, now_utc=now):
+    airplane_id = getattr(flight, "airplane_id", None)
+    if not isinstance(airplane_id, str) or not airplane_id:
+        continue
+
+    prefab = ctx.flight_actions.get_airplane_prefab(airplane_id=airplane_id)
+
+    if isinstance(prefab, str) and prefab and isinstance(landing_spawn_position, dict):
+        await ctx.bus.send_command(ctx.commands.spawn_plane(
+            prefab=prefab,
+            stand_id=f"landing:{flight_id}",
+            position=landing_spawn_position,
+            airplane_id=airplane_id,
+            spawn_context="landing",
+        ))
+```
+</TransportCodeBlock>
+
+</section>
+
+<section class="transport-code-section">
+
+## Clock-Aware Sleep
+
+The loop does not sleep for a fixed wall-clock interval. Instead, it converts the simulation poll interval into a real-world sleep duration based on the current `time_scale`, then wakes early if the clock changes.
+
+That keeps scheduling responsive when time is sped up, slowed down, or changed interactively from Unity.
+
+<TransportCodeBlock title="loops/flight_scheduling.py">
+```python
+poll_real_s = max(MIN_POLL_REAL_S, poll_seconds / max(time_scale, 1.0))
+
+try:
+    await asyncio.wait_for(ctx.clock_changed.wait(), timeout=poll_real_s)
+    ctx.clock_changed.clear()
+except asyncio.TimeoutError:
+    pass
+```
+</TransportCodeBlock>
+
+</section>
+</div>

@@ -1,28 +1,162 @@
-# PW-Airport Documentation
+import DocsIntroHero from '../components/DocsIntroHero.astro';
+import DocsTopicGrid from '../components/DocsTopicGrid.astro';
+import DocsSteps from '../components/DocsSteps.astro';
 
-This folder refactors and centralizes documentation that previously lived across:
+export const coreTopics = [
+  {
+    href: '/docs/00-general-overview/',
+    kicker: 'Start Here',
+    title: 'General Overview',
+    summary: 'Get the system shape first: simulation flow, major actors, and the operating model.',
+  },
+  {
+    href: '/docs/01-architecture/',
+    kicker: 'System',
+    title: 'Architecture',
+    summary: 'Read the application boundaries, runtime services, and the way data moves across the stack.',
+  },
+  {
+    href: '/docs/02-repo-structure/',
+    kicker: 'Codebase',
+    title: 'Repository Structure',
+    summary: 'Map folders to responsibilities before touching handlers, services, or transport code.',
+  },
+  {
+    href: '/docs/03-end-to-end-workflows/',
+    kicker: 'Runtime',
+    title: 'End-to-End Workflows',
+    summary: 'Follow the critical flows from inbound events to scheduling, persistence, and dashboard output.',
+  },
+  {
+    href: '/docs/04-local-run/',
+    kicker: 'Developer',
+    title: 'Local Run',
+    summary: 'Use the local setup notes to get the Python app, docs app, and dependencies running quickly.',
+  },
+  {
+    href: '/docs/05-docker-setup/',
+    kicker: 'Ops',
+    title: 'Docker Setup',
+    summary: 'Review the container topology, compose services, and the reverse-proxy arrangement.',
+  },
+];
 
-- Repository `README.md` (`../../README.md`)
-- Subsystem guides under `src/<module>/README.md`
+export const supportingTopics = [
+  {
+    href: '/docs/06-database/',
+    title: 'Database',
+    summary: 'Schema, persistence boundaries, and data ownership.',
+    tone: 'emerald',
+    icon: 'database',
+  },
+  {
+    href: '/docs/07-unity-client/',
+    title: 'Unity Client',
+    summary: 'Client integration points and simulation-side expectations.',
+    tone: 'violet',
+    icon: 'cube',
+  },
+  {
+    href: '/docs/08-transport-websocket/',
+    title: 'Transport',
+    summary: 'Socket transport, message flow, and connection concerns.',
+    tone: 'sky',
+    icon: 'signal',
+  },
+  {
+    href: '/docs/09-handlers/',
+    title: 'Handlers',
+    summary: 'Inbound orchestration and command/event handling.',
+    tone: 'amber',
+    icon: 'bolt',
+  },
+  {
+    href: '/docs/10-schedulers/',
+    title: 'Schedulers',
+    summary: 'Scheduling logic and periodic execution paths.',
+    tone: 'rose',
+    icon: 'clock',
+  },
+  {
+    href: '/docs/11-domain/',
+    title: 'Domain',
+    summary: 'Core simulation state, clocks, and business rules.',
+    tone: 'cyan',
+    icon: 'orbit',
+  },
+  {
+    href: '/docs/12-services/',
+    title: 'Services',
+    summary: 'Service layer contracts and integration points.',
+    tone: 'indigo',
+    icon: 'layers',
+  },
+  {
+    href: '/docs/13-dashboard-web/',
+    title: 'Dashboard Web',
+    summary: 'HTML/CSS dashboard behavior and operator-facing flow.',
+    tone: 'fuchsia',
+    icon: 'panel',
+  },
+  {
+    href: '/docs/14-message-contracts/',
+    title: 'Message Contracts',
+    summary: 'Vocabulary, payload expectations, and cross-system semantics.',
+    tone: 'teal',
+    icon: 'message',
+  },
+  {
+    href: '/docs/15-troubleshooting/',
+    title: 'Troubleshooting',
+    summary: 'Known failure modes and the shortest recovery paths.',
+    tone: 'orange',
+    icon: 'wrench',
+  },
+];
 
-## Topics (recommended reading order)
 
-0. [General overview](00-general-overview/)
-1. [Architecture](01-architecture/)
-2. [Repository structure](02-repo-structure/)
-3. [End-to-end workflows](03-end-to-end-workflows/)
-4. [Local run](04-local-run/)
-5. [Docker setup](05-docker-setup/)
-6. [Database](06-database/)
-7. [Unity client integration](07-unity-client/)
-8. [Transport (WebSocket)](08-transport-websocket/)
-9. [Handlers](09-handlers/)
-10. [Schedulers](10-schedulers/)
-11. [Domain (clock, world state)](11-domain/)
-12. [Services](12-services/)
-13. [Dashboard / web](13-dashboard-web/)
-14. [Message contracts and vocabulary](14-message-contracts/)
-15. [Troubleshooting](15-troubleshooting/)
+export const readingSteps = [
+  {
+    title: 'Understand the shape of the system',
+    body: 'Start with the broad architecture before looking at isolated modules. That prevents local fixes from violating system flow.',
+    href: '/docs/00-general-overview/',
+    label: 'Read the overview',
+  },
+  {
+    title: 'Map runtime behavior to code ownership',
+    body: 'Use repository structure plus end-to-end workflows to connect operators, services, handlers, and storage.',
+    href: '/docs/02-repo-structure/',
+    label: 'Open the code map',
+  },
+  {
+    title: 'Go deeper by subsystem',
+    body: 'Once the high-level path is clear, move into the specific domain you are modifying: transport, services, schedulers, or dashboard.',
+    href: '/docs/09-handlers/',
+    label: 'Jump into subsystems',
+  },
+];
+
+<DocsIntroHero
+  eyebrow="Introduction"
+  lead="This docs area centralizes the operational and architectural knowledge that used to be scattered across the root README and subsystem-specific guides. Use it as the primary entry point before making runtime, dashboard, or infrastructure changes."
+  primaryAction={{ href: '/docs/00-general-overview/', label: 'Start With Overview' }}
+  secondaryAction={{ href: '/docs/01-architecture/', label: 'Open Architecture' }}
+  meta={['Simulation runtime', 'Dashboard operations', 'Docker + local dev', 'Message contracts']}
+/>
+
+> The recommended path is broad-to-specific: system overview first, then workflows, then the subsystem you need to change.
+
+## Reading Path
+
+<DocsSteps items={readingSteps} />
+
+## Core Topics
+
+<DocsTopicGrid items={coreTopics} compact variant="subsystems" />
+
+## Subsystem Reference
+
+<DocsTopicGrid items={supportingTopics} compact />
 
 ## Source subsystem guides (as-is)
 

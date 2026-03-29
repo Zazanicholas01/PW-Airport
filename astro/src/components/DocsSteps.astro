@@ -1,0 +1,26 @@
+---
+const { items = [], variant = 'cards' } = Astro.props as {
+  items?: Array<{
+    title: string;
+    body: string;
+    href?: string;
+    label?: string;
+  }>;
+  variant?: 'cards' | 'timeline';
+};
+---
+
+<ol class:list={['docs-step-list', variant === 'timeline' && 'is-timeline']}>
+  {items.map((item, index) => (
+    <li class="docs-step-card">
+      <span class="docs-step-index">{index + 1}</span>
+      <div class="docs-step-copy">
+        <strong>{item.title}</strong>
+        <p>{item.body}</p>
+        {item.href && item.label && (
+          <a class="docs-step-link" href={item.href}>{item.label}</a>
+        )}
+      </div>
+    </li>
+  ))}
+</ol>

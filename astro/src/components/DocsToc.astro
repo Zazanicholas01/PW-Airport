@@ -1,0 +1,92 @@
+---
+const { headings = [], mobile = false } = Astro.props;
+const tocItems = headings.filter((heading) => heading.depth >= 2 && heading.depth <= 3);
+---
+{tocItems.length > 0 && (
+  mobile ? (
+    <details class="docs-toc-mobile docs-panel">
+      <summary>On this page</summary>
+      <nav class="docs-toc-body" aria-label="On this page">
+        <ul>
+          {tocItems.map((item) => (
+            <li class:list={[`depth-${item.depth}`]}>
+              <a href={`#${item.slug}`}>{item.text}</a>
+            </li>
+          ))}
+        </ul>
+      </nav>
+    </details>
+  ) : (
+    <nav class="docs-toc" aria-label="On this page">
+      <div class="docs-toc-head">TABLE OF CONTENTS</div>
+      <ul>
+        {tocItems.map((item) => (
+          <li class:list={[`depth-${item.depth}`]}>
+            <a href={`#${item.slug}`}>{item.text}</a>
+          </li>
+        ))}
+      </ul>
+    </nav>
+  )
+)}
+
+<style>
+  .docs-toc-mobile {
+    padding: 1rem;
+  }
+
+  .docs-toc-head {
+    margin-bottom: 0.9rem;
+    font-size: 0.95rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--docs-heading);
+  }
+
+  .docs-toc ul,
+  .docs-toc-body ul {
+    display: grid;
+    gap: 0.25rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .docs-toc li.depth-3,
+  .docs-toc-body li.depth-3 {
+    padding-left: 0.95rem;
+  }
+
+  .docs-toc a,
+  .docs-toc-body a {
+    display: block;
+    padding: 0.45rem 0.7rem;
+    color: var(--docs-text-soft);
+    text-decoration: none;
+    line-height: 1.35;
+    border-radius: 999px;
+  }
+
+  .docs-toc a:hover,
+  .docs-toc-body a:hover {
+    color: var(--docs-heading);
+    background: var(--docs-surface);
+    text-decoration: none;
+  }
+
+  .docs-toc-mobile summary {
+    cursor: pointer;
+    font-weight: 600;
+    color: var(--docs-heading);
+    list-style: none;
+  }
+
+  .docs-toc-mobile summary::-webkit-details-marker {
+    display: none;
+  }
+
+  .docs-toc-body {
+    padding-top: 0.85rem;
+  }
+</style>

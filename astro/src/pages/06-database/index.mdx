@@ -1,44 +1,197 @@
 ---
 title: Database
 layout: ../../layouts/DocsLayout.astro
+description: Persistence layer overview for the airport simulation, including core entities, transition responsibilities, and operational flows.
 ---
 
-# Database
+import DocsIntroHero from '../../components/DocsIntroHero.astro';
+import DocsTopicGrid from '../../components/DocsTopicGrid.astro';
+import DocsSteps from '../../components/DocsSteps.astro';
 
-This topic is derived from `../../db/README.md` and `../../../scripts/`.
+export const entities = [
+  {
+    kicker: 'Core Entity',
+    title: 'Flight',
+    summary: 'Represents the operational lifecycle of a scheduled arrival or departure.',
+    tone: 'cyan',
+    meta: 'Viaggio',
+  },
+  {
+    kicker: 'Core Entity',
+    title: 'Airplane',
+    summary: 'Tracks aircraft state, linkage to flights, and active movement context.',
+    tone: 'violet',
+    meta: 'Aereo',
+  },
+  {
+    kicker: 'Core Entity',
+    title: 'Stand',
+    summary: 'Represents stand occupancy, reservation, and airplane association.',
+    tone: 'amber',
+    meta: 'Piazzola',
+  },
+  {
+    kicker: 'Core Entity',
+    title: 'Path',
+    summary: 'Stores generated spline-based movement routes used during simulation.',
+    tone: 'emerald',
+    meta: 'Percorso',
+  },
+];
 
-## Schema and models
+export const responsibilities = [
+  {
+    kicker: 'Bootstrap',
+    title: 'Engine and Session Setup',
+    summary: 'The DB layer builds the SQLAlchemy engine from environment configuration and provides reusable session access.',
+  },
+  {
+    kicker: 'Models',
+    title: 'ORM Mapping',
+    summary: 'English Python model names map onto the Italian schema used by the underlying database tables and columns.',
+  },
+  {
+    kicker: 'Queries',
+    title: 'Operational Read Models',
+    summary: 'The DB layer provides sliding-window and state-aware queries used by schedulers and dashboard views.',
+  },
+  {
+    kicker: 'Transitions',
+    title: 'Assignment and Reservation Logic',
+    summary: 'Stand reservation, airplane linking, path assignment, and flight status transitions are coordinated here.',
+  },
+  {
+    kicker: 'Setup Persistence',
+    title: 'World Topology Rebuild',
+    summary: 'During setup, backend handlers rebuild path data and persist the routing graph derived from Unity input.',
+  },
+  {
+    kicker: 'Consumers',
+    title: 'Shared Across Runtime Layers',
+    summary: 'Handlers, schedulers, services, and dashboard reads all depend on the same persistence layer.',
+  },
+];
 
-Core SQLAlchemy models live in:
+export const supportingTables = [
+  {
+    title: 'Airport',
+    summary: 'Reference airport records used by flights and environment configuration.',
+  },
+  {
+    title: 'Airline',
+    summary: 'Airline metadata associated with generated and scheduled flights.',
+  },
+  {
+    title: 'Terminal',
+    summary: 'Terminal-level structure used to organize stands and airport layout data.',
+  },
+  {
+    title: 'Vehicle',
+    summary: 'Ground-side vehicle records linked to operational environment state.',
+  },
+  {
+    title: 'Operation',
+    summary: 'Operational records associated with airport activity and workflow support.',
+  },
+  {
+    title: 'Passenger',
+    summary: 'Passenger-side data linked to flight-related simulation content.',
+  },
+  {
+    title: 'Cargo',
+    summary: 'Cargo-related data used for non-passenger movement and logistics context.',
+  },
+  {
+    title: 'ParkingSpot',
+    summary: 'Parking and ground-position support records outside the main stand lifecycle.',
+  },
+];
 
-- `../../db/models.py`
+export const dbFlows = [
+  {
+    title: 'Setup persistence rebuilds the movement topology',
+    body: 'When Unity setup completes, the backend writes stand positions, clears outdated routing state, and rebuilds Path and Percorso rows from the latest spline-derived graph.',
+  },
+  {
+    title: 'Scheduling reads flights through an operational window',
+    body: 'The scheduler repeatedly queries flights in the active time horizon, combining multiple lifecycle states into a single decision-oriented feed.',
+  },
+  {
+    title: 'Assignment logic links flights, airplanes, stands, and routes',
+    body: 'Departure and arrival transitions rely on DB helpers that reserve stands, assign airplanes, and attach the correct path records to runtime aircraft.',
+  },
+  {
+    title: 'Runtime events update persistent operational truth',
+    body: 'As Unity reports movement completion and stand-exit events, handlers apply state changes so the database stays aligned with the current simulation state.',
+  },
+  {
+    title: 'Dashboard reads expose the current operational picture',
+    body: 'The web layer queries the same persistence model to surface flights, aircraft, stands, and related runtime information to operators.',
+  },
+];
 
-Key entities (high level):
+export const nextReads = [
+  {
+    href: '/docs/09-handlers/',
+    title: 'Handlers',
+    summary: 'Use the handler docs to see how setup and runtime messages trigger DB writes and state transitions.',
+    tone: 'violet',
+  },
+  {
+    href: '/docs/10-schedulers/',
+    title: 'Schedulers',
+    summary: 'Use the scheduler docs for the timing and decision logic that depends on DB reads and assignments.',
+    tone: 'amber',
+  },
+  {
+    href: '/docs/14-message-contracts/',
+    title: 'Message Contracts',
+    summary: 'Read the message vocabulary when DB state changes are driven by inbound Unity payload semantics.',
+    tone: 'cyan',
+  },
+  {
+    href: '/docs/15-troubleshooting/',
+    title: 'Troubleshooting',
+    summary: 'Use the troubleshooting guide when setup persistence, stand links, or route generation fail in practice.',
+    tone: 'rose',
+  },
+];
 
-- `Flight` (`Viaggio`), `Airplane` (`Aereo`), `Stand` (`Piazzola`), `Path` (`Percorso`)
+<DocsIntroHero
+  eyebrow="Database"
+  lead="The database layer persists the operational truth of the simulation. It stores flights, airplanes, stands, and generated paths, while also providing the query and transition helpers used by setup, scheduling, runtime handling, and the dashboard."
+  primaryAction={{ href: '/docs/10-schedulers/', label: 'Open Schedulers' }}
+  secondaryAction={{ href: '/docs/09-handlers/', label: 'Open Handlers' }}
+  meta={['SQLAlchemy', 'Operational persistence', 'Path rebuilds', 'Scheduler-facing reads']}
+ />
 
-DB engine/session helpers:
+## Core Entities
 
-- `../../db/engine.py`
+<DocsTopicGrid items={entities} variant="featured" />
 
-## Initialization and seeding
+## Supporting Tables
 
-- Schema creation/reset: `../../../scripts/init_db.py`
-- Static seed (airports, airlines, terminals, stands, vehicles, …): `../../../scripts/startup.py`
+The wider schema also includes supporting tables used for airport metadata, vehicles, operations, and non-core simulation records.
 
-## Runtime queries and transitions
+<DocsTopicGrid items={supportingTables} compact />
 
-Most domain-level DB transitions are in:
+## Persistence Responsibilities
 
-- `../../db/db_functions.py`
+<DocsTopicGrid items={responsibilities} compact />
 
-Examples:
+## Operational DB Flows
 
-- sliding-window queries for scheduler decisions
-- stand reservation/linking
-- airplane/flight status transitions
+<DocsSteps items={dbFlows} variant="timeline" />
 
-## Next reads
+## Schema and Seed
 
-- `../../db/README.md` (full workflow guide)
-- Message vocabulary: `../14-message-contracts/standard_vocabulary.md`
+Core files:
+
+- `src/db/models.py`
+- `src/db/engine.py`
+- `src/db/db_functions.py`
+
+Schema reset:
+
+```bash
+python scripts/init_db.py

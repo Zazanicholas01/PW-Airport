@@ -1,0 +1,129 @@
+import DocsSteps from '../DocsSteps.astro';
+import TransportCodeBlock from './TransportCodeBlock.astro';
+
+export const sessionTimeline = [
+  {
+    title: 'Context Shape',
+    body: 'SessionContext defines the exact shared data transport code is allowed to carry across loops and handlers.',
+  },
+  {
+    title: 'Per-Connection Assembly',
+    body: 'ws_server.py creates one SessionContext per attached websocket session and binds the current bus, handlers, clock, and world references into it.',
+  },
+  {
+    title: 'Cross-Loop Access',
+    body: 'Transport loops and handlers consume the same context object instead of receiving large ad hoc argument lists.',
+  },
+];
+
+## `session.py`
+
+This file is small, but its role in the project is structural. `SessionContext` is the object that gives the transport layer a stable shape for per-session runtime access. Instead of passing ten unrelated values through every loop and handler, transport passes one context object.
+
+## Call Timeline
+
+<DocsSteps items={sessionTimeline} variant="timeline" />
+
+<div class="transport-code-stack session-panel">
+<section class="transport-code-section">
+
+## Context Shape
+
+`SessionContext` is the transport contract for "what a live session can see." It groups:
+
+- the active bus boundary
+- setup/runtime handler references
+- clock state and synchronization primitives
+- project state like prefab store, graph, and world state
+- database session access
+- transport-specific helpers like `flight_actions` and `commands`
+
+In practice, this means transport code can depend on one stable object instead of manually threading all of those dependencies through each function.
+
+<TransportCodeBlock title="session.py">
+```python
+@dataclass(frozen=True)
+class SessionContext:
+    bus: Any
+    setup_bus: Any
+    runtime_bus: Any
+
+    clock: Any
+    clock_lock: asyncio.Lock
+    clock_changed: asyncio.Event
+
+    prefab_store: Any
+    graph: Any
+    world_state: Any
+    Session: Any
+
+    airport_icao: str
+
+    flight_actions: FlightActions
+    commands: CommandBuilders
+```
+</TransportCodeBlock>
+
+</section>
+
+<section class="transport-code-section">
+
+## Per-Connection Assembly
+
+`SessionContext` matters because `ws_server.py` builds it at the moment a websocket is attached. That is the handoff from connection lifecycle into the rest of the transport workflow.
+
+So the context becomes the bundle that ties together:
+
+- the current bus attachment
+- the long-lived server runtime pieces
+- the project data the session needs to operate
+
+<TransportCodeBlock title="ws_server.py">
+```python
+ctx = SessionContext(
+    bus=server_runtime.bus,
+    setup_bus=server_runtime.setup_bus,
+    runtime_bus=server_runtime.runtime_bus,
+    clock=server_runtime.clock,
+    clock_lock=server_runtime.clock_lock,
+    clock_changed=server_runtime.clock_changed,
+    prefab_store=prefab_store,
+    graph=graph,
+    world_state=world_state,
+    Session=Session,
+    airport_icao=airport_icao,
+    flight_actions=flight_actions,
+    commands=commands
+)
+```
+</TransportCodeBlock>
+
+</section>
+
+<section class="transport-code-section">
+
+## Cross-Loop Access
+
+Once created, `SessionContext` is what keeps the transport code coherent. It is passed into:
+
+- `incoming_dispatch_loop(...)`
+- clock handling and clock sync publishing
+- spawn scheduling
+- flight scheduling
+
+That gives each loop the same session-scoped view of transport state without coupling those loops to `ws_server.py` internals.
+
+<TransportCodeBlock title="ws_server.py">
+```python
+dispatch_task = asyncio.create_task(incoming_dispatch_loop(ctx, ws_bus.incoming))
+
+server_runtime.spawn_task = asyncio.create_task(schedule_initial_spawns(global_ctx))
+server_runtime.clock_task = asyncio.create_task(clock_sync_loop(global_ctx))
+server_runtime.flight_task = asyncio.create_task(
+    flight_scheduler_loop(global_ctx, poll_seconds=30.0)
+)
+```
+</TransportCodeBlock>
+
+</section>
+</div>

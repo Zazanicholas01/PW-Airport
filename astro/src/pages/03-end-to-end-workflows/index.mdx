@@ -1,44 +1,143 @@
 ---
 title: End To End Workflows
 layout: ../../layouts/DocsLayout.astro
+description: High-level operational flows from Unity setup through backend scheduling and runtime feedback.
 ---
 
-# End-to-end workflows
+import DocsIntroHero from '../../components/DocsIntroHero.astro';
+import DocsTopicGrid from '../../components/DocsTopicGrid.astro';
+import DocsSteps from '../../components/DocsSteps.astro';
 
-This topic consolidates the “End-to-End Workflows” sections from `../../../README.md` and the transport/handler/scheduler guides.
+export const setupFlow = [
+  {
+    title: 'Unity establishes the realtime connection',
+    body: 'The client opens the WebSocket connection and begins the bootstrap sequence used to prepare the backend for the simulation session.',
+  },
+  {
+    title: 'Spline data is transmitted first',
+    body: 'Unity sends the spline setup batch, including the world geometry needed to reconstruct routing and movement paths on the backend.',
+  },
+  {
+    title: 'Prefab data is transmitted next',
+    body: 'The prefab batch gives the backend the catalog it needs to associate aircraft types and runtime spawning behavior with the simulation assets.',
+  },
+  {
+    title: 'Setup handling converts world input into backend state',
+    body: 'The setup handler stores prefab information, extracts stand and spawn positions, and prepares the inputs required for route generation.',
+  },
+  {
+    title: 'Paths are rebuilt and persisted',
+    body: 'The path-building step combines the spline graph with the MasterSpline routing structure, then rebuilds persistent Path and Percorso rows in the database.',
+  },
+  {
+    title: 'Setup completion unlocks the runtime loops',
+    body: 'Once setup is marked complete, the runtime can move beyond bootstrap and begin operational scheduling and live event processing.',
+  },
+];
 
-## 1) Startup + setup handshake (Unity -> Python)
+export const schedulingFlow = [
+  {
+    title: 'Transport waits for setup completion',
+    body: 'The scheduling side of the runtime does not fully engage until the setup handler has finished building the world state and path data.',
+  },
+  {
+    title: 'Spawn and flight loops begin advancing the simulation',
+    body: 'Dedicated runtime loops drive parked-aircraft spawning and flight lifecycle progression once the environment is ready.',
+  },
+  {
+    title: 'Flights are generated and queried in an operational window',
+    body: 'The backend creates or loads flight data, then repeatedly evaluates flights that fall inside the active scheduling horizon.',
+  },
+  {
+    title: 'Scheduling rules decide what should happen next',
+    body: 'Stage guards and transition logic determine departures, arrivals, stand assignment, linking, and movement eligibility.',
+  },
+  {
+    title: 'Backend commands are sent to Unity',
+    body: 'When a decision becomes actionable, the backend emits commands such as spawn-plane and start-path so the Unity scene can execute them.',
+  },
+  {
+    title: 'Unity executes the command in the simulation world',
+    body: 'Spawned aircraft, spline movement, and scene-side runtime behavior become the visible outcome of the scheduler’s authoritative decisions.',
+  },
+];
 
-1. Unity connects to `ws://localhost:8765` (see `../../../Unity_Scripts/UnityWSClient.cs`).
-2. Unity sends spline batch (`setup-init`, `send-splines`, spline payloads, `finish-send-splines`).
-3. Unity sends prefab batch (`send-prefabs`, prefab list, `finish-send-prefabs`).
-4. Backend setup handler:
-   - stores prefabs in `../../domain/prefab_store.py`
-   - extracts stand/spawn positions from splines
-   - builds full landing/departure paths via `../../init_graph.py`
-   - persists paths (`Path`/`Percorso`) into DB
-   - marks setup complete
+export const feedbackFlow = [
+  {
+    title: 'Unity emits runtime completion events',
+    body: 'As movement and ground operations progress, Unity sends events such as path_completed and plane_left_stand back to the backend.',
+  },
+  {
+    title: 'Runtime handlers apply backend-side effects',
+    body: 'The runtime handler updates flights, aircraft, stands, and route-linked state based on the event that was received.',
+  },
+  {
+    title: 'Simulation-time timers continue lifecycle progression',
+    body: 'Some operational transitions, such as disembark-related timing, continue in authoritative simulation time rather than wall-clock time.',
+  },
+  {
+    title: 'State changes feed the next scheduling decisions',
+    body: 'Updated DB and domain state become the basis for the next scheduler pass and for subsequent outbound commands to Unity.',
+  },
+  {
+    title: 'Dashboard visibility reflects the new operational picture',
+    body: 'The web dashboard surfaces the resulting runtime state so operators can inspect flights, aircraft, and recent activity.',
+  },
+];
 
-## 2) Flight lifecycle scheduling (authoritative in Python)
+export const nextReads = [
+  {
+    href: '/docs/08-transport-websocket/',
+    title: 'Transport WebSocket',
+    summary: 'Go deeper into connection flow, session handling, and transport-side orchestration.',
+    tone: 'cyan',
+  },
+  {
+    href: '/docs/09-handlers/',
+    title: 'Handlers',
+    summary: 'Read the setup and runtime handler details when you need message-level backend effects.',
+    tone: 'violet',
+  },
+  {
+    href: '/docs/10-schedulers/',
+    title: 'Schedulers',
+    summary: 'Use the scheduler docs for stage transitions, timing rules, and flight progression logic.',
+    tone: 'amber',
+  },
+  {
+    href: '/docs/07-unity-client/',
+    title: 'Unity Client',
+    summary: 'Inspect the Unity-side bootstrap, movement, and event emission behavior.',
+    tone: 'sky',
+  },
+  {
+    href: '/docs/06-database/',
+    title: 'Database',
+    summary: 'Use the database guide for schema, transitions, and the persistence layer behind these flows.',
+    tone: 'emerald',
+  },
+];
 
-The flight scheduler loop in `../../transport/ws_server.py`:
+<DocsIntroHero
+  eyebrow="Workflows"
+  lead="This page focuses on how the system behaves across subsystem boundaries: Unity bootstraps the backend, the backend schedules authoritative operations, and runtime feedback from the simulation world closes the loop."
+  primaryAction={{ href: '/docs/08-transport-websocket/', label: 'Open Transport' }}
+  secondaryAction={{ href: '/docs/01-architecture/', label: 'Back To Architecture' }}
+  meta={['Setup handshake', 'Authoritative scheduling', 'Runtime feedback', 'Cross-system flow']}
+ />
 
-- generates an initial randomized dataset (`../../services/flight_generator.py`)
-- continuously queries a sliding window (`../../db/db_functions.py`)
-- applies stage guards/decisions (`../../schedulers/flight_scheduler.py`)
-- emits Unity commands (`start_path`, `spawn_plane`)
+## Setup Handshake
 
-## 3) Runtime event handling (Unity -> Python)
+<DocsSteps items={setupFlow} variant="timeline" />
 
-Unity emits runtime events such as:
+## Operational Scheduling
 
-- `path_completed`
-- `plane_left_stand`
+<DocsSteps items={schedulingFlow} variant="timeline" />
 
-Backend processes them in `../../handlers/runtime_bus.py`, updating airplane/flight/stand status and managing disembark timers in *simulation time*.
+## Runtime Feedback Loop
 
-## Deep dives
+<DocsSteps items={feedbackFlow} variant="timeline" />
 
-- Transport: `../08-transport-websocket/`
-- Setup/runtime handlers: `../09-handlers/`
-- Scheduling: `../10-schedulers/`
+## Where To Dive Deeper
+
+<DocsTopicGrid items={nextReads} compact />

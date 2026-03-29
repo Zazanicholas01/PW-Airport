@@ -1,0 +1,140 @@
+import DocsSteps from '../DocsSteps.astro';
+import TransportCodeBlock from './TransportCodeBlock.astro';
+
+export const spawnTimeline = [
+  {
+    title: 'Setup Wait',
+    body: 'The spawn loop blocks until setup is complete so it can depend on initialized world and prefab data.',
+  },
+  {
+    title: 'Simulation Start Signal',
+    body: 'Writes the first simulation_start event so the rest of the system can observe that the runtime is entering the operational phase.',
+  },
+  {
+    title: 'Spawn Planner Setup',
+    body: 'Builds SpawnScheduler with the session-scoped prefab store, command builders, and DB session factory.',
+  },
+  {
+    title: 'Initial Spawn Planning',
+    body: 'Generates the initial spawn command list that seeds Unity with the first airplanes.',
+  },
+  {
+    title: 'Spawn Command Dispatch',
+    body: 'Sends each generated spawn command through the active transport bus and records the scheduling event.',
+  },
+];
+
+## `loops/spawn_scheduling.py`
+
+This file is the bridge between setup completion and the first visible runtime activity in Unity. Its role in the project is to wait until the transport/session state is ready, compute the first spawn set, and push those initial spawn commands through the live bus.
+
+## Call Timeline
+
+<DocsSteps items={spawnTimeline} variant="timeline" />
+
+<div class="transport-code-stack spawn-panel">
+<section class="transport-code-section">
+
+## Setup Wait
+
+`schedule_initial_spawns(...)` does not run as soon as the process starts. It first waits for setup completion, because initial spawn planning depends on setup-derived state being already loaded into the transport runtime.
+
+That makes the spawn loop a post-setup bootstrap step, not a generic startup task.
+
+<TransportCodeBlock title="loops/spawn_scheduling.py">
+```python
+async def schedule_initial_spawns(ctx: SessionContext) -> None:
+
+    while not ctx.setup_bus.state.setup_completed:
+        await asyncio.sleep(0.1)
+```
+</TransportCodeBlock>
+
+</section>
+
+<section class="transport-code-section">
+
+## Simulation Start Signal
+
+Once setup is complete, the loop immediately appends a `simulation_start` event. In this project, that event is the marker that the transport/runtime stack has crossed from initialization into operational execution.
+
+So even before any actual spawn command is sent, the backend records that the simulation is beginning.
+
+<TransportCodeBlock title="loops/spawn_scheduling.py">
+```python
+append_event({
+    "type": "simulation_start",
+    "message": "hello",
+})
+```
+</TransportCodeBlock>
+
+</section>
+
+<section class="transport-code-section">
+
+## Spawn Planner Setup
+
+The loop creates `SpawnScheduler` using the session-scoped services transport already carries:
+
+- `prefab_store` to resolve available aircraft prefabs
+- `commands` to build outbound transport payloads
+- `Session` so spawn planning can query persistent state
+
+This is where the spawn path becomes a project-specific planning phase rather than just a hardcoded list of commands.
+
+<TransportCodeBlock title="loops/spawn_scheduling.py">
+```python
+scheduler = SpawnScheduler(
+    prefab_store=ctx.prefab_store,
+    commands=ctx.commands,
+    session_factory=ctx.Session
+)
+```
+</TransportCodeBlock>
+
+</section>
+
+<section class="transport-code-section">
+
+## Initial Spawn Planning
+
+`plan_initial_spawns()` computes the initial command set. This is the point where backend state becomes concrete spawn instructions for Unity.
+
+If no commands are generated, transport logs that outcome and exits cleanly instead of forcing empty or invalid spawn work.
+
+<TransportCodeBlock title="loops/spawn_scheduling.py">
+```python
+commands = scheduler.plan_initial_spawns()
+if not commands:
+    logging.info("No initial spawns commands generated")
+    return
+```
+</TransportCodeBlock>
+
+</section>
+
+<section class="transport-code-section">
+
+## Spawn Command Dispatch
+
+After planning, transport sends each spawn command through the active bus. That means initial aircraft creation follows the same outbound transport path as every other runtime command.
+
+The loop then records how many initial spawns were scheduled, which makes the bootstrap outcome visible to backend observers.
+
+<TransportCodeBlock title="loops/spawn_scheduling.py">
+```python
+for cmd in commands:
+    await ctx.bus.send_command(cmd)
+
+logging.info("Scheduled %d initial spawn commands", len(commands))
+append_event({
+    "type": "backend_event",
+    "event": "initial_spawns_scheduled",
+    "count": len(commands),
+})
+```
+</TransportCodeBlock>
+
+</section>
+</div>

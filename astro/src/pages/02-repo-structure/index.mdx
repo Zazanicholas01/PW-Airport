@@ -1,28 +1,189 @@
 ---
 title: Repo Structure
 layout: ../../layouts/DocsLayout.astro
+description: Codebase map for finding the right area before making changes.
 ---
 
-# Repository structure
+import DocsIntroHero from '../../components/DocsIntroHero.astro';
+import DocsTopicGrid from '../../components/DocsTopicGrid.astro';
+import DocsSteps from '../../components/DocsSteps.astro';
 
-## Top-level
+export const topLevel = [
+  {
+    kicker: 'Docs App',
+    title: 'astro/',
+    summary: 'Astro-based documentation site, layouts, components, and MDX pages for project docs.',
+    tone: 'sky',
+    meta: 'Documentation surface',
+  },
+  {
+    kicker: 'Backend',
+    title: 'src/',
+    summary: 'Python application code for transport, handlers, schedulers, services, domain state, database, and dashboard.',
+    tone: 'cyan',
+    meta: 'Main application',
+  },
+  {
+    kicker: 'Client',
+    title: 'Unity_Scripts/',
+    summary: 'Unity-side WebSocket client, movement, spawning, time controls, and scene integration scripts.',
+    tone: 'violet',
+    meta: 'Simulation client',
+  },
+  {
+    kicker: 'Tooling',
+    title: 'scripts/',
+    summary: 'Database init/reset helpers, bootstrap utilities, and local operational scripts.',
+    tone: 'amber',
+    meta: 'Support tooling',
+  },
+  {
+    kicker: 'Infra',
+    title: 'docker-compose.yml + docker/',
+    summary: 'Container orchestration, reverse proxy setup, and local infrastructure configuration.',
+    tone: 'emerald',
+    meta: 'Runtime environment',
+  },
+  {
+    kicker: 'Runtime Data',
+    title: 'data/',
+    summary: 'Local runtime artifacts such as logs or operational output files used during execution.',
+    tone: 'rose',
+    meta: 'Generated state',
+  },
+];
 
-- Python backend package: `../../`
-- `../../../Unity_Scripts/`: Unity-side websocket + gameplay logic scripts
-- `../../../scripts/`: DB reset/init + seed/bootstrap helpers
-- `../../../docker-compose.yml`: local infra stack (Postgres, Metabase, init jobs)
-- `../../../docker/initdb/`: container init SQL scripts
-- `../../../data/`: runtime data (logs, etc.)
-- `../../../schema_nodi.json`: node/link schema used by `../../init_graph.py`
+export const backendAreas = [
+  {
+    kicker: 'Composition',
+    title: 'app/',
+    summary: 'Application wiring and dependency-injection setup for the backend runtime.',
+  },
+  {
+    kicker: 'Entrypoint',
+    title: 'server.py',
+    summary: 'Primary backend startup entrypoint.',
+  },
+  {
+    kicker: 'Realtime',
+    title: 'transport/',
+    summary: 'WebSocket coordination, session flow, task orchestration, and message exchange.',
+  },
+  {
+    kicker: 'Message Effects',
+    title: 'handlers/',
+    summary: 'Setup and runtime event handling that translates inbound messages into backend effects.',
+  },
+  {
+    kicker: 'Operational Timing',
+    title: 'schedulers/',
+    summary: 'Spawn and flight progression logic that advances the simulation over time.',
+  },
+  {
+    kicker: 'Business Logic',
+    title: 'services/',
+    summary: 'Reusable service-layer logic such as flight generation and supporting operational helpers.',
+  },
+  {
+    kicker: 'State',
+    title: 'domain/',
+    summary: 'Authoritative in-memory runtime state, clocks, constants, and world-level stores.',
+  },
+  {
+    kicker: 'Persistence',
+    title: 'db/',
+    summary: 'SQLAlchemy models, engine/session helpers, and database transition/query logic.',
+  },
+  {
+    kicker: 'Operator UI',
+    title: 'web/',
+    summary: 'FastAPI dashboard app, templates, static assets, and live monitoring endpoints.',
+  },
+  {
+    kicker: 'Shared Helpers',
+    title: 'utils/',
+    summary: 'Small utility functions, mappings, event logging helpers, and shared support code.',
+  },
+];
 
-## src map
+export const entrypoints = [
+  {
+    title: 'Start the backend from src/server.py',
+    body: 'Use this when you need the main simulation runtime entrypoint and want to trace startup behavior.',
+  },
+  {
+    title: 'Check src/app/container.py for runtime wiring',
+    body: 'Go here when you need to understand how services, schedulers, and shared runtime objects are assembled.',
+  },
+  {
+    title: 'Open src/web/dashboard_app.py for the dashboard surface',
+    body: 'Use this for the operator-facing web layer and its backend API/view wiring.',
+  },
+  {
+    title: 'Use docker-compose.yml for local environment shape',
+    body: 'This is the entrypoint for the multi-container local stack, including proxy and supporting services.',
+  },
+];
 
-- `../../server.py`: entrypoint (starts WebSocket server)
-- `../../transport/`: websocket server + message bus + orchestration
-- `../../handlers/`: setup/runtime event processing
-- `../../schedulers/`: spawn + flight scheduling
-- `../../db/`: SQLAlchemy models + DB helpers
-- `../../domain/`: simulation clock + in-memory stores/snapshots
-- `../../services/`: reusable services (flight generation, spawn tracking)
-- `../../web/`: dashboard app + static UI
-- `../../utils/`: mappings, event log helpers, small utilities
+export const commonPaths = [
+  {
+    href: '/docs/08-transport-websocket/',
+    title: 'Changing runtime orchestration',
+    summary: 'Start in transport/ and then move into handlers or schedulers depending on the actual effect.',
+    tone: 'cyan',
+  },
+  {
+    href: '/docs/09-handlers/',
+    title: 'Changing message-driven behavior',
+    summary: 'Go to handlers/ when Unity payloads need to produce different backend-side state changes.',
+    tone: 'violet',
+  },
+  {
+    href: '/docs/10-schedulers/',
+    title: 'Changing timing or aircraft progression',
+    summary: 'Use schedulers/ for operational timing, spawn sequencing, and flight lifecycle progression.',
+    tone: 'amber',
+  },
+  {
+    href: '/docs/06-database/',
+    title: 'Changing persistence or schema behavior',
+    summary: 'Go to db/ for models, transition helpers, schema setup, and query-level behavior.',
+    tone: 'emerald',
+  },
+  {
+    href: '/docs/13-dashboard-web/',
+    title: 'Changing dashboard UI or operator visibility',
+    summary: 'Use web/ for templates, static files, API routes, and live dashboard behavior.',
+    tone: 'rose',
+  },
+  {
+    href: '/docs/07-unity-client/',
+    title: 'Changing Unity-side simulation behavior',
+    summary: 'Work inside Unity_Scripts/ for client-side movement, spawning, spline handling, and time controls.',
+    tone: 'sky',
+  },
+];
+
+<DocsIntroHero
+  eyebrow="Repository Structure"
+  lead="This page is a codebase map. Use it to find where functionality lives before drilling into architecture, workflows, or subsystem-specific behavior."
+  primaryAction={{ href: '/docs/01-architecture/', label: 'Open Architecture' }}
+  secondaryAction={{ href: '/docs/03-end-to-end-workflows/', label: 'Follow Workflows' }}
+  meta={['Navigation map', 'Folder ownership', 'Entry points', 'Change paths']}
+ />
+
+## Top-Level Areas
+
+<DocsTopicGrid items={topLevel} variant="featured" />
+
+## Backend Package Map
+
+<DocsTopicGrid items={backendAreas} compact />
+
+## Key Entry Points
+
+<DocsSteps items={entrypoints} />
+
+## Common Change Paths
+
+<DocsTopicGrid items={commonPaths} compact />

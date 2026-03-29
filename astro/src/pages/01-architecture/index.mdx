@@ -1,44 +1,133 @@
 ---
 title: Architecture
 layout: ../../layouts/DocsLayout.astro
+description: Macro architecture of the simulation runtime, its major layers, and the system-level flow.
 ---
 
-# Architecture
+import DocsIntroHero from '../../components/DocsIntroHero.astro';
+import DocsTopicGrid from '../../components/DocsTopicGrid.astro';
+import DocsSteps from '../../components/DocsSteps.astro';
 
-This topic is derived from `../../../README.md` (“Macro Architecture” + workflows) and the subsystem guides in `src/<module>/README.md`.
+export const layers = [
+  {
+    kicker: 'Layer 01',
+    title: 'Transport',
+    summary: 'Owns realtime connectivity, message exchange, session flow, and coordination between Unity and the backend runtime.',
+    tone: 'cyan',
+    meta: 'Connection + orchestration',
+  },
+  {
+    kicker: 'Layer 02',
+    title: 'Handlers',
+    summary: 'Turn inbound setup and runtime payloads into meaningful backend effects, including route generation and operational state changes.',
+    tone: 'violet',
+    meta: 'Payload -> effect',
+  },
+  {
+    kicker: 'Layer 03',
+    title: 'Schedulers',
+    summary: 'Advance the simulated airport over time by deciding when aircraft spawn, move, depart, arrive, and release resources.',
+    tone: 'amber',
+    meta: 'Timing + progression',
+  },
+  {
+    kicker: 'Layer 04',
+    title: 'Domain + Persistence',
+    summary: 'Keep authoritative runtime state in memory while persisting operational transitions and core entities in the database.',
+    tone: 'emerald',
+    meta: 'State + storage',
+  },
+  {
+    kicker: 'Layer 05',
+    title: 'Interfaces',
+    summary: 'Unity drives the simulation world, while the dashboard provides a read-only operator view into the current state of operations.',
+    tone: 'rose',
+    meta: 'Client + monitoring',
+  },
+];
 
-## Main components
+export const runtimeFlow = [
+  {
+    title: 'Unity provides setup and live events',
+    body: 'The simulation client sends world-building inputs first, then emits runtime events as aircraft move and operational milestones are reached.',
+  },
+  {
+    title: 'Transport accepts and routes the traffic',
+    body: 'The backend transport layer manages sessions, receives payloads, and dispatches them into the correct backend execution path.',
+  },
+  {
+    title: 'Handlers and services apply meaning',
+    body: 'Incoming messages are translated into route creation, state transitions, and backend-side reactions tied to airport operations.',
+  },
+  {
+    title: 'Schedulers advance the simulation window',
+    body: 'The scheduling layer moves the airport forward over time, deciding what should happen next and when it should happen.',
+  },
+  {
+    title: 'Domain and DB hold the authoritative picture',
+    body: 'The in-memory domain and persistent database together represent the current operational truth of the simulation.',
+  },
+  {
+    title: 'Dashboard surfaces read-only visibility',
+    body: 'Operators can inspect flights, aircraft, and runtime activity without becoming part of the control path itself.',
+  },
+];
 
-- `../../server.py`: process entrypoint; initializes shared state (`PrefabStore`, `InitGraph`, `WorldState`) and starts WebSocket server.
-- `../../transport/ws_server.py`: orchestrates setup flow, runtime flow, schedulers, clock sync, and command dispatch to Unity.
-- `../../transport/message_bus.py`: async in/out queues between WebSocket transport and backend logic.
-- `../../handlers/setup_bus.py`: Unity bootstrap payloads (splines + prefabs), builds paths, writes `Percorso`.
-- `../../handlers/runtime_bus.py`: runtime Unity events (`path_completed`, `plane_left_stand`) and disembark timers.
-- `../../schedulers/spawn_scheduler.py`: initial parked-plane spawns after setup.
-- `../../schedulers/flight_scheduler.py`: sliding-window decision engine for departures/arrivals lifecycle.
-- `../../services/flight_generator.py`: creates randomized flights in DB.
-- `../../db/db_functions.py`: domain-level DB transitions (assign, reserve, status changes).
-- `../../domain/sim_clock.py`: authoritative simulation clock (`time_scale`, pause/fast-forward).
-- `../../web/dashboard_app.py` + `../../web/static/`: dashboard APIs + live UI.
-- `../../../Unity_Scripts/`: Unity websocket client, spline export/import, spawning, movement, time controls.
+export const nextReads = [
+  {
+    href: '/docs/02-repo-structure/',
+    title: 'Repository Structure',
+    summary: 'Open the codebase map when you need file and module-level ownership.',
+    tone: 'sky',
+  },
+  {
+    href: '/docs/03-end-to-end-workflows/',
+    title: 'End-to-End Workflows',
+    summary: 'Follow the actual runtime path from inbound setup to scheduling and operator visibility.',
+    tone: 'amber',
+  },
+  {
+    href: '/docs/06-database/',
+    title: 'Database',
+    summary: 'Use the database guide for schema utilities, models, and transition-level persistence details.',
+    tone: 'emerald',
+  },
+  {
+    href: '/docs/08-transport-websocket/',
+    title: 'Transport WebSocket',
+    summary: 'Go deeper into connection flow, message routing, and transport-specific runtime behavior.',
+    tone: 'cyan',
+  },
+  {
+    href: '/docs/09-handlers/',
+    title: 'Handlers',
+    summary: 'Read the handler docs for message-specific effects and runtime event processing details.',
+    tone: 'violet',
+  },
+  {
+    href: '/docs/10-schedulers/',
+    title: 'Schedulers',
+    summary: 'Use the scheduler docs for spawn timing, flight progression, and operational window logic.',
+    tone: 'rose',
+  },
+];
 
-## Layering (mental model)
+<DocsIntroHero
+  eyebrow="Architecture"
+  lead="PW-Airport is a backend-authoritative airport simulation. Unity supplies setup inputs and live events, the backend coordinates state transitions and scheduling, dependency injection centralizes runtime wiring, PostgreSQL persists operational state, and the dashboard exposes read-only visibility."
+  primaryAction={{ href: '/docs/03-end-to-end-workflows/', label: 'Follow Runtime Flow' }}
+  secondaryAction={{ href: '/docs/00-general-overview/', label: 'Back To Overview' }}
+  meta={['Macro view', 'Dependency-injected backend', 'WebSocket-driven', 'DB-backed']}
+/>
 
-- Transport (`../../transport/`): session lifecycle, message IO, clock sync, task orchestration
-- Handlers (`../../handlers/`): decode/route Unity payload effects into domain + DB transitions
-- Schedulers (`../../schedulers/`): decide *when* to spawn / move planes and advance flights
-- DB (`../../db/`): models + state transitions + queries (sliding window)
-- Domain (`../../domain/`): in-memory stores and authoritative clock
-- Web (`../../web/`): read-only monitoring of DB + event log
+## System Layers
 
-## Data model (high level)
+<DocsTopicGrid items={layers} variant="featured" />
 
-Core entities in `../../db/models.py`:
+## Runtime Flow
 
-- `Flight` (`Viaggio`): schedule + operational status
-- `Airplane` (`Aereo`): aircraft state and current route
-- `Stand` (`Piazzola`): stand availability and linked airplane
-- `Path` (`Percorso`): generated spline segments for movement
+<DocsSteps items={runtimeFlow} />
 
-Schema creation/reset: `../../../scripts/init_db.py`  
-Static seed: `../../../scripts/startup.py`
+## Where To Go Next
+
+<DocsTopicGrid items={nextReads} compact />

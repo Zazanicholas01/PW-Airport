@@ -140,13 +140,9 @@ services:
     working_dir: /app
     volumes:
       - ./astro:/app
-      - ./src/docs:/workspace-docs
       - astro-bun-cache:/root/.bun
       - astro-node-modules:/app/node_modules
     environment:
-      DOCS_SOURCE_DIR: /workspace-docs
-      DOCS_WATCH_DIR: "/workspace-docs"
-      SHELL: /bin/sh
       CHOKIDAR_USEPOLLING: "true"
       WATCHPACK_POLLING: "true"
     command: bun run dev

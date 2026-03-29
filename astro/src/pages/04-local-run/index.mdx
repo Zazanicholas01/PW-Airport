@@ -1,27 +1,22 @@
 ---
-title: Local Run
+title: Operational Commands
 layout: ../../layouts/DocsLayout.astro
+description: Common commands for running the backend, docs, Docker stack, and database utilities.
 ---
 
-# Local run
+# Operational Commands
 
-## Prereqs
+This page lists the commands that match the current project setup.
 
-- Python 3.11+ recommended (Docker uses 3.11 images)
-- Docker + Docker Compose (for Postgres + Metabase)
+## Backend
 
-## Infra (Postgres + Metabase)
+Install dependencies:
 
 ```bash
-docker compose up -d
+pip install -r requirements.txt
 ```
 
-Services:
-
-- Postgres: `localhost:5432` (DB: Airport; user/pass: airport)
-- Metabase: http://localhost:3000
-
-## Python server (WebSocket + schedulers)
+Run the Python backend locally:
 
 ```bash
 python -m src.server
@@ -29,13 +24,106 @@ python -m src.server
 
 Notes:
 
-- Backend listens for Unity on `ws://localhost:8765`.
-- The setup phase must complete (splines + prefabs) before schedulers become meaningful.
+- This is the main host-local runtime command.
+- Unity connects to the backend over WebSocket, typically at `ws://localhost:8765`.
 
-## Dashboard (FastAPI)
+## Docs
+
+Install Astro docs dependencies:
 
 ```bash
-uvicorn src.web.dashboard_app:app --reload --host 0.0.0.0 --port 8000
+cd astro
+bun install
 ```
 
-Then open `http://localhost:8000`.
+Run the docs app directly:
+
+```bash
+cd astro
+bun run dev
+```
+
+If the container stack is running, the docs are also available through nginx at:
+
+```text
+http://localhost:8001/docs/
+```
+
+## Docker Stack
+
+Start the local stack:
+
+```bash
+docker compose up -d
+```
+
+Rebuild docs and nginx after docs or proxy changes:
+
+```bash
+docker compose up -d --build docs-site nginx
+```
+
+Inspect running services:
+
+```bash
+docker compose ps
+```
+
+Read logs:
+
+```bash
+docker compose logs docs-site nginx
+```
+
+Stop the stack:
+
+```bash
+docker compose down
+```
+
+## Database Utilities
+
+Reset schema:
+
+```bash
+python scripts/init_db.py
+```
+
+Seed static data:
+
+```bash
+python scripts/startup.py
+```
+
+Connect interactively to the Postgres container shell:
+
+```bash
+docker compose exec postgres sh
+```
+
+Open a `psql` shell inside the Postgres container:
+
+```bash
+docker compose exec postgres psql -U airport -d Airport
+```
+
+## Typical Usage
+
+Backend code changes:
+
+```bash
+python -m src.server
+```
+
+Docs changes:
+
+```bash
+cd astro
+bun run dev
+```
+
+Integrated stack validation:
+
+```bash
+docker compose up -d
+```

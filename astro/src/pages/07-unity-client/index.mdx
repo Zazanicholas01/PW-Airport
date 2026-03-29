@@ -1,35 +1,189 @@
 ---
 title: Unity Client
 layout: ../../layouts/DocsLayout.astro
+description: Unity-side runtime responsibilities, setup handshake, command execution, and feedback flow.
 ---
 
-# Unity client integration
+import DocsIntroHero from '../../components/DocsIntroHero.astro';
+import DocsTopicGrid from '../../components/DocsTopicGrid.astro';
+import DocsSteps from '../../components/DocsSteps.astro';
 
-Unity is the “world renderer” and event source, while Python is authoritative for time and scheduling.
+export const roles = [
+  {
+    kicker: 'Connection',
+    title: 'Realtime WebSocket Client',
+    summary: 'Unity opens and maintains the WebSocket connection to the backend runtime.',
+    tone: 'cyan',
+    meta: 'UnityWSClient',
+  },
+  {
+    kicker: 'Setup',
+    title: 'World Export Source',
+    summary: 'Unity exports spline topology and prefab registry data so the backend can build routes and runtime state.',
+    tone: 'violet',
+    meta: 'AirportSimulationBootstrap',
+  },
+  {
+    kicker: 'Dispatch',
+    title: 'Command Receiver',
+    summary: 'Unity receives backend commands and dispatches them to the correct client-side runtime handlers.',
+    tone: 'amber',
+    meta: 'MessageDispatcher',
+  },
+  {
+    kicker: 'Execution',
+    title: 'Spawn and Movement Runtime',
+    summary: 'Unity executes spawn operations and moves aircraft along backend-assigned spline paths.',
+    tone: 'emerald',
+    meta: 'SpawnHandler + StartPathHandler',
+  },
+  {
+    kicker: 'Feedback',
+    title: 'Runtime Event Source',
+    summary: 'Unity reports movement and ground-operation milestones back to the backend as runtime events.',
+    tone: 'rose',
+    meta: 'PathCompletionReporter',
+  },
+  {
+    kicker: 'Time',
+    title: 'Simulation Time Sync',
+    summary: 'Unity applies backend-driven time synchronization and supports simulation-time controls when enabled.',
+    tone: 'sky',
+    meta: 'SimClockClient + SimTimeControls',
+  },
+];
 
-## Unity responsibilities (high level)
+export const setupSequence = [
+  {
+    title: 'Unity opens the backend connection',
+    body: 'The client connects to the backend WebSocket endpoint, typically ws://localhost:8765, before setup export begins.',
+  },
+  {
+    title: 'Bootstrap starts with setup-init',
+    body: 'AirportSimulationBootstrap begins the initialization handshake so the backend knows a fresh setup export is starting.',
+  },
+  {
+    title: 'SplineRegistry sends the spline batch',
+    body: 'Unity exports the spline registry, including the MasterSpline, so the backend can reconstruct route geometry and stand-linked movement paths.',
+  },
+  {
+    title: 'PrefabRegistry sends the prefab batch',
+    body: 'Unity exports the prefab catalog used later for spawnable aircraft selection and runtime object creation.',
+  },
+  {
+    title: 'Backend consumes setup and builds topology',
+    body: 'The backend setup path stores prefabs, extracts world positions, and rebuilds path data from the spline graph.',
+  },
+  {
+    title: 'Runtime moves past setup',
+    body: 'Once setup is complete, Unity no longer just exports world data and instead begins participating in live runtime execution.',
+  },
+];
 
-- Connect to backend websocket (`ws://localhost:8765`)
-- During setup:
-  - send spline registry (including `MasterSpline`)
-  - send prefab registry
-- During runtime:
-  - spawn prefabs on backend command
-  - follow assigned spline segments (`start_path`)
-  - emit events (`path_completed`, `plane_left_stand`)
-  - send time control commands (`set_time_scale`, `set_sim_time`) when applicable
+export const runtimeFlow = [
+  {
+    title: 'Backend sends a runtime command',
+    body: 'Commands such as spawn-plane, start-path, and clock-sync are emitted by the authoritative backend runtime.',
+  },
+  {
+    title: 'MessageDispatcher routes the command',
+    body: 'Unity receives the command payload and dispatches it to the relevant client-side handler.',
+  },
+  {
+    title: 'SpawnHandler instantiates scene objects',
+    body: 'When a spawn command arrives, Unity resolves the requested prefab and creates the aircraft in the scene.',
+  },
+  {
+    title: 'StartPathHandler begins spline movement',
+    body: 'Assigned route segments are handed to the movement runtime so the aircraft can follow the backend-defined path.',
+  },
+  {
+    title: 'PathCompletionReporter emits feedback events',
+    body: 'When movement milestones are reached, Unity sends events such as path_completed and plane_left_stand back to the backend.',
+  },
+  {
+    title: 'Time sync keeps Unity aligned with the backend',
+    body: 'Clock-related commands allow Unity to stay aligned with authoritative simulation time and time-scale changes.',
+  },
+];
 
-## Backend setup expectations
+export const nextReads = [
+  {
+    href: '/docs/03-end-to-end-workflows/',
+    title: 'End-to-End Workflows',
+    summary: 'Read the cross-system flow when you want the Unity role in the full runtime sequence.',
+    tone: 'amber',
+  },
+  {
+    href: '/docs/08-transport-websocket/',
+    title: 'Transport WebSocket',
+    summary: 'Go deeper into message transport, routing, and backend-side orchestration.',
+    tone: 'cyan',
+  },
+  {
+    href: '/docs/09-handlers/',
+    title: 'Handlers',
+    summary: 'See how Unity setup and runtime events are interpreted on the backend side.',
+    tone: 'violet',
+  },
+  {
+    href: '/docs/11-domain/',
+    title: 'Domain',
+    summary: 'Read the domain docs for authoritative clock behavior and world-state coordination.',
+    tone: 'sky',
+  },
+];
 
-The setup handler (`../../handlers/setup_bus.py`) expects to see the setup control sequence:
+<DocsIntroHero
+  eyebrow="Unity Client"
+  lead="Unity is the scene-side runtime of PW-Airport. It exports the world setup, receives backend commands, executes spawn and movement behavior, emits runtime feedback events, and stays aligned with the backend’s authoritative simulation time."
+  primaryAction={{ href: '/docs/03-end-to-end-workflows/', label: 'Open Workflows' }}
+  secondaryAction={{ href: '/docs/08-transport-websocket/', label: 'Open Transport' }}
+  meta={['Setup exporter', 'Command executor', 'Runtime feedback', 'Time-synced client']}
+ />
 
-- `setup-init`
-- `send-splines` ... `finish-send-splines`
-- `send-prefabs` ... `finish-send-prefabs`
+## Unity Runtime Roles
 
-## Where to look
+<DocsTopicGrid items={roles} variant="featured" />
 
-- Unity scripts: `../../../Unity_Scripts`
-- Setup handler: `../../handlers/setup_bus.py`
-- Path generation: `../../init_graph.py` + `../../../schema_nodi.json`
+## Setup Sequence
 
+<DocsSteps items={setupSequence} variant="timeline" />
+
+## Runtime Command Flow
+
+<DocsSteps items={runtimeFlow} variant="timeline" />
+
+## Run Modes
+
+<div class="docs-compare-grid">
+  <section class="docs-compare-card docs-compare-card-local">
+    <div class="docs-compare-kicker">Editor</div>
+    <h3>Local Unity Run</h3>
+    <p>Best for fast iteration against a locally running backend while changing bootstrap flow, spline export, prefab export, movement behavior, and runtime event emission.</p>
+
+    <ul>
+      <li>Fastest feedback loop</li>
+      <li>Easier debugging in the Unity Editor</li>
+      <li>Good for setup handshake validation</li>
+      <li>Good for spawn and path execution changes</li>
+    </ul>
+  </section>
+
+  <section class="docs-compare-card docs-compare-card-apk">
+    <div class="docs-compare-kicker">Device</div>
+    <h3>APK Build Run</h3>
+    <p>Best for validating device-specific behavior, deployment packaging, runtime constraints, network conditions, and full end-to-end execution outside the editor.</p>
+
+    <ul>
+      <li>Closer to real deployment conditions</li>
+      <li>Useful for device-specific runtime validation</li>
+      <li>Good for final integration checks</li>
+      <li>Slower iteration than editor-based runs</li>
+    </ul>
+  </section>
+</div>
+
+## Where To Dive Deeper
+
+<DocsTopicGrid items={nextReads} compact />

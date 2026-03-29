@@ -1,0 +1,46 @@
+---
+interface ActionLink {
+  href: string;
+  label: string;
+}
+
+const {
+  eyebrow = 'Introduction',
+  lead,
+  primaryAction,
+  secondaryAction,
+  meta = [],
+} = Astro.props as {
+  eyebrow?: string;
+  lead: string;
+  primaryAction?: ActionLink;
+  secondaryAction?: ActionLink;
+  meta?: string[];
+};
+---
+
+<section class="docs-intro-hero">
+  <div class="docs-intro-hero-copy">
+    <div class="docs-intro-eyebrow">{eyebrow}</div>
+    <p class="docs-intro-lead">{lead}</p>
+    <div class="docs-intro-actions">
+      {primaryAction && (
+        <a class="docs-intro-action docs-intro-action-primary" href={primaryAction.href}>
+          {primaryAction.label}
+        </a>
+      )}
+      {secondaryAction && (
+        <a class="docs-intro-action docs-intro-action-secondary" href={secondaryAction.href}>
+          {secondaryAction.label}
+        </a>
+      )}
+    </div>
+  </div>
+  {meta.length > 0 && (
+    <div class="docs-intro-meta">
+      {meta.map((item) => (
+        <span class="docs-intro-chip">{item}</span>
+      ))}
+    </div>
+  )}
+</section>
