@@ -1,3 +1,8 @@
+---
+title: Dashboard Reset Checklist
+layout: ../../layouts/DocsLayout.astro
+---
+
 # Dashboard Reset Checklist
 
 Goal: preserve the current dashboard HTML shell, CSS, and visual rendering style/layout, while removing the existing dashboard behavior and data plumbing so the dashboard can be rebuilt from scratch.

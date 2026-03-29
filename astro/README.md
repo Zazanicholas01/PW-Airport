@@ -1,25 +1,25 @@
 # Astro Documentation App
 
-This directory contains a standalone Astro + Starlight site for project documentation.
+This directory contains a standalone plain Astro + MDX site for project documentation.
 
 ## Intended source of truth
 
-- Source Markdown stays in `../src/docs`
-- Generated Starlight content is written to `./src/content/docs/generated`
+- Source docs stay in `../src/docs`
+- Synced Astro pages are written to `./src/pages`
 
 ## Local usage
 
 ```bash
 cd astro
-npm install
-npm run dev
+bun install
+bun run dev
 ```
 
 ## Sync docs manually
 
 ```bash
 cd astro
-npm run sync-docs
+bun run sync-docs
 ```
 
-The sync script copies each `README.md` from `../src/docs/*` into Starlight content and adds a basic title frontmatter when missing.
+The sync script copies the `../src/docs` tree into `src/pages/docs`, preserves nested `.md` and `.mdx` files, and injects the shared docs layout frontmatter when needed.

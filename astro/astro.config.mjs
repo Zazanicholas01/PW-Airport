@@ -1,19 +1,8 @@
 import { defineConfig } from 'astro/config';
-import starlight from '@astrojs/starlight';
+import mdx from '@astrojs/mdx';
 
 export default defineConfig({
   site: 'http://localhost:8001',
   base: '/docs',
-  integrations: [
-    starlight({
-      title: 'PW-Airport Docs',
-      description: 'Project architecture, workflows, Docker setup, and operational notes.',
-      sidebar: [
-        {
-          label: 'Documentation',
-          autogenerate: { directory: 'generated' }
-        }
-      ]
-    })
-  ]
+  integrations: [mdx()]
 });

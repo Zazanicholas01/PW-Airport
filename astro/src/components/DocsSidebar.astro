@@ -1,0 +1,82 @@
+---
+const items = [
+  { href: '/docs/', label: 'Documentation Home' },
+  { href: '/docs/00-general-overview/', label: 'General Overview' },
+  { href: '/docs/01-architecture/', label: 'Architecture' },
+  { href: '/docs/02-repo-structure/', label: 'Repository Structure' },
+  { href: '/docs/03-end-to-end-workflows/', label: 'End-to-End Workflows' },
+  { href: '/docs/04-local-run/', label: 'Local Run' },
+  { href: '/docs/05-docker-setup/', label: 'Docker Setup' },
+  { href: '/docs/06-database/', label: 'Database' },
+  { href: '/docs/07-unity-client/', label: 'Unity Client' },
+  { href: '/docs/08-transport-websocket/', label: 'Transport WebSocket' },
+  { href: '/docs/09-handlers/', label: 'Handlers' },
+  { href: '/docs/10-schedulers/', label: 'Schedulers' },
+  { href: '/docs/11-domain/', label: 'Domain' },
+  { href: '/docs/12-services/', label: 'Services' },
+  { href: '/docs/13-dashboard-web/', label: 'Dashboard Web' },
+  { href: '/docs/14-message-contracts/', label: 'Message Contracts' },
+  { href: '/docs/15-troubleshooting/', label: 'Troubleshooting' }
+];
+
+const currentPath = Astro.url.pathname;
+---
+<nav>
+  <style>
+    .sidebar-title {
+      margin: 0 0 1.25rem;
+      font-size: 1.05rem;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      color: #ebf3fa;
+    }
+
+    .sidebar-list {
+      display: grid;
+      gap: 0.35rem;
+      margin: 0;
+      padding: 0;
+      list-style: none;
+    }
+
+    .sidebar-link {
+      display: block;
+      padding: 0.7rem 0.8rem;
+      border: 1px solid transparent;
+      border-radius: 0.85rem;
+      color: #9fb3c8;
+      text-decoration: none;
+      transition: background 140ms ease, border-color 140ms ease, color 140ms ease;
+    }
+
+    .sidebar-link:hover {
+      color: #ebf3fa;
+      background: rgba(255, 255, 255, 0.05);
+      border-color: rgba(255, 255, 255, 0.08);
+    }
+
+    .sidebar-link.active {
+      color: #ebf3fa;
+      background: rgba(120, 211, 255, 0.12);
+      border-color: rgba(120, 211, 255, 0.3);
+    }
+  </style>
+
+  <h2 class="sidebar-title">PW-Airport Docs</h2>
+  <ul class="sidebar-list">
+    {items.map((item) => (
+      <li>
+        <a
+          class:list={[
+            'sidebar-link',
+            currentPath === item.href || currentPath.startsWith(item.href) && item.href !== '/docs/' ? 'active' : ''
+          ]}
+          href={item.href}
+        >
+          {item.label}
+        </a>
+      </li>
+    ))}
+  </ul>
+</nav>

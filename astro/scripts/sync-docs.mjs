@@ -5,7 +5,7 @@ const astroRoot = process.cwd();
 const localRepoDocs = path.resolve(astroRoot, '..', 'src', 'docs');
 const containerDocs = '/workspace-docs';
 const sourceRoot = process.env.DOCS_SOURCE_DIR || containerDocs;
-const targetRoot = path.join(astroRoot, 'src', 'content', 'docs', 'generated');
+const targetRoot = path.join(astroRoot, 'src', 'pages');
 
 async function pathExists(target) {
   try {
@@ -29,15 +29,52 @@ function prettifyTitle(segment) {
   return segment
     .replace(/^\d+-/, '')
     .replace(/-/g, ' ')
+    .replace(/_/g, ' ')
     .replace(/\b\w/g, (char) => char.toUpperCase());
 }
 
-function injectFrontmatter(title, body) {
-  if (body.startsWith('---\n')) return body;
-  return `---\ntitle: ${title}\n---\n\n${body}`;
+function titleFromRelativePath(relativePath) {
+  const parsed = path.parse(relativePath);
+  if (parsed.name === 'index' && !parsed.dir) {
+    return 'PW-Airport Documentation';
+  }
+
+  const basename = parsed.name === 'index'
+    ? path.basename(parsed.dir || 'docs')
+    : parsed.name;
+
+  return prettifyTitle(basename);
 }
 
-async function copyReadmes(currentDir, relativeDir = '') {
+function layoutPathFor(relativePath) {
+  const segments = relativePath.split(path.sep).filter(Boolean);
+  const upLevels = '../'.repeat(segments.length);
+  return `${upLevels}layouts/DocsLayout.astro`;
+}
+
+function ensurePageFrontmatter(relativePath, body) {
+  const title = titleFromRelativePath(relativePath);
+  const layout = layoutPathFor(relativePath);
+
+  if (!body.startsWith('---\n')) {
+    return `---\ntitle: ${title}\nlayout: ${layout}\n---\n\n${body}`;
+  }
+
+  if (body.includes('\nlayout:')) {
+    return body;
+  }
+
+  const end = body.indexOf('\n---\n', 4);
+  if (end === -1) {
+    return body;
+  }
+
+  const frontmatter = body.slice(0, end);
+  const content = body.slice(end);
+  return `${frontmatter}\nlayout: ${layout}${content}`;
+}
+
+async function copyDocs(currentDir, relativeDir = '') {
   const entries = await fs.readdir(currentDir, { withFileTypes: true });
 
   for (const entry of entries) {
@@ -45,27 +82,26 @@ async function copyReadmes(currentDir, relativeDir = '') {
     const nextRelativeDir = path.join(relativeDir, entry.name);
 
     if (entry.isDirectory()) {
-      await copyReadmes(sourcePath, nextRelativeDir);
+      await copyDocs(sourcePath, nextRelativeDir);
       continue;
     }
 
-    if (entry.name !== 'README.md') continue;
+    if (!['.md', '.mdx'].includes(path.extname(entry.name))) continue;
 
-    const sourceFolder = path.basename(path.dirname(sourcePath));
-    const targetDir = path.join(targetRoot, path.dirname(relativeDir));
-    const targetFile = path.join(targetDir, `${sourceFolder}.md`);
-    const markdown = await fs.readFile(sourcePath, 'utf8');
-    const title = prettifyTitle(sourceFolder);
+    const targetDir = path.join(targetRoot, path.dirname(nextRelativeDir));
+    const targetFile = path.join(targetRoot, nextRelativeDir);
+    const source = await fs.readFile(sourcePath, 'utf8');
+    const content = ensurePageFrontmatter(nextRelativeDir, source);
 
     await ensureDir(targetDir);
-    await fs.writeFile(targetFile, injectFrontmatter(title, markdown), 'utf8');
+    await fs.writeFile(targetFile, content, 'utf8');
   }
 }
 
 async function main() {
   const resolvedSource = (await pathExists(sourceRoot)) ? sourceRoot : localRepoDocs;
   await recreateDir(targetRoot);
-  await copyReadmes(resolvedSource);
+  await copyDocs(resolvedSource);
 }
 
 main().catch((error) => {
