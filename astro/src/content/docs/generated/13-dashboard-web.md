@@ -1,0 +1,27 @@
+---
+title: Dashboard Web
+---
+
+# Dashboard / web
+
+This topic tracks the dashboard reset baseline.
+
+## Scope
+
+The old dashboard runtime was removed. What remains is the preserved shell/layout/theme that will be used for the rebuild.
+
+## Key files
+
+- FastAPI app: `../../web/dashboard_app.py`
+- HTML template: `../../web/templates/dashboard.html`
+- CSS: `../../web/static/dashboard.css`
+- Refactor checklist: `dashboard-reset-checklist.md`
+
+## Run
+
+```bash
+uvicorn src.web.dashboard_app:app --reload --host 0.0.0.0 --port 8000
+```
+
+Then open `http://localhost:8000`.
+

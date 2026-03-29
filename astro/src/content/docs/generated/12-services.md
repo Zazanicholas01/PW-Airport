@@ -1,0 +1,27 @@
+---
+title: Services
+---
+
+# Services
+
+This topic is derived from `../../services/README.md`.
+
+## Random flight generation
+
+File: `../../services/flight_generator.py`
+
+- Generates randomized `Flight` rows for simulation startup.
+- Loads metadata (`Airport`, `Terminal`, `Airline`) and applies compatibility rules.
+- Currently deletes existing flights before generating a new dataset.
+
+## Spawn tracking / DB guarantees
+
+File: `../../services/spawn_tracking.py`
+
+- `ensure_airplane_row(...)` ensures a DB `Airplane` row exists for a spawned prefab.
+- Derives type/range from `../../utils/mapping.py` with safe defaults.
+
+## Next reads
+
+- Full services guide: `../../services/README.md`
+- DB helpers: `../06-database/README.md`

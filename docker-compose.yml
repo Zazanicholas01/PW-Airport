@@ -101,6 +101,8 @@ services:
     depends_on:
       dashboard-app:
         condition: service_started
+      docs-site:
+        condition: service_started
     ports:
       - "8001:80"
     volumes:
@@ -129,7 +131,31 @@ services:
       DEFAULT_DATABASE_airport: Airport
       ENGINE_airport: postgres@dbgate-plugin-postgres
     restart: unless-stopped
+  
+  docs-site:
+    build:
+      context: ./astro
+      dockerfile: Dockerfile.dev
+    container_name: pw_airport_docs_dev
+    working_dir: /app
+    volumes:
+      - ./astro:/app
+      - ./src/docs:/workspace-docs
+      - astro-bun-cache:/root/.bun
+      - astro-node-modules:/app/node_modules
+    environment:
+      DOCS_SOURCE_DIR: /workspace-docs
+      DOCS_WATCH_DIR: "/workspace-docs"
+      SHELL: /bin/sh
+      CHOKIDAR_USEPOLLING: "true"
+      WATCHPACK_POLLING: "true"
+    command: bun run dev
+    expose:
+      - "4321"
+    restart: unless-stopped
 
 volumes:
   postgres-dashboard-data:
   dbgate-data:
+  astro-bun-cache:
+  astro-node-modules:
