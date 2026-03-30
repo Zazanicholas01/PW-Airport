@@ -1,0 +1,182 @@
+import DocsSteps from '../DocsSteps.astro';
+import TransportCodeBlock from '../Code-Transport/TransportCodeBlock.astro';
+
+export const serverTimeline = [
+  {
+    title: 'Global runtime objects are created before startup',
+    body: 'server.py constructs the shared PrefabStore, InitGraph, and WorldState objects that will be injected into the application container.',
+  },
+  {
+    title: 'The application container is assembled once',
+    body: 'build_container(...) receives those shared objects and returns the runtime bundle that transport will use for DB access, command builders, and shared state.',
+  },
+  {
+    title: 'Logging is configured and mirrored to the event stream',
+    body: 'The root logger is configured, then EventJsonHandler converts log records into structured event payloads for downstream observability.',
+  },
+  {
+    title: 'Transport startup is delegated to main(...)',
+    body: 'The module does not run websocket logic directly. It calls src.transport.ws_server.main(...) with host, port, and the assembled container.',
+  },
+  {
+    title: 'The process exits through a narrow entrypoint',
+    body: 'asyncio.run(...) wraps the server startup and KeyboardInterrupt is handled with a simple shutdown log message.',
+  },
+];
+
+## `server.py`
+
+Read this file as the top-level runtime bootstrap for the Python process. It is the seam where logging, shared in-memory domain objects, dependency injection, and transport startup all come together before the websocket server takes over.
+
+## Call Timeline
+
+<DocsSteps items={serverTimeline} variant="timeline" />
+
+<div class="transport-code-stack server-di-server-panel">
+<section class="transport-code-section">
+
+## Imports And Bootstrap Scope
+
+The module imports two kinds of dependencies:
+
+- shared runtime building blocks such as `PrefabStore`, `InitGraph`, and `WorldState`
+- the transport startup and DI entrypoints: `main(...)` and `build_container(...)`
+
+That makes `server.py` the composition root for the running backend process.
+
+<TransportCodeBlock title="server.py">
+```python
+import asyncio, logging, json, re
+from datetime import datetime, timezone
+
+from src.domain.prefab_store import PrefabStore
+from src.init_graph import InitGraph
+from src.handlers.setup_bus import SetupBusHandler
+from src.handlers.runtime_bus import RuntimeBusHandler
+from src.domain.world_state import WorldState
+from src.domain.status_constants import *
+from src.transport.ws_server import main
+from src.utils.event_log import append_event
+
+from src.app.container import build_container
+```
+</TransportCodeBlock>
+
+</section>
+
+<section class="transport-code-section">
+
+## Logging And Event Stream Bridge
+
+Before the server starts, the module configures the root logger and installs `EventJsonHandler`. That handler turns ordinary log records into structured event payloads by:
+
+- stripping ANSI codes
+- extracting an optional subsystem prefix
+- attaching timestamp, level, logger, and message
+- forwarding the result into `append_event(...)`
+
+<TransportCodeBlock title="server.py">
+```python
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+)
+
+_ansi = re.compile(r"\x1b\[[0-9;]*m")
+_subsys = re.compile(r"^\[(?P<subsystem>[^\]]+)\]\s*")
+
+def _clean_msg(msg: str, max_len: int = 400) -> str:
+    msg = _ansi.sub("", msg)
+    msg = " ".join(msg.split())
+    if len(msg) > max_len:
+        msg = msg[: max_len - 1] + "..."
+    return msg
+```
+</TransportCodeBlock>
+
+<TransportCodeBlock title="server.py">
+```python
+class EventJsonHandler(logging.Handler):
+    def emit(self, record: logging.LogRecord) -> None:
+        try:
+            raw = record.getMessage()
+            raw = raw if isinstance(raw, str) else str(raw)
+
+            subsystem = None
+            m = _subsys.match(raw)
+            if m:
+                subsystem = m.group("subsystem")
+                raw = raw[m.end():]
+
+            evt = {
+                "type": "log",
+                "ts": datetime.fromtimestamp(record.created, tz=timezone.utc).isoformat(),
+                "level": record.levelname,
+                "logger": record.name,
+                "subsystem": subsystem,
+                "message": _clean_msg(raw)
+            }
+
+            fields = getattr(record, "fields", None)
+            if isinstance(fields, dict) and fields:
+                evt["fields"] = fields
+
+            append_event(evt)
+        except Exception:
+            pass
+```
+</TransportCodeBlock>
+
+</section>
+
+<section class="transport-code-section">
+
+## Shared Runtime Objects And DI Assembly
+
+The next block creates the shared in-memory objects once, then passes them into the application container builder. This is the handoff from raw objects into the runtime dependency bundle.
+
+<TransportCodeBlock title="server.py">
+```python
+logging.getLogger().addHandler(EventJsonHandler())
+
+prefab_store = PrefabStore()
+graph = InitGraph(PERSONAL_AIRPORT)
+world_state = WorldState()
+
+app_container = build_container(
+    prefab_store=prefab_store,
+    graph=graph,
+    world_state=world_state
+)
+
+setup_bus: SetupBusHandler | None = None
+runtime_bus: RuntimeBusHandler | None = None
+```
+</TransportCodeBlock>
+
+</section>
+
+<section class="transport-code-section">
+
+## Process Entrypoint
+
+The final section is intentionally small. `server.py` does not own connection handling itself. It delegates to `src.transport.ws_server.main(...)` and passes in the container plus websocket host and port from shared constants.
+
+<TransportCodeBlock title="server.py">
+```python
+if __name__ == "__main__":
+    try:
+        asyncio.run(
+            main(
+                host=WEBSOCKET_CONFIG.HOST,
+                port=WEBSOCKET_CONFIG.PORT,
+                container=app_container
+            )
+        )
+    except KeyboardInterrupt:
+        logging.info("Shutting down server")
+```
+</TransportCodeBlock>
+
+</section>
+</div>

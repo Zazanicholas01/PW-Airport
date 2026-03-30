@@ -1,0 +1,27 @@
+---
+title: Code - Setup & Runtime
+layout: ../../layouts/DocsLayout.astro
+description: Handlers implementation walkthrough with switchable code tabs for setup_bus.py, runtime_bus.py, init_graph.py, and prefab_store.py.
+---
+
+import DocsCodeTabs from '../../components/Code-Transport/DocsCodeTabs.astro';
+import HandlersCodeSetupBus from '../../components/Code-Handlers/HandlersCodeSetupBus.mdx';
+import HandlersCodeRuntimeBus from '../../components/Code-Handlers/HandlersCodeRuntimeBus.mdx';
+import HandlersCodeInitGraph from '../../components/Code-Handlers/HandlersCodeInitGraph.mdx';
+import HandlersCodePrefabStore from '../../components/Code-Handlers/HandlersCodePrefabStore.mdx';
+
+## Code Tabs
+
+<DocsCodeTabs
+  tabs={[
+    { id: 'setup-bus', label: 'Setup Bus' },
+    { id: 'runtime-bus', label: 'Runtime Bus' },
+    { id: 'init-graph', label: 'Init Graph' },
+    { id: 'prefab-store', label: 'Prefab Store' },
+  ]}
+>
+  <HandlersCodeSetupBus slot="panel-ws-server" />
+  <HandlersCodeRuntimeBus slot="panel-message-bus" />
+  <HandlersCodeInitGraph slot="panel-session" />
+  <HandlersCodePrefabStore slot="panel-clock" />
+</DocsCodeTabs>

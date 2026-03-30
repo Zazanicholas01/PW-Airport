@@ -1,0 +1,162 @@
+import DocsSteps from '../DocsSteps.astro';
+import TransportCodeBlock from '../Code-Transport/TransportCodeBlock.astro';
+
+export const simClockTimeline = [
+  {
+    title: 'Clock starts from a timezone-aware simulation base',
+    body: 'SimulationClock is initialized with a UTC-aware start datetime and a starting time scale, establishing the backend-owned baseline for all future simulated time reads.',
+  },
+  {
+    title: 'Monotonic real time drives continuous simulation time',
+    body: 'The clock does not tick itself in a loop; now() derives the current simulated datetime by combining monotonic elapsed time with the current scale.',
+  },
+  {
+    title: 'Time-scale changes rebase before switching speed',
+    body: 'set_time_scale(...) first captures the current simulated time, then resets the monotonic baseline so the scale change is continuous rather than jumpy.',
+  },
+  {
+    title: 'Explicit time jumps reset the simulated baseline',
+    body: 'set_sim_time(...) replaces the simulation base directly and refreshes the monotonic anchor so the new datetime becomes authoritative immediately.',
+  },
+  {
+    title: 'Sync payloads expose the current clock state externally',
+    body: 'make_sync() increments a sync id and returns Unix milliseconds plus time scale for Unity and dashboard consumers.',
+  },
+];
+
+## `sim_clock.py`
+
+Read this file as the authoritative time model for the whole runtime. Transport, handlers, and dashboard-facing code all rely on this object rather than storing their own independent view of simulated time.
+
+## Call Timeline
+
+<DocsSteps items={simClockTimeline} variant="timeline" />
+
+<div class="transport-code-stack sim-clock-panel">
+<section class="transport-code-section">
+
+## Clock State And Sync Contract
+
+The clock state is intentionally compact:
+
+- `_sim_base` as the authoritative simulated datetime baseline
+- `_mono_base` as the matching monotonic real-time baseline
+- `_time_scale` as the speed factor
+- `_sync_id` as the monotonically increasing sync payload counter
+
+`ClockSync` is the lightweight transport contract built from that state.
+
+<TransportCodeBlock title="sim_clock.py">
+```python
+@dataclass
+class ClockSync:
+    sync_id: int
+    sim_unix_ms: int
+    time_scale: float
+
+class SimulationClock:
+    def __init__(self, *, sim_start: datetime | None = None, time_scale: float = 1.0):
+        if sim_start is None:
+            sim_start = utc_now()
+
+        if sim_start.tzinfo is None:
+            raise ValueError("Sim start must be timezone aware")
+
+        self._sim_base = sim_start
+        self._mono_base = time.monotonic()
+        self._time_scale = float(time_scale)
+        self._sync_id = 0
+```
+</TransportCodeBlock>
+
+</section>
+
+<section class="transport-code-section">
+
+## Continuous Simulated Time Computation
+
+The core idea is in `now()`: simulation time is derived, not incremented manually. That keeps the clock smooth between sync ticks and lets all consumers read consistent time on demand.
+
+<TransportCodeBlock title="sim_clock.py">
+```python
+@property
+def time_scale(self) -> float:
+    """Expose the current time scale"""
+    return self._time_scale
+
+def now(self) -> datetime:
+    """Computes the current simulated datetime"""
+    mono_now = time.monotonic()
+
+    dt_real = mono_now - self._mono_base
+    dt_sim = dt_real * self._time_scale
+
+    return self._sim_base + timedelta(seconds=dt_sim)
+```
+</TransportCodeBlock>
+
+</section>
+
+<section class="transport-code-section">
+
+## Time-Scale And Time-Jump Controls
+
+The two mutation methods are deliberately small:
+
+- `set_time_scale(...)` preserves continuity while changing speed
+- `set_sim_time(...)` performs an explicit jump to a new authoritative simulated datetime
+
+These are the domain methods transport calls when handling clock-control messages.
+
+<TransportCodeBlock title="sim_clock.py">
+```python
+def set_time_scale(self, new_scale: float) -> None:
+    """Set Time Scale"""
+
+    new_scale = float(new_scale)
+
+    current_sim = self.now()
+    self._sim_base = current_sim
+
+    self._mono_base = time.monotonic()
+    self._time_scale = new_scale
+```
+</TransportCodeBlock>
+
+<TransportCodeBlock title="sim_clock.py">
+```python
+def set_sim_time(self, new_sim: datetime) -> None:
+    """Set simulation time for time jumps - TODO"""
+
+    if new_sim.tzinfo is None:
+        raise ValueError("New sim must be timezone aware")
+
+    self._sim_base = new_sim
+    self._mono_base = time.monotonic()
+```
+</TransportCodeBlock>
+
+</section>
+
+<section class="transport-code-section">
+
+## Sync Payload Generation
+
+The externally visible bridge is `make_sync()`. It captures the current simulated time, converts it into Unix milliseconds, increments the sync id, and packages everything into a `ClockSync` dataclass.
+
+<TransportCodeBlock title="sim_clock.py">
+```python
+def make_sync(self) -> ClockSync:
+    """Increment Sync ID to return a ClockSync object"""
+
+    self._sync_id += 1
+
+    sim = self.now()
+    sim_unix_ms = int(sim.timestamp() * 1000)
+
+    return ClockSync(sync_id=self._sync_id, sim_unix_ms=sim_unix_ms, time_scale=self._time_scale)
+```
+</TransportCodeBlock>
+
+</section>
+</div>

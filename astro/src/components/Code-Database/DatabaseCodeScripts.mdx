@@ -1,0 +1,166 @@
+import DocsSteps from '../DocsSteps.astro';
+import TransportCodeBlock from '../Code-Transport/TransportCodeBlock.astro';
+
+export const scriptsTimeline = [
+  {
+    title: 'init_db.py recreates the database from scratch',
+    body: 'The script connects to an admin database, terminates active sessions, drops the target database, recreates it, and then applies the schema DDL sequentially.',
+  },
+  {
+    title: 'The schema is declared as explicit SQL statements',
+    body: 'Rather than using Alembic or SQLAlchemy metadata creation, the project stores the authoritative schema as ordered CREATE and ALTER statements.',
+  },
+  {
+    title: 'startup.py seeds the reference data only when tables are empty',
+    body: 'Terminals, airports, airlines, stands, parking spots, and vehicles are inserted idempotently so repeated startups do not duplicate those records.',
+  },
+];
+
+## `scripts/init_db.py` and `scripts/startup.py`
+
+These scripts are not inside `src/db`, but they define the persistence environment the ORM expects. Read them together with `models.py`, because they are the source of truth for schema reset and initial reference data.
+
+## Call Timeline
+
+<DocsSteps items={scriptsTimeline} variant="timeline" />
+
+<div class="transport-code-stack database-scripts-panel">
+<section class="transport-code-section">
+
+## Full Schema Reset
+
+`init_db.py` is intentionally destructive. It is a local-development reset script, not a migration tool.
+
+The key flow is:
+
+1. connect to the admin database
+2. terminate connections to the target DB
+3. drop and recreate the target DB
+4. run all `DROP TABLE`, `CREATE TABLE`, and `ALTER TABLE` statements
+
+<TransportCodeBlock title="init_db.py">
+```python
+def recreate_database() -> None:
+    """Drop and recreate the target database to ensure a clean state."""
+    with psycopg.connect(
+        dbname=ADMIN_DB,
+        user=DB_USER,
+        password=DB_PASSWORD,
+        host=DB_HOST,
+        port=DB_PORT,
+        autocommit=True,
+    ) as admin_connection:
+        with admin_connection.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT pg_terminate_backend(pid)
+                FROM pg_stat_activity
+                WHERE datname = %s
+                  AND pid <> pg_backend_pid();
+                """,
+                (DB_NAME,),
+            )
+            cursor.execute(
+                sql.SQL("DROP DATABASE IF EXISTS {}").format(sql.Identifier(DB_NAME))
+            )
+            cursor.execute(
+                sql.SQL("CREATE DATABASE {}").format(sql.Identifier(DB_NAME))
+            )
+```
+</TransportCodeBlock>
+
+</section>
+
+<section class="transport-code-section">
+
+## Schema Definition Style
+
+The file keeps the full schema in ordered string lists instead of migrations. That means the ORM and this script must stay manually aligned.
+
+<TransportCodeBlock title="init_db.py">
+```python
+DROP_STATEMENTS = [
+    'DROP TABLE IF EXISTS "Operazione" CASCADE;',
+    'DROP TABLE IF EXISTS "Merce" CASCADE;',
+    'DROP TABLE IF EXISTS "Passeggero" CASCADE;',
+    ...
+]
+
+CREATE_AND_ALTER_STATEMENTS = [
+    '''
+    CREATE TABLE "Viaggio"(
+        "id" VARCHAR(36) NOT NULL,
+        ...
+    );
+    ''',
+    'ALTER TABLE "Viaggio" ADD PRIMARY KEY("id");',
+    ...
+]
+```
+</TransportCodeBlock>
+
+</section>
+
+<section class="transport-code-section">
+
+## Seed Data
+
+`startup.py` provides the initial static records the rest of the app assumes exist:
+
+- passengers and cargo terminals
+- the local and remote airports with distance categories
+- airlines
+- stands
+- parking spots
+- vehicles
+
+<TransportCodeBlock title="startup.py">
+```python
+def insert_seed_values() -> None:
+    with Session() as session:
+        if not _has_rows(session, models.Terminal):
+            add_terminal(session)
+        ...
+        if not _has_rows(session, models.Vehicle):
+            add_vehicles(session)
+```
+</TransportCodeBlock>
+
+The most important business detail here is that airport distances are normalized into `Short`, `Medium`, and `Long`. The scheduling and airplane-compatibility logic later depend on those categories.
+
+</section>
+
+<section class="transport-code-section">
+
+## Stands And Airport Metadata
+
+Two seed blocks matter especially for runtime behavior:
+
+- `evaluate_distance_airports()` decides the range category associated with each airport
+- `add_stands()` creates the initial `O`, `C`, and `P` stand inventory used by reservation logic
+
+<TransportCodeBlock title="startup.py">
+```python
+def categorize(distance_km):
+    if distance_km is None:
+        return None
+    if distance_km < 500:
+        return "Short"
+    if distance_km < 4000:
+        return "Medium"
+    return "Long"
+```
+</TransportCodeBlock>
+
+<TransportCodeBlock title="startup.py">
+```python
+stands = [
+    models.Stand(id="O1", type="O", status="Available", airplane_id=None),
+    models.Stand(id="C1", type="C", status="Available", airplane_id=None),
+    models.Stand(id="P1", type="P", status="Available", airplane_id=None),
+]
+```
+</TransportCodeBlock>
+
+</section>
+</div>

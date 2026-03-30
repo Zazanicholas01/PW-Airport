@@ -1,0 +1,21 @@
+---
+title: Code - Server & DI
+layout: ../../layouts/DocsLayout.astro
+description: Startup and dependency-injection walkthrough with switchable code tabs for server.py and app/container.py.
+---
+
+import DocsCodeTabs from '../../components/Code-Transport/DocsCodeTabs.astro';
+import ServerDiCodeServer from '../../components/Code-Server-DI/ServerDiCodeServer.mdx';
+import ServerDiCodeContainer from '../../components/Code-Server-DI/ServerDiCodeContainer.mdx';
+
+## Code Tabs
+
+<DocsCodeTabs
+  tabs={[
+    { id: 'server', label: 'Server' },
+    { id: 'container', label: 'Container' },
+  ]}
+>
+  <ServerDiCodeServer slot="panel-ws-server" />
+  <ServerDiCodeContainer slot="panel-message-bus" />
+</DocsCodeTabs>

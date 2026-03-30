@@ -1,0 +1,30 @@
+---
+title: Code - Database
+layout: ../../layouts/DocsLayout.astro
+description: Database implementation walkthrough with switchable code tabs for engine.py, models.py, db_functions.py, actions.py, and the init or seed scripts.
+---
+
+import DocsCodeTabs from '../../components/Code-Transport/DocsCodeTabs.astro';
+import DatabaseCodeEngine from '../../components/Code-Database/DatabaseCodeEngine.mdx';
+import DatabaseCodeModels from '../../components/Code-Database/DatabaseCodeModels.mdx';
+import DatabaseCodeFunctions from '../../components/Code-Database/DatabaseCodeFunctions.mdx';
+import DatabaseCodeActions from '../../components/Code-Database/DatabaseCodeActions.mdx';
+import DatabaseCodeScripts from '../../components/Code-Database/DatabaseCodeScripts.mdx';
+
+## Code Tabs
+
+<DocsCodeTabs
+  tabs={[
+    { id: 'engine', label: 'Engine' },
+    { id: 'models', label: 'Models' },
+    { id: 'db-functions', label: 'DB Functions' },
+    { id: 'actions', label: 'Actions' },
+    { id: 'scripts', label: 'Init & Seed Scripts' },
+  ]}
+>
+  <DatabaseCodeEngine slot="panel-ws-server" />
+  <DatabaseCodeModels slot="panel-message-bus" />
+  <DatabaseCodeFunctions slot="panel-session" />
+  <DatabaseCodeActions slot="panel-clock" />
+  <DatabaseCodeScripts slot="panel-flight-scheduling" />
+</DocsCodeTabs>

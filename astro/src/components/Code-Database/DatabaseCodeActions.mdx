@@ -1,0 +1,94 @@
+import DocsSteps from '../DocsSteps.astro';
+import TransportCodeBlock from '../Code-Transport/TransportCodeBlock.astro';
+
+export const dbActionsTimeline = [
+  {
+    title: 'A tiny facade is built around Session',
+    body: 'DbActions is a dataclass that accepts a Session factory and exposes a few focused helpers for orchestration code.',
+  },
+  {
+    title: 'Read helpers stay intentionally narrow',
+    body: 'The current file counts parked airplanes and reads a route id for a specific airplane without pulling in the larger db_functions transition surface.',
+  },
+  {
+    title: 'One method delegates to flight generation',
+    body: 'The debug helper forwards to RandomFlightGenerator so scripts or runtime tools can seed synthetic flights without duplicating generation logic.',
+  },
+];
+
+## `actions.py`
+
+Read this file as a small convenience facade. It is not the core persistence layer. It packages a few DB-oriented actions behind a single object so callers can depend on one lightweight helper.
+
+## Call Timeline
+
+<DocsSteps items={dbActionsTimeline} variant="timeline" />
+
+<div class="transport-code-stack database-actions-panel">
+<section class="transport-code-section">
+
+## Facade Shape
+
+The whole module centers on one immutable dataclass that stores a `Session` factory.
+
+<TransportCodeBlock title="actions.py">
+```python
+@dataclass(frozen=True)
+class DbActions:
+    Session: any
+```
+</TransportCodeBlock>
+
+This is a thin wrapper, not a repository abstraction layer with dozens of methods.
+
+</section>
+
+<section class="transport-code-section">
+
+## Small Read Helpers
+
+The first two methods expose convenience queries that are easy to call from diagnostics or orchestration code.
+
+<TransportCodeBlock title="actions.py">
+```python
+def count_parked_airplanes(self) -> int:
+    with self.Session() as session:
+        return (
+            session.execute(
+                select(func.count())
+                .select_from(models.Airplane)
+                .where(models.Airplane.status == AIRPLANE_STATUS.PARKED)
+            ).scalar_one()
+        )
+
+def get_airplane_route_id(self, airplane_id: str) -> str | None:
+    with self.Session() as session:
+        return session.execute(
+            select(models.Airplane.route_id).where(models.Airplane.id == airplane_id)
+        ).scalar_one_or_none()
+```
+</TransportCodeBlock>
+
+</section>
+
+<section class="transport-code-section">
+
+## Debug Flight Generation Hook
+
+The last method is the most interesting one conceptually because it shows that `actions.py` is partly an integration facade, not just a query holder.
+
+<TransportCodeBlock title="actions.py">
+```python
+def generate_debug_flights(self, n: int, ensure_in_window: bool, window: timedelta) -> None:
+    RandomFlightGenerator(self.Session).generate_flights(
+        n,
+        ensure_in_window=ensure_in_window,
+        window=window,
+    )
+```
+</TransportCodeBlock>
+
+That method keeps the caller code smaller by hiding where random-flight generation actually lives.
+
+</section>
+</div>

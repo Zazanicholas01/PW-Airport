@@ -1,0 +1,24 @@
+---
+title: Code - Services
+layout: ../../layouts/DocsLayout.astro
+description: Services implementation walkthrough with switchable code tabs for flight_generator.py, spawn_tracking.py, and utils/mapping.py.
+---
+
+import DocsCodeTabs from '../../components/Code-Transport/DocsCodeTabs.astro';
+import ServicesCodeFlightGenerator from '../../components/Code-Services/ServicesCodeFlightGenerator.mdx';
+import ServicesCodeSpawnTracking from '../../components/Code-Services/ServicesCodeSpawnTracking.mdx';
+import ServicesCodeMapping from '../../components/Code-Services/ServicesCodeMapping.mdx';
+
+## Code Tabs
+
+<DocsCodeTabs
+  tabs={[
+    { id: 'flight-generator', label: 'Flight Generator' },
+    { id: 'spawn-tracking', label: 'Spawn Tracking' },
+    { id: 'mapping', label: 'Mapping' },
+  ]}
+>
+  <ServicesCodeFlightGenerator slot="panel-ws-server" />
+  <ServicesCodeSpawnTracking slot="panel-message-bus" />
+  <ServicesCodeMapping slot="panel-session" />
+</DocsCodeTabs>

@@ -1,0 +1,192 @@
+import DocsSteps from '../DocsSteps.astro';
+import TransportCodeBlock from '../Code-Transport/TransportCodeBlock.astro';
+
+export const dbFunctionsTimeline = [
+  {
+    title: 'A session factory is injected or lazily synthesized',
+    body: 'The module supports app startup wiring through configure_session_factory(...), but can still run on its own by creating a fallback factory from the shared engine.',
+  },
+  {
+    title: 'Runtime reads are grouped around scheduling visibility',
+    body: 'The sliding-window query merges multiple lifecycle states so schedulers and dashboard views can see the flights that matter operationally right now.',
+  },
+  {
+    title: 'Writes are organized as small transition helpers',
+    body: 'Departure assignment, inbound airplane creation, stand reservation, and path assignment all live here as focused persistence operations.',
+  },
+];
+
+## `db_functions.py`
+
+Read this file as the operational persistence layer. This is where database access stops being generic ORM setup and starts encoding scheduler-facing business transitions.
+
+## Call Timeline
+
+<DocsSteps items={dbFunctionsTimeline} variant="timeline" />
+
+<div class="transport-code-stack database-functions-panel">
+<section class="transport-code-section">
+
+## Session Factory Strategy
+
+The first part of the file solves a practical problem: some callers want to inject a shared `Session` factory at startup, while scripts or isolated utilities want the module to work without extra wiring.
+
+<TransportCodeBlock title="db_functions.py">
+```python
+_session_factory: sessionmaker | None = None
+
+def configure_session_factory(Session: sessionmaker) -> None:
+    """Inject the SQLAlchemy session factory (recommended at app startup)."""
+    global _session_factory
+    _session_factory = Session
+
+@lru_cache()
+def _fallback_session_factory() -> sessionmaker:
+    return sessionmaker(bind=get_engine(), future=True)
+
+def _get_session_factory() -> sessionmaker:
+    return _session_factory or _fallback_session_factory()
+```
+</TransportCodeBlock>
+
+</section>
+
+<section class="transport-code-section">
+
+## Sliding-Window Read Model
+
+`list_flights_in_sliding_window(...)` is the read model that keeps showing up in higher layers. Its job is not to return one clean SQL state. Its job is to return the set of flights that the scheduling loop still cares about.
+
+That is why it merges several queries:
+
+- unscheduled outbound departures
+- unscheduled inbound arrivals
+- scheduled outbound departures with airplanes already assigned
+- inbound flights still waiting to depart from the remote airport
+- inbound flights already approaching the local airport
+
+<TransportCodeBlock title="db_functions.py">
+```python
+def list_flights_in_sliding_window(*, airport_icao: str, now_utc: datetime, window: timedelta):
+    """List all the flights inside the scheduling window"""
+
+    now_utc = as_utc(now_utc)
+    now_db = now_utc.astimezone(timezone.utc)
+    upper = now_db + window
+
+    with _get_session_factory()() as session:
+        q = (
+            select(models.Flight)
+            .where(models.Flight.airplane_id.is_(None))
+            .where(models.Flight.status == FLIGHT_STATUS.UNSCHEDULED)
+            .where(
+                or_(
+                    and_(models.Flight.origin == airport_icao, models.Flight.departure_time <= upper),
+                    and_(models.Flight.destination == airport_icao, models.Flight.arrival_time <= upper),
+                    and_(models.Flight.destination == airport_icao, models.Flight.departure_time <= upper)
+                )
+            )
+        )
+```
+</TransportCodeBlock>
+
+</section>
+
+<section class="transport-code-section">
+
+## Outbound Assignment Flow
+
+Outbound scheduling is split into two persistence steps:
+
+1. pick and reserve a parked airplane already linked to a stand
+2. assign a `Path` from that stand to `Departure`
+
+<TransportCodeBlock title="db_functions.py">
+```python
+def assign_airplane_to_departure_flight(*, flight_id: str, required_type: str | None) -> tuple[str, str] | None:
+    """Assign airplane to departure flight"""
+
+    with _get_session_factory()() as session:
+        flight = session.get(models.Flight, flight_id)
+        if flight is None or flight.airplane_id is not None:
+            return None
+
+        q = (
+            select(models.Airplane.id, models.Stand.id)
+            .join(models.Stand, models.Stand.airplane_id == models.Airplane.id)
+            .where(models.Airplane.status == AIRPLANE_STATUS.PARKED)
+        )
+```
+</TransportCodeBlock>
+
+<TransportCodeBlock title="db_functions.py">
+```python
+def assign_path_to_airplane(*, airplane_id: str, source: str, destination: str) -> int | None:
+    """Assign path to airplane"""
+
+    with _get_session_factory()() as session:
+        path_id = session.execute(
+            select(models.Path.id)
+            .where(models.Path.source == source)
+            .where(models.Path.destination == destination)
+        ).scalar_one_or_none()
+```
+</TransportCodeBlock>
+
+</section>
+
+<section class="transport-code-section">
+
+## Inbound Preparation And Arrival Reservation
+
+Inbound scheduling has a different shape:
+
+- create a synthetic airplane row if the flight does not already have one
+- mark the remote departure as started
+- reserve an appropriate stand near arrival
+- assign a landing path from the range-specific landing source to that stand
+
+<TransportCodeBlock title="db_functions.py">
+```python
+def create_and_assign_airplane_for_landing_departure(
+        *, flight_id: str,
+        prefab_picker: Callable[[str | None, str | None], str | None] | None = None) -> str | None:
+    """Create and assign airplane for landing departure"""
+```
+</TransportCodeBlock>
+
+<TransportCodeBlock title="db_functions.py">
+```python
+def reserve_stand_and_link_airplane_for_landing_arrival(*, flight_id: str) -> str | None:
+    """Reserve stand and link airplane for landing arrival"""
+
+def mark_landing_departed(*, flight_id: str) -> None:
+    """Mark landing departed"""
+
+def assign_landing_path_for_airplane(*, airplane_id: str, stand_id: str) -> int | None:
+    """Assign landing path for airplane"""
+```
+</TransportCodeBlock>
+
+The important design choice is that these helpers commit their writes internally. Higher layers treat them as concrete state transitions, not as pieces of a larger open transaction.
+
+</section>
+
+<section class="transport-code-section">
+
+## Stand Link Utilities
+
+Two small helpers handle direct stand-airplane linkage. They are simple, but they matter because spawn flows and runtime cleanup both depend on them.
+
+<TransportCodeBlock title="db_functions.py">
+```python
+def link_airplane_to_stand(*, stand_id: str, airplane_id: str) -> None:
+    """Link and airplane to a stand"""
+
+def unlink_airplane_from_stand(*, stand_id: str, airplane_id: str | None = None) -> None:
+    """Unlink an airplane from the stand"""
+```
+</TransportCodeBlock>
+
+</section>
+</div>

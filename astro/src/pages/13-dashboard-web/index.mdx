@@ -1,22 +1,122 @@
 ---
 title: Dashboard Web
 layout: ../../layouts/DocsLayout.astro
+description: Dashboard web overview covering the FastAPI surface, live WebSocket feeds, snapshot readers, and the operator-facing HTML or detail UI.
 ---
 
-# Dashboard / web
+import DocsIntroHero from '../../components/DocsIntroHero.astro';
+import DocsTopicGrid from '../../components/DocsTopicGrid.astro';
+import DocsSteps from '../../components/DocsSteps.astro';
 
-This topic tracks the dashboard reset baseline.
+export const dashboardAreas = [
+  {
+    kicker: 'Backend',
+    title: 'FastAPI Surface',
+    summary: 'Serves the dashboard shell, detail pages, JSON detail APIs, status endpoint, static assets, and WebSocket channels.',
+    tone: 'sky',
+    meta: 'dashboard_app.py',
+  },
+  {
+    kicker: 'Projection',
+    title: 'Snapshot Readers',
+    summary: 'Builds display-oriented snapshots from the database and the JSONL event log for flights, planes, events, and simulated time.',
+    tone: 'emerald',
+    meta: 'dashboard_data.py',
+  },
+  {
+    kicker: 'Live Sync',
+    title: 'Background Loops',
+    summary: 'Tails the event log, polls DB-backed snapshots, and broadcasts only changed payloads to connected clients.',
+    tone: 'amber',
+    meta: 'dashboard_live.py',
+  },
+  {
+    kicker: 'Frontend',
+    title: 'Dashboard And Detail UI',
+    summary: 'The main dashboard page and the detail page use server-rendered HTML plus lightweight JavaScript refresh loops.',
+    tone: 'rose',
+    meta: 'templates/ + static/',
+  },
+];
 
-## Scope
+export const dashboardFlows = [
+  {
+    title: 'The browser loads a server-rendered HTML shell',
+    body: 'FastAPI serves dashboard.html for the main board and a rendered detail-page.html for individual flights or planes.',
+  },
+  {
+    title: 'The client opens live WebSocket feeds',
+    body: 'The main dashboard connects to events, clock, scheduling-window, and planes-on-ground sockets and receives immediate cached snapshots on connect.',
+  },
+  {
+    title: 'Snapshot readers assemble UI-ready payloads',
+    body: 'dashboard_data.py combines DB reads, log-file parsing, image resolution, and progress computation into small dictionaries that the browser can render directly.',
+  },
+  {
+    title: 'Background tasks keep cached payloads fresh',
+    body: 'dashboard_live.py watches file offsets and recomputes DB snapshots, then broadcasts only when the payload signature changes.',
+  },
+  {
+    title: 'Detail pages refresh in place',
+    body: 'The detail page uses the clock feed for progress animation and polls a JSON API every few seconds to patch the current snapshot into the DOM.',
+  },
+];
 
-The old dashboard runtime was removed. What remains is the preserved shell/layout/theme that will be used for the rebuild.
+export const nextReads = [
+  {
+    href: '/docs/13-code-dashboard-web/',
+    title: 'Code - Dashboard Web',
+    summary: 'Open the implementation walkthrough for the FastAPI routes, snapshot readers, live state loops, and UI files.',
+    tone: 'teal',
+  },
+  {
+    href: '/docs/06-database/',
+    title: 'Database',
+    summary: 'The dashboard reads operational truth from the DB helpers and ORM entities described in the database docs.',
+    tone: 'emerald',
+  },
+  {
+    href: '/docs/10-schedulers/',
+    title: 'Schedulers',
+    summary: 'The window-flights board is driven by the same sliding-window logic the scheduler uses for flight-stage decisions.',
+    tone: 'amber',
+  },
+  {
+    href: '/docs/15-troubleshooting/',
+    title: 'Troubleshooting',
+    summary: 'Use the troubleshooting guide when event logs, DB reads, or dashboard feeds stop updating as expected.',
+    tone: 'orange',
+  },
+];
 
-## Key files
+<DocsIntroHero
+  eyebrow="Dashboard"
+  lead="The dashboard web layer is a FastAPI-served operator UI backed by database snapshots, a tailed JSONL event log, and lightweight browser-side WebSocket rendering. It now includes both the main scheduling board and per-flight or per-plane detail pages."
+  primaryAction={{ href: '/docs/13-code-dashboard-web/', label: 'Open Code Walkthrough' }}
+  secondaryAction={{ href: '/docs/06-database/', label: 'Open Database Docs' }}
+  meta={['FastAPI', 'WebSockets', 'Snapshot projection', 'Operator UI']}
+/>
 
-- FastAPI app: `../../web/dashboard_app.py`
-- HTML template: `../../web/templates/dashboard.html`
-- CSS: `../../web/static/dashboard.css`
-- Refactor checklist: `dashboard-reset-checklist.md`
+## Main Areas
+
+<DocsTopicGrid items={dashboardAreas} variant="featured" />
+
+## Runtime Flow
+
+<DocsSteps items={dashboardFlows} variant="timeline" />
+
+## Key Files
+
+- `src/web/dashboard_app.py`
+- `src/web/dashboard_data.py`
+- `src/web/dashboard_live.py`
+- `src/web/dashboard_views.py`
+- `src/web/templates/dashboard.html`
+- `src/web/templates/detail-page.html`
+- `src/web/static/dashboard.js`
+- `src/web/static/dashboard.css`
+- `src/web/static/detail-page.js`
+- `src/web/static/detail-page.css`
 
 ## Run
 
@@ -26,3 +126,6 @@ uvicorn src.web.dashboard_app:app --reload --host 0.0.0.0 --port 8000
 
 Then open `http://localhost:8000`.
 
+## Next Reads
+
+<DocsTopicGrid items={nextReads} compact variant="subsystems" />

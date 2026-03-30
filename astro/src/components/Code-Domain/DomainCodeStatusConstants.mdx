@@ -1,0 +1,244 @@
+import DocsSteps from '../DocsSteps.astro';
+import TransportCodeBlock from '../Code-Transport/TransportCodeBlock.astro';
+
+export const statusConstantsTimeline = [
+  {
+    title: 'Global runtime vocabulary is centralized here',
+    body: 'status_constants.py holds the shared string values and tuning constants that multiple layers rely on instead of redefining local copies.',
+  },
+  {
+    title: 'Business categories and model metadata live alongside statuses',
+    body: 'Airline categories, aircraft model metadata, allowed stands, and airport-specific identifiers are part of the same canonical domain vocabulary.',
+  },
+  {
+    title: 'Handlers, schedulers, and transport all read the same status names',
+    body: 'Flight, stand, airplane, runtime-event, and bus-command constants provide one source of truth for state transitions and message names.',
+  },
+  {
+    title: 'Operational timing and polling defaults are also shared',
+    body: 'Window durations, disembark timing, clock cadence, and polling thresholds are defined here so loops and handlers stay aligned.',
+  },
+  {
+    title: 'Spline identifiers and schema paths connect domain logic to Unity data',
+    body: 'MasterSpline, landing-spline names, stand exclusions, and schema_nodi.json location give graph-building and setup code a common vocabulary.',
+  },
+];
+
+## `status_constants.py`
+
+Read this file as the shared domain vocabulary for the project. It is more than status labels. It also carries model metadata, airport-specific identifiers, timing defaults, websocket settings, and spline names that tie together transport, handlers, schedulers, and graph building.
+
+## Call Timeline
+
+<DocsSteps items={statusConstantsTimeline} variant="timeline" />
+
+<div class="transport-code-stack status-constants-panel">
+<section class="transport-code-section">
+
+## Global Runtime Constants
+
+The file starts with project-wide values that are consumed in different places across the stack:
+
+- airport and airline constraints
+- model metadata for plane classification
+- stand availability and exclusions
+- shared timing defaults
+
+<TransportCodeBlock title="status_constants.py">
+```python
+PERSONAL_AIRPORT = "LIAG"
+ALLOWED_AIRLINES = ("LUN", "UMB", "JAE", "ALI")
+
+EUROPEAN_COUNTRIES = {
+    "francia",
+    "germania",
+    "paesi bassi",
+    "spagna",
+    "regno unito",
+    "turchia",
+}
+
+ALLOWED_NATIONALITIES = {"NI-EU"}
+
+MODEL_INFO: dict[str, tuple[str, str]] = {
+    "turboelica": ("Passengers", "Short"),
+    "jet": ("Passengers", "Short"),
+    "b2_stealth": ("Passengers", "Short"),
+    "aeroplanoleggendario": ("Passengers", "Short"),
+    "turboelica_cargo": ("Cargo", "Short"),
+    "e190": ("Passengers", "Medium"),
+    "a320": ("Passengers", "Medium"),
+    "b737": ("Passengers", "Medium"),
+    "b737_cargo": ("Cargo", "Medium"),
+    "b787": ("Passengers", "Long"),
+    "beluga": ("Cargo", "Long"),
+}
+```
+</TransportCodeBlock>
+
+<TransportCodeBlock title="status_constants.py">
+```python
+EXCLUDED_STAND_IDS: set[str] = {
+    "LongLanding",
+    "MediumLanding",
+    "ShortLanding",
+    "Departure",
+    "Parking1",
+    "Parking2",
+    "Parking3",
+}
+
+AVAILABLE_STANDS = ["O1", "O2", "O3", "O4", "O5", "P1", "P2", "P3", "C1", "C2", "C3"]
+
+DISEMBARK_SIM_SECONDS = 5 * 60
+
+RANDOM_FLIGHTS_COUNT = 20
+ENSURE_IN_WINDOW = True
+
+MIN_POLL_REAL_S = 0.05
+CLOCK_HERTZ = 10.0
+LOG_EVERY_S = 10.0
+EVT_EVERY_S = 0.5
+WINDOW_TIMEDELTA_HOURS = 1
+WAIT_FOR_PARKED_TIMEOUT_S = 10
+DEFAULT_PLANE_SPEED = 0.2
+```
+</TransportCodeBlock>
+
+</section>
+
+<section class="transport-code-section">
+
+## Airline, Flight, Stand, And Airplane Status Classes
+
+The status classes are implemented as dataclasses used like static namespaces. They group related values and tuple sets that higher-level code uses for eligibility checks and transitions.
+
+This is the vocabulary read directly by handlers and schedulers when deciding what state changes are valid.
+
+<TransportCodeBlock title="status_constants.py">
+```python
+@dataclass
+class AIRLINE_CATEGORIES:
+    NATIONAL = "National"
+    EUROPEAN = "European"
+    INTERNATIONAL = "International"
+
+    NATIONAL_CODE = "N"
+    EUROPEAN_CODE = "EU"
+    INTERNATIONAL_CODE = "I"
+```
+</TransportCodeBlock>
+
+<TransportCodeBlock title="status_constants.py">
+```python
+@dataclass
+class FLIGHT_STATUS:
+    UNSCHEDULED = "Unscheduled"
+    STAND_RESERVED = "StandReserved"
+    SCHEDULED = "Scheduled"
+    DEPARTING = "Departing"
+    DEP_ONGOING = "Dep_Ongoing"
+    LAN_ONGOING = "Lan_Ongoing"
+    LANDING = "Landing"
+    DISEMBARKING = "Disembarking"
+    COMPLETED = "Completed"
+    LANDING_INBOUND = (LANDING, LAN_ONGOING, SCHEDULED, DISEMBARKING)
+    DEPARTING_OUTBOUND = (DEPARTING, SCHEDULED, DEP_ONGOING)
+    NEEDS_AIRPLANE = (UNSCHEDULED,)
+```
+</TransportCodeBlock>
+
+<TransportCodeBlock title="status_constants.py">
+```python
+@dataclass
+class STAND_STATUS:
+    AVAILABLE = "Available"
+    RESERVED = "Reserved"
+    OCCUPIED = "Occupied"
+    UNAVAILABLE = (OCCUPIED, RESERVED)
+
+@dataclass
+class AIRPLANE_STATUS:
+    PARKED = "Parked"
+    RESERVED = "Reserved"
+    SCHEDULED = "Scheduled"
+    DEPARTING = "Departing"
+    IN_FLIGHT = "InFlight"
+    DISEMBARKING = "Disembarking"
+    AVAILABLE_FOR_DEPARTURE = (PARKED,)
+```
+</TransportCodeBlock>
+
+</section>
+
+<section class="transport-code-section">
+
+## Runtime Events, Bus Commands, And Websocket Settings
+
+This module also defines the message and transport vocabulary that crosses between backend logic and the Unity client:
+
+- runtime event names read by handlers
+- bus command names emitted by transport
+- websocket server defaults consumed during startup
+
+<TransportCodeBlock title="status_constants.py">
+```python
+@dataclass
+class RUNTIME_EVENTS:
+    PATH_COMPLETED = "path_completed"
+    PLANE_LEFT_STAND = "plane_left_stand"
+
+@dataclass
+class BUS_COMMANDS:
+    SPAWN_PLANE = "spawn_plane"
+    SET_TIME_SCALE = "set_time_scale"
+    SET_SIM_TIME = "set_sim_time"
+    CLOCK_SYNC = "clock_sync"
+    WELCOME = "welcome"
+    START_PATH = "start_path"
+    DESPAWN_PLANE = "despawn_plane"
+```
+</TransportCodeBlock>
+
+<TransportCodeBlock title="status_constants.py">
+```python
+@dataclass
+class WEBSOCKET_CONFIG:
+    HOST = "0.0.0.0"
+    PORT = 8765
+    MAX_SIZE = 4 * 1024 * 1024
+    PING_INTERVAL = 60
+    PING_TIMEOUT = 60
+    MAX_QUEUE = 32
+```
+</TransportCodeBlock>
+
+</section>
+
+<section class="transport-code-section">
+
+## Graph And Spline Vocabulary
+
+The final section provides the identifiers that tie setup import and graph building together:
+
+- schema path
+- departure and landing spline names
+- the master spline id used by InitGraph
+
+These constants are the shared language between `setup_bus.py`, `init_graph.py`, and Unity-exported spline data.
+
+<TransportCodeBlock title="status_constants.py">
+```python
+NODE_SCHEMA_JSON_PATH = "schema_nodi.json"
+
+DEPARTURE_SPLINE = "Departure"
+SHORT_LANDING_SPLINE = "ShortLanding"
+MEDIUM_LANDING_SPLINE = "MediumLanding"
+LONG_LANDING_SPLINE = "LongLanding"
+LANDING_SOURCES = (SHORT_LANDING_SPLINE, MEDIUM_LANDING_SPLINE, LONG_LANDING_SPLINE)
+MASTER_SPLINE = "MasterSpline"
+```
+</TransportCodeBlock>
+
+</section>
+</div>

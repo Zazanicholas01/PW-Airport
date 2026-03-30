@@ -1,37 +1,213 @@
 ---
 title: Handlers
 layout: ../../layouts/DocsLayout.astro
+description: Setup and runtime handler responsibilities for Unity payload buffering, path import, runtime events, and simulation-time transitions.
 ---
 
-# Handlers
+import DocsIntroHero from '../../components/DocsIntroHero.astro';
+import DocsTopicGrid from '../../components/DocsTopicGrid.astro';
+import DocsSteps from '../../components/DocsSteps.astro';
 
-This topic consolidates `../../handlers/` behavior from `../../handlers/README.md`.
+export const roles = [
+  {
+    kicker: 'Setup',
+    title: 'Batch Import Boundary',
+    summary: 'The setup handler receives control events from transport, opens batch windows, and buffers spline or prefab payloads until each import phase is committed.',
+    tone: 'cyan',
+    meta: 'setup_bus.py',
+  },
+  {
+    kicker: 'Graph',
+    title: 'Spline To Path Build',
+    summary: 'Buffered spline data is committed into InitGraph, used to extract stand positions, and then converted into rebuilt Path rows in the database.',
+    tone: 'emerald',
+    meta: 'InitGraph + Path rebuild',
+  },
+  {
+    kicker: 'State',
+    title: 'Setup Completion Gate',
+    summary: 'Handlers enforce the setup-to-runtime boundary by marking setup complete only after spline, prefab, and path rebuild phases all succeed.',
+    tone: 'amber',
+    meta: 'SetupState',
+  },
+  {
+    kicker: 'Runtime',
+    title: 'Operational Event Processing',
+    summary: 'The runtime handler consumes decoded Unity events such as path completion and stand departure, then applies airplane, flight, and stand state transitions.',
+    tone: 'violet',
+    meta: 'runtime_bus.py',
+  },
+];
 
-## Setup handler (`SetupBusHandler`)
+export const setupFlow = [
+  {
+    title: 'Transport routes payloads into the setup handler',
+    body: 'Before setup completion, the WebSocket dispatch loop forwards decoded Unity payloads into SetupBusHandler rather than runtime event processing.',
+  },
+  {
+    title: 'Control events open and close import windows',
+    body: 'Events such as setup-init, send-splines, finish-send-splines, send-prefabs, and finish-send-prefabs drive the setup phase machine and buffer lifecycle.',
+  },
+  {
+    title: 'Spline and prefab payloads are buffered first',
+    body: 'Incoming spline objects and prefab lists are stored in memory while their corresponding setup phase is active instead of being committed immediately.',
+  },
+  {
+    title: 'Buffered setup data is committed into graph, stores, and DB',
+    body: 'Spline commit feeds InitGraph, extracts stand positions, captures the landing spawn reference, and prefab commit updates PrefabStore.',
+  },
+  {
+    title: 'Paths are rebuilt only after both setup imports finish',
+    body: 'Once spline and prefab phases both succeed, handlers rebuild generated paths, replace persisted Path rows safely, and flip the setup-complete gate.',
+  },
+];
 
-File: `../../handlers/setup_bus.py`
+export const runtimeFlow = [
+  {
+    title: 'Transport switches routing after setup completion',
+    body: 'Once setup is complete, incoming Unity payloads stop flowing to SetupBusHandler and are forwarded into RuntimeBusHandler instead.',
+  },
+  {
+    title: 'Only valid runtime events are processed',
+    body: 'The runtime handler requires type="event" and a valid airplane_id before attempting any state transition or DB lookup.',
+  },
+  {
+    title: 'Path completion decides landing versus departure behavior',
+    body: 'Departure completion advances outbound state and can emit a despawn command, while landing completion moves the airplane into Disembarking and occupies the stand.',
+  },
+  {
+    title: 'Stand release is handled on plane_left_stand',
+    body: 'When Unity reports that an airplane has vacated a stand, the handler verifies the link and releases the stand back to Available.',
+  },
+  {
+    title: 'Long-running timers finish in simulation time',
+    body: 'Disembark tasks wait against the shared simulation clock, so pause, resume, and time-scale changes directly affect when the airplane becomes Parked and the flight becomes Completed.',
+  },
+];
 
-Responsibilities:
+export const persistenceFlow = [
+  {
+    title: 'Spline commit derives positional data',
+    body: 'Setup extracts first-knot coordinates from spline payloads to update stand positions and record the long-landing spawn origin.',
+  },
+  {
+    title: 'Path rebuild clears dependent references safely',
+    body: 'Before replacing Path rows, handlers clear airplane and vehicle route references so the rebuild does not violate database relationships.',
+  },
+  {
+    title: 'Runtime updates remain relation-aware',
+    body: 'Landing and departure events load the current airplane, route, stand, and latest relevant flight before applying state changes.',
+  },
+  {
+    title: 'Event logging records backend milestones',
+    body: 'Runtime emits backend_event entries for landing completion, departure completion, disembark completion, and stand release so downstream observability stays aligned.',
+  },
+  {
+    title: 'Invalid or stale input is ignored safely',
+    body: 'Missing IDs, out-of-phase setup payloads, and stand mismatches do not trigger forced writes; the handlers return without mutating state.',
+  },
+];
 
-- buffer spline and prefab batches sent by Unity
-- feed splines to `InitGraph` (`../../init_graph.py`)
-- feed prefabs to `PrefabStore` (`../../domain/prefab_store.py`)
-- extract stand positions + landing spawn reference
-- rebuild and persist DB `Path` rows (`Percorso`)
-- mark setup complete and ignore later setup payloads
+export const keyFiles = [
+  {
+    kicker: 'Setup Handler',
+    title: 'setup_bus.py',
+    summary: 'Owns setup phase state, batch buffering, spline and prefab commit logic, stand position updates, and database path rebuilds.',
+  },
+  {
+    kicker: 'Runtime Handler',
+    title: 'runtime_bus.py',
+    summary: 'Consumes runtime Unity events, applies airplane or stand lifecycle updates, and manages simulation-time disembark tasks.',
+  },
+  {
+    kicker: 'Handler Guide',
+    title: 'src/handlers/README.md',
+    summary: 'Narrative workflow for setup and runtime handling, including transport integration and queue model.',
+  },
+  {
+    kicker: 'Dependency',
+    title: 'init_graph.py',
+    summary: 'Receives committed spline data and computes the path models later persisted by the setup handler.',
+  },
+  {
+    kicker: 'Dependency',
+    title: 'domain/prefab_store.py',
+    summary: 'Receives prefab imports during setup so runtime systems can resolve Unity-facing prefab metadata later.',
+  },
+  {
+    kicker: 'Dependency',
+    title: 'transport/ws_server.py',
+    summary: 'Chooses which handler receives decoded Unity payloads and maintains the setup-versus-runtime routing boundary.',
+  },
+];
 
-## Runtime handler (`RuntimeBusHandler`)
+export const nextReads = [
+  {
+    href: '/docs/09-code-handlers/',
+    title: 'Code - Setup & Runtime',
+    summary: 'Walk through setup_bus.py, runtime_bus.py, init_graph.py, and prefab_store.py with the same tabbed code-tour format used for transport.',
+    tone: 'amber',
+  },
+  {
+    href: '/docs/08-transport-websocket/',
+    title: 'Transport Websocket',
+    summary: 'See the WebSocket dispatch layer that decides when payloads go to setup handling versus runtime handling.',
+    tone: 'cyan',
+  },
+  {
+    href: '/docs/11-domain/',
+    title: 'Domain',
+    summary: 'Follow the domain objects and clock model that handlers update during setup completion and runtime transitions.',
+    tone: 'sky',
+  },
+  {
+    href: '/docs/10-schedulers/',
+    title: 'Schedulers',
+    summary: 'Read the scheduling layer that produces commands whose completion later feeds back into runtime event handling.',
+    tone: 'emerald',
+  },
+  {
+    href: '/docs/14-message-contracts/',
+    title: 'Message Contracts',
+    summary: 'Use the contracts page for the payload vocabulary and event names handlers expect from Unity.',
+    tone: 'violet',
+  },
+];
 
-File: `../../handlers/runtime_bus.py`
+<DocsIntroHero
+  eyebrow="Handlers"
+  lead="The handlers layer is the application-side consumer for decoded Unity payloads after transport routing. It turns setup imports into paths, prefabs, and positional state, then switches into runtime event processing for landings, departures, stand release, and simulation-time disembark completion."
+  primaryAction={{ href: '/docs/08-transport-websocket/', label: 'Open Transport' }}
+  secondaryAction={{ href: '/docs/11-domain/', label: 'Open Domain' }}
+  meta={['Setup import pipeline', 'Runtime event handling', 'Path rebuilds', 'Simulation-time timers']}
+ />
 
-Responsibilities:
+## Theory Overview
 
-- process runtime events after setup completion
-- react to `path_completed` and `plane_left_stand`
-- update DB state (airplane/flight/stand)
-- manage disembark timers in simulation time (time-scale aware)
+### Handler Runtime Roles
 
-## Next reads
+<DocsTopicGrid items={roles} variant="featured" />
 
-- Full handler guide: `../../handlers/README.md`
-- Simulation clock: `../11-domain/`
+### Setup Lifecycle
+
+<DocsSteps items={setupFlow} variant="timeline" />
+
+### Runtime Lifecycle
+
+<DocsSteps items={runtimeFlow} variant="timeline" />
+
+### Persistence And Safety Model
+
+<DocsSteps items={persistenceFlow} variant="timeline" />
+
+## Implementation Guide
+
+This section is for direct code navigation when changing how Unity payloads become backend state transitions. The files below are the main implementation entrypoints behind the handler workflow.
+
+### Core Handler Scripts
+
+<DocsTopicGrid items={keyFiles} compact />
+
+## Where To Dive Deeper
+
+<DocsTopicGrid items={nextReads} compact />

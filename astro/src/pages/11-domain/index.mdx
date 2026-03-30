@@ -1,36 +1,219 @@
 ---
 title: Domain
 layout: ../../layouts/DocsLayout.astro
+description: Authoritative simulation clock, prefab indexing, and lightweight in-memory world snapshots used across transport, handlers, and schedulers.
 ---
 
-# Domain (simulation clock, world state, prefab store)
+import DocsIntroHero from '../../components/DocsIntroHero.astro';
+import DocsTopicGrid from '../../components/DocsTopicGrid.astro';
+import DocsSteps from '../../components/DocsSteps.astro';
 
-This topic is derived from `../../domain/README.md`.
+export const roles = [
+  {
+    kicker: 'Clock',
+    title: 'Authoritative Simulation Time',
+    summary: 'SimulationClock is the backend-owned time model that computes current simulated time from a monotonic baseline and time scale.',
+    tone: 'cyan',
+    meta: 'sim_clock.py',
+  },
+  {
+    kicker: 'Catalog',
+    title: 'Prefab Inventory And Selection',
+    summary: 'PrefabStore ingests Unity prefab metadata during setup and keeps round-robin lookup pools for later plane selection.',
+    tone: 'emerald',
+    meta: 'prefab_store.py',
+  },
+  {
+    kicker: 'Snapshot',
+    title: 'World Spawn Registry',
+    summary: 'WorldState keeps a lightweight in-memory record of which stand has which spawned plane and the first known spawn metadata.',
+    tone: 'amber',
+    meta: 'world_state.py',
+  },
+  {
+    kicker: 'Contracts',
+    title: 'Typed Domain Helpers',
+    summary: 'ClockSync, Vec3, and PlaneOnStand provide small typed contracts that keep transport and diagnostics code straightforward.',
+    tone: 'violet',
+    meta: 'domain dataclasses',
+  },
+  {
+    kicker: 'Scope',
+    title: 'Framework-Light Core Objects',
+    summary: 'The domain layer is intentionally light on orchestration and I/O. Other layers inject these objects and use them to drive runtime behavior.',
+    tone: 'sky',
+    meta: 'shared runtime objects',
+  },
+  {
+    kicker: 'Integration',
+    title: 'Shared By Multiple Runtime Layers',
+    summary: 'Handlers populate the prefab store, transport owns the simulation clock and world snapshot, and schedulers consume domain-derived values indirectly.',
+    tone: 'rose',
+    meta: 'handlers + transport + schedulers',
+  },
+];
 
-## Prefab store
+export const prefabFlow = [
+  {
+    title: 'Setup handler ingests prefab payloads from Unity',
+    body: 'During setup import, SetupBusHandler forwards prefab lists into PrefabStore rather than resolving prefab choices inline.',
+  },
+  {
+    title: 'Prefabs are indexed by raw name and by plane classification',
+    body: 'PrefabStore records the raw payloads, keeps a direct name map, and classifies valid plane prefabs into type and range rotation pools.',
+  },
+  {
+    title: 'Unknown or duplicate plane names are filtered conservatively',
+    body: 'Names that are not valid plane prefabs, cannot be mapped, or have already been indexed are ignored for plane-selection pools.',
+  },
+  {
+    title: 'Later runtime flows request the best matching plane',
+    body: 'When a later flow needs a plane prefab, PrefabStore searches exact type-plus-range first, then weaker fallbacks, and rotates the winning queue.',
+  },
+];
 
-File: `../../domain/prefab_store.py`
+export const clockFlow = [
+  {
+    title: 'Transport creates the authoritative clock',
+    body: 'SimulationClock is created once during transport bootstrap, typically starting from the current UTC time with a time scale of 1.0.',
+  },
+  {
+    title: 'Current simulated time is derived continuously',
+    body: 'now() computes simulation time from the monotonic real-time baseline and the current time scale instead of storing a ticking datetime directly.',
+  },
+  {
+    title: 'Time-scale changes preserve continuity',
+    body: 'set_time_scale(...) rebases the simulated baseline at the current simulated time before changing the scale, so time jumps are avoided.',
+  },
+  {
+    title: 'Explicit time jumps reset the baseline',
+    body: 'set_sim_time(...) replaces the simulated base datetime and resets the monotonic reference so the new time immediately becomes now.',
+  },
+  {
+    title: 'Clock sync payloads bridge backend and clients',
+    body: 'make_sync() increments a sync id and emits the current simulated Unix milliseconds plus time scale for Unity and dashboard consumers.',
+  },
+];
 
-- Stores prefab metadata sent by Unity during setup.
-- Provides selection helpers for schedulers/spawn logic.
+export const worldFlow = [
+  {
+    title: 'Outgoing spawn commands are mirrored into world state',
+    body: 'Transport records spawn_plane activity in WorldState so runtime can keep a lightweight in-memory registry separate from the database.',
+  },
+  {
+    title: 'Position payloads are normalized into Vec3',
+    body: 'The domain layer validates x, y, z payloads and converts them into a typed Vec3 object before storing them.',
+  },
+  {
+    title: 'One PlaneOnStand record is kept per stand',
+    body: 'record_plane_spawn(...) is idempotent by stand id, so later duplicate spawn notifications for the same stand return the existing entry.',
+  },
+  {
+    title: 'Debug snapshots stay simple and serializable',
+    body: 'to_dict() and debug_summary() expose compact, diagnostics-friendly views without turning world state into a second full persistence layer.',
+  },
+];
 
-## Simulation clock
+export const keyFiles = [
+  {
+    kicker: 'Clock',
+    title: 'sim_clock.py',
+    summary: 'Owns the authoritative simulation-time model and emits clock-sync payloads for runtime consumers.',
+  },
+  {
+    kicker: 'Snapshot',
+    title: 'world_state.py',
+    summary: 'Tracks planes currently known on stands and serializes lightweight world snapshots for observability.',
+  },
+  {
+    kicker: 'Catalog',
+    title: 'prefab_store.py',
+    summary: 'Indexes Unity prefabs and supports round-robin plane selection by type and range.',
+  },
+  {
+    kicker: 'Constants',
+    title: 'status_constants.py',
+    summary: 'Defines canonical statuses, stand ids, spline ids, and other vocabulary consumed across domain and orchestration layers.',
+  },
+  {
+    kicker: 'Guide',
+    title: 'src/domain/README.md',
+    summary: 'Narrative guide to the domain workflows and their integration points across the runtime.',
+  },
+  {
+    kicker: 'Dependency',
+    title: 'transport/ws_server.py',
+    summary: 'Creates the clock, records world-state spawns, and exposes domain objects to the rest of the runtime.',
+  },
+];
 
-File: `../../domain/sim_clock.py`
+export const nextReads = [
+  {
+    href: '/docs/11-code-domain/',
+    title: 'Code - Domain',
+    summary: 'Walk through sim_clock.py, world_state.py, and prefab_store.py in the same tabbed code-tour format used by the other code pages.',
+    tone: 'amber',
+  },
+  {
+    href: '/docs/08-transport-websocket/',
+    title: 'Transport Websocket',
+    summary: 'See where the runtime creates SimulationClock and records WorldState spawn events.',
+    tone: 'cyan',
+  },
+  {
+    href: '/docs/09-handlers/',
+    title: 'Handlers',
+    summary: 'Follow the setup path that populates PrefabStore from Unity import payloads.',
+    tone: 'violet',
+  },
+  {
+    href: '/docs/10-schedulers/',
+    title: 'Schedulers',
+    summary: 'Read how scheduler decisions and bootstrap planning consume prefab-derived values and clock-driven runtime behavior.',
+    tone: 'emerald',
+  },
+  {
+    href: '/docs/14-message-contracts/',
+    title: 'Message Contracts',
+    summary: 'Use the contracts page for payload shapes such as positions and clock sync values used across the runtime boundary.',
+    tone: 'sky',
+  },
+];
 
-- Backend is authoritative for simulation time.
-- Supports `time_scale` control and pause/fast-forward semantics.
-- Exposes clock sync payloads used by Unity (`clock_sync`) and the dashboard event stream.
+<DocsIntroHero
+  eyebrow="Domain"
+  lead="The domain layer holds the shared in-memory objects that give the runtime consistent meaning: authoritative simulation time, imported prefab inventory, and a lightweight world snapshot for spawned planes. These modules stay close to business state and deliberately avoid transport or framework orchestration."
+  primaryAction={{ href: '/docs/11-code-domain/', label: 'Open Code View' }}
+  secondaryAction={{ href: '/docs/08-transport-websocket/', label: 'Open Transport' }}
+  meta={['Simulation clock', 'Prefab catalog', 'World snapshot', 'Framework-light core objects']}
+ />
 
-## World state snapshot
+## Theory Overview
 
-File: `../../domain/world_state.py`
+### Domain Runtime Roles
 
-- Tracks in-memory snapshot of spawned planes and their linkage to stands/routes.
-- Used as an operational cache alongside DB state.
+<DocsTopicGrid items={roles} variant="featured" />
 
-## Next reads
+### Prefab Ingestion And Selection
 
-- Full domain guide: `../../domain/README.md`
-- Operational commands and time controls: `../04-local-run/`
+<DocsSteps items={prefabFlow} variant="timeline" />
 
+### Simulation Clock Lifecycle
+
+<DocsSteps items={clockFlow} variant="timeline" />
+
+### World Snapshot Lifecycle
+
+<DocsSteps items={worldFlow} variant="timeline" />
+
+## Implementation Guide
+
+This section is for direct code navigation when changing domain behavior, especially shared state that is reused by transport, handlers, and scheduler-driven runtime flows.
+
+### Core Domain Scripts
+
+<DocsTopicGrid items={keyFiles} compact />
+
+## Where To Dive Deeper
+
+<DocsTopicGrid items={nextReads} compact />

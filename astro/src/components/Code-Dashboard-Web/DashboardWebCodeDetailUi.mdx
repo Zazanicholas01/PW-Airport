@@ -1,0 +1,120 @@
+import DocsSteps from '../DocsSteps.astro';
+import TransportCodeBlock from '../Code-Transport/TransportCodeBlock.astro';
+
+export const detailUiTimeline = [
+  {
+    title: 'The server renders a detail page from a snapshot payload',
+    body: 'dashboard_views.py reads the HTML template, injects field markup and progress metadata, and returns a complete HTMLResponse for a flight or plane page.',
+  },
+  {
+    title: 'The detail HTML carries both content and refresh metadata',
+    body: 'detail-page.html contains placeholder tokens for title, subtitle, image, field grid, and a progress widget with start or end timestamps baked into data attributes.',
+  },
+  {
+    title: 'The client script refreshes progress and detail fields in place',
+    body: 'detail-page.js listens to the clock WebSocket for simulated time, recomputes progress continuously, and periodically refetches the detail JSON API to update the page.',
+  },
+];
+
+## `dashboard_views.py`, `detail-page.html`, `detail-page.js`, and `detail-page.css`
+
+Read this group as the detail-page subsystem. It is separate from the dashboard table shell, but it reuses the same snapshot ideas and the same clock feed.
+
+## Call Timeline
+
+<DocsSteps items={detailUiTimeline} variant="timeline" />
+
+<div class="transport-code-stack dashboard-web-detail-ui-panel">
+<section class="transport-code-section">
+
+## Server-Side HTML Rendering
+
+<TransportCodeBlock title="dashboard_views.py">
+```python
+def render_detail_page_from_snapshot(snapshot: dict[str, object]) -> HTMLResponse:
+    return render_detail_page(
+        title=str(snapshot["title"]),
+        subtitle=str(snapshot["subtitle"]),
+        fields=list(snapshot["fields"]),
+        image_url=str(snapshot["image_url"]),
+        ...
+    )
+```
+</TransportCodeBlock>
+
+The field renderer optionally adds `data-field-key` attributes so later browser refreshes can patch values in place.
+
+</section>
+
+<section class="transport-code-section">
+
+## Template Structure
+
+<TransportCodeBlock title="detail-page.html">
+```html
+<div class="page" data-detail-api-path="{{DETAIL_API_PATH}}">
+  <a class="back-link" href="/">Back to Dashboard</a>
+
+  <div class="detail-layout">
+    <aside class="detail-panel detail-visual">
+      <img class="detail-image" src="{{IMAGE_URL}}" alt="{{IMAGE_ALT}}" />
+      ...
+    </aside>
+
+    <section class="detail-panel">
+      <div class="detail-copy">
+        <h1 class="detail-title">{{TITLE}}</h1>
+        <p class="detail-subtitle">{{SUBTITLE}}</p>
+        <div class="detail-grid">{{FIELDS}}</div>
+      </div>
+    </section>
+  </div>
+</div>
+```
+</TransportCodeBlock>
+
+</section>
+
+<section class="transport-code-section">
+
+## Client Refresh Loop
+
+<TransportCodeBlock title="detail-page.js">
+```javascript
+async function refreshDetail() {
+  if (!apiPath) return;
+
+  const response = await fetch(apiPath, {
+    method: "GET",
+    headers: { "Accept": "application/json" },
+    cache: "no-store",
+  });
+```
+</TransportCodeBlock>
+
+The page also opens `/ws/clock`, projects simulated time locally, and updates the progress bar every 250ms between sync messages.
+
+</section>
+
+<section class="transport-code-section">
+
+## Detail Visual Styling
+
+<TransportCodeBlock title="detail-page.css">
+```css
+.detail-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 28px;
+}
+
+.detail-progress-bar {
+  height: 100%;
+  width: calc(var(--progress-percent) * 1%);
+  background: linear-gradient(90deg, #ff9f1c, #ffd089);
+}
+```
+</TransportCodeBlock>
+
+</section>
+</div>

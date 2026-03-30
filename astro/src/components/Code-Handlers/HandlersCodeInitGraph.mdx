@@ -1,0 +1,302 @@
+import DocsSteps from '../DocsSteps.astro';
+import TransportCodeBlock from '../Code-Transport/TransportCodeBlock.astro';
+
+export const initGraphTimeline = [
+  {
+    title: 'Graph object starts empty and transport-owned',
+    body: 'InitGraph is created before setup import begins and stays available as the shared graph dependency passed into SetupBusHandler.',
+  },
+  {
+    title: 'Master spline establishes the coordinate backbone',
+    body: 'When setup_bus commits the master spline, InitGraph stores it, loads the node-link schema, and extracts normalized master edge ranges.',
+  },
+  {
+    title: 'Non-master splines accumulate as stand and landing sources',
+    body: 'Each additional spline is stored so path generation can later combine landing, stand, and departure segments into Unity route recipes.',
+  },
+  {
+    title: 'Schema links define which stands connect to which master nodes',
+    body: 'construct_master_links reads schema_nodi.json and maps node indices to Unity spline names, giving path generation its stand connectivity map.',
+  },
+  {
+    title: 'Master edges turn knot coordinates into t-ranges',
+    body: 'extract_t_master_edges converts absolute knot X positions from the Unity export into normalized t_start and t_end slices on the master spline.',
+  },
+  {
+    title: 'build_paths publishes reusable path recipes',
+    body: 'The final output is a list of route dicts that setup_bus later converts into Path ORM rows for runtime use.',
+  },
+];
+
+## `init_graph.py`
+
+Read this file as the route recipe builder behind setup import. `setup_bus.py` does not invent paths itself. It feeds spline payloads into `InitGraph`, then asks it to compute the ordered segment lists that Unity can later follow.
+
+## Call Timeline
+
+<DocsSteps items={initGraphTimeline} variant="timeline" />
+
+<div class="transport-code-stack init-graph-panel">
+<section class="transport-code-section">
+
+## Graph State And Public Inputs
+
+`InitGraph` is a long-lived accumulator. The main public inputs are:
+
+- `add_master_spline(...)`
+- `add_spline(...)`
+- `build_paths()`
+
+The setup handler depends on these entrypoints to transform Unity spline exports into a backend path model.
+
+<TransportCodeBlock title="init_graph.py">
+```python
+class InitGraph:
+    def __init__(self, airport_id: str = PERSONAL_AIRPORT):
+
+        self.master_nodes = []
+        self.master_edges = []
+        self.master_spline = []
+        self.splines = []
+        self.airport_id = airport_id
+        self.master_links = {}
+
+    def add_splines(self, payload) -> None:
+        """Add many splines from the given payload."""
+        self.splines.extend(payload)
+
+    def add_spline(self, spline) -> None:
+        """Add a single spline payload."""
+        self.splines.append(spline)
+
+    def add_master_spline(self, spline) -> None:
+        """Add the master spline payload."""
+        self.master_spline = spline
+        self.construct_master_links()
+        self.extract_t_master_edges()
+```
+</TransportCodeBlock>
+
+</section>
+
+<section class="transport-code-section">
+
+## Schema Dependency: Master Links
+
+`InitGraph` depends on `schema_nodi.json` for the connectivity model. The file is not optional in practice because it tells the graph which stand splines are reachable from which master spline knot index.
+
+The important translation is from schema link ids like `C3` into Unity-facing spline names like `Spline_C3`.
+
+<TransportCodeBlock title="init_graph.py">
+```python
+def construct_master_links(self) -> None:
+    """Construct a list of links between nodes and other splines"""
+
+    schema_path = Path(__file__).resolve().parent.parent / NODE_SCHEMA_JSON_PATH
+    try:
+        with schema_path.open('r', encoding='utf-8') as f:
+            links_schema = json.load(f)
+    except FileNotFoundError as e:
+        logger.warning("Schema file not found: %s", schema_path, exc_info=True)
+        return
+    except json.JSONDecodeError as e:
+        logger.warning("Error decoding JSON schema: %s", schema_path, exc_info=True)
+        return
+
+    for i, node in enumerate(links_schema.get('nodes', [])):
+        links = node.get('links', [])
+        links = [f"Spline_{link}" for link in links]
+        self.master_links[i] = links
+```
+</TransportCodeBlock>
+
+</section>
+
+<section class="transport-code-section">
+
+## Unity Spline Dependency: Master Edge Extraction
+
+The second major dependency is the Unity master spline payload itself. `extract_t_master_edges()` reads knot coordinates from the export and converts them into normalized edge slices.
+
+Those `t_start` and `t_end` values are what later let the backend define a partial traversal over the single master spline instead of copying geometry.
+
+<TransportCodeBlock title="init_graph.py">
+```python
+def extract_t_master_edges(self) -> None:
+    """Extract the t parameters for master edges from the master spline."""
+
+    knots = self.master_spline.get("knotEntries", [])
+    if not knots or len(knots) < 2:
+        return None, None
+    try:
+        x_coords = [knot.get("parameters", [])[0]["x"] for knot in knots]
+    except (KeyError, IndexError, TypeError):
+        return
+
+    ms_length = x_coords[-1] - x_coords[0]
+    if ms_length <= 0:
+        return
+
+    t_values = [(x - x_coords[0]) / ms_length for x in x_coords]
+
+    for i, (t_start, t_end) in enumerate(zip(t_values, t_values[1:]), start=1):
+        self.master_edges.append(
+            {
+                "name": f"MS_{i-1}{i}",
+                "t_start": t_start,
+                "t_end": t_end
+            }
+        )
+```
+</TransportCodeBlock>
+
+</section>
+
+<section class="transport-code-section">
+
+## Landing Path Assembly
+
+Landing paths are built as:
+
+1. full landing spline
+2. one sliced segment on the master spline
+3. reversed stand spline
+
+This is where `master_links`, `master_edges`, and the known landing or stand ids come together into the route recipe shape used later by the database layer.
+
+<TransportCodeBlock title="init_graph.py">
+```python
+def build_paths(self) -> None:
+    """Building Paths based on Master Edges, Master Links and Splines"""
+
+    def find_master_edges(start_link, end_link):
+        if end_link == len(self.master_edges):
+            return self.master_edges[start_link:]
+        return self.master_edges[start_link:end_link]
+
+    available_stands = [f"Spline_{x}" for x in AVAILABLE_STANDS]
+    available_landings = [f"Spline_{x}" for x in LANDING_SOURCES]
+
+    paths = []
+    start_link = 0
+    for landing_spline in available_landings:
+        for stand_spline in available_stands:
+            end_link = None
+            for n, link in self.master_links.items():
+                if stand_spline in link:
+                    end_link = int(n)
+                    break
+
+            if end_link is None:
+                continue
+```
+</TransportCodeBlock>
+
+<TransportCodeBlock title="init_graph.py">
+```python
+            if stand_spline == "Spline_C3":
+                master_edges = find_master_edges(start_link=end_link, end_link=start_link)
+            else:
+                master_edges = find_master_edges(start_link=start_link, end_link=end_link)
+
+            segments = []
+            segments.append({
+                "name": landing_spline,
+                "t_start": 0.0,
+                "t_end": 1.0,
+            })
+
+            if master_edges:
+                if start_link > end_link:
+                    segments.append({
+                        "name": MASTER_SPLINE,
+                        "t_start": master_edges[-1]["t_end"],
+                        "t_end": master_edges[0]["t_start"],
+                    })
+                else:
+                    segments.append({
+                        "name": MASTER_SPLINE,
+                        "t_start": master_edges[0]["t_start"],
+                        "t_end": master_edges[-1]["t_end"],
+                    })
+
+            segments.append({
+                "name": stand_spline,
+                "t_start": 1.0,
+                "t_end": 0.0,
+            })
+```
+</TransportCodeBlock>
+
+</section>
+
+<section class="transport-code-section">
+
+## Departure Path Assembly And Published Output
+
+Departure uses the same core ingredients but a different order:
+
+1. stand spline forward
+2. master spline slice toward the end
+3. departure spline forward
+
+At the end, `InitGraph` exposes a final combined `self.paths` list. That list is what `setup_bus.py` reads to build `models.Path(...)` rows.
+
+<TransportCodeBlock title="init_graph.py">
+```python
+    paths = []
+    for stand_spline in available_stands:
+        start_link = None
+        end_link = len(self.master_edges)
+
+        for n, link in self.master_links.items():
+            if stand_spline in link:
+                start_link = int(n)
+
+            if start_link is None:
+                continue
+
+        master_edges = find_master_edges(start_link=start_link, end_link=end_link)
+        segments = []
+
+        segments.append({
+            "name": stand_spline,
+            "t_start": 0.0,
+            "t_end": 1.0
+        })
+
+        if master_edges:
+            segments.append({
+                "name": MASTER_SPLINE,
+                "t_start": master_edges[0]["t_start"],
+                "t_end": master_edges[-1]["t_end"]
+            })
+
+        segments.append({
+            "name": "Spline_Departure",
+            "t_start": 0.0,
+            "t_end": 1.0
+        })
+```
+</TransportCodeBlock>
+
+<TransportCodeBlock title="init_graph.py">
+```python
+        departing_id = "Departure"
+        stand_id = stand_spline.replace("Spline_", "")
+        path_name = f"Path_{stand_id}_{departing_id}"
+
+        paths.append({
+            "name": path_name,
+            "source": stand_id,
+            "destination": departing_id,
+            "segments": segments
+        })
+
+    self.departing_paths = paths
+    self.paths = self.landing_paths + self.departing_paths
+```
+</TransportCodeBlock>
+
+</section>
+</div>

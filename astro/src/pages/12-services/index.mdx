@@ -1,28 +1,217 @@
 ---
 title: Services
 layout: ../../layouts/DocsLayout.astro
+description: Reusable support services for randomized flight dataset creation and guaranteed airplane-row provisioning during spawn flows.
 ---
 
-# Services
+import DocsIntroHero from '../../components/DocsIntroHero.astro';
+import DocsTopicGrid from '../../components/DocsTopicGrid.astro';
+import DocsSteps from '../../components/DocsSteps.astro';
 
-This topic is derived from `../../services/README.md`.
+export const roles = [
+  {
+    kicker: 'Dataset',
+    title: 'Random Flight Generation',
+    summary: 'RandomFlightGenerator creates a fresh simulation flight dataset by loading metadata, choosing compatible routes, and inserting new Flight rows.',
+    tone: 'cyan',
+    meta: 'flight_generator.py',
+  },
+  {
+    kicker: 'Provisioning',
+    title: 'Spawn-Time Airplane Guarantee',
+    summary: 'ensure_airplane_row(...) makes sure a spawned plane has a corresponding DB Airplane row before later runtime logic depends on it.',
+    tone: 'emerald',
+    meta: 'spawn_tracking.py',
+  },
+  {
+    kicker: 'Metadata',
+    title: 'DB-Driven Compatibility Rules',
+    summary: 'Services load airports, terminals, airlines, and parked airplane compatibility from the database rather than hard-coding a flight plan.',
+    tone: 'amber',
+    meta: 'DB metadata queries',
+  },
+  {
+    kicker: 'Reset',
+    title: 'Scenario Regeneration',
+    summary: 'The flight generator currently deletes all Flight rows before creating a new randomized dataset, so it behaves like a scenario reset rather than incremental planning.',
+    tone: 'violet',
+    meta: 'delete + regenerate',
+  },
+  {
+    kicker: 'Mapping',
+    title: 'Prefab To Airplane Classification',
+    summary: 'Spawn tracking derives airplane range and type from prefab names through mapping helpers, with safe defaults when a prefab is unknown.',
+    tone: 'sky',
+    meta: 'utils.mapping',
+  },
+  {
+    kicker: 'Integration',
+    title: 'Called By Orchestration Layers',
+    summary: 'Transport, schedulers, and DB helpers call into the services layer when they need reusable business logic without embedding it directly.',
+    tone: 'rose',
+    meta: 'transport + db + schedulers',
+  },
+];
 
-## Random flight generation
+export const spawnFlow = [
+  {
+    title: 'Outgoing spawn flow requests an airplane id and prefab',
+    body: 'When a spawn_plane action is being tracked, services receive the requested prefab and optional airplane_id from an orchestration layer.',
+  },
+  {
+    title: 'Existing airplane rows are reused when present',
+    body: 'If the provided airplane_id already exists in the database, the service returns it directly rather than creating a duplicate row.',
+  },
+  {
+    title: 'Missing airplanes are created with derived metadata',
+    body: 'If no DB row exists yet, the service generates an id when needed and derives airplane type and range from the prefab name.',
+  },
+  {
+    title: 'Safe defaults cover unknown prefab names',
+    body: 'Unknown prefab names are logged and still accepted with fallback values so spawn-time persistence does not fail hard on classification gaps.',
+  },
+  {
+    title: 'The result is a guaranteed airplane row id',
+    body: 'Later runtime logic can assume the Airplane record exists because the service commits it before returning.',
+  },
+];
 
-File: `../../services/flight_generator.py`
+export const generationFlow = [
+  {
+    title: 'Flight generation validates input and resets the current dataset',
+    body: 'generate_flights(...) returns early for non-positive counts and otherwise deletes existing Flight rows before building a new scenario.',
+  },
+  {
+    title: 'Metadata is loaded from the database',
+    body: 'The generator queries remote airports, compatible terminals, and allowed airlines as the raw input pool for new flight creation.',
+  },
+  {
+    title: 'Compatibility pairs are derived from parked airplanes',
+    body: 'Currently parked airplane type-range pairs are read from the database so the first forced departure can be made compatible with available assets.',
+  },
+  {
+    title: 'Each flight is built from route, airline, terminal, and timing rules',
+    body: 'The generator chooses direction, route category, airline, terminal, and departure or arrival timing while keeping outputs inside the active scenario window when requested.',
+  },
+  {
+    title: 'Flights are inserted and committed as a new scenario batch',
+    body: 'The generated Flight ORM rows are added in one session and committed, returning the new in-memory list to the caller.',
+  },
+];
 
-- Generates randomized `Flight` rows for simulation startup.
-- Loads metadata (`Airport`, `Terminal`, `Airline`) and applies compatibility rules.
-- Currently deletes existing flights before generating a new dataset.
+export const ruleFlow = [
+  {
+    title: 'Route Category And Airline Rules',
+    body: 'Remote airport country classification drives whether a route is National, European, or International, which then filters airline candidates.',
+  },
+  {
+    title: 'Terminal Compatibility Rules',
+    body: 'Passenger and cargo flights prefer matching terminal types, with fallback to any terminal if no direct match exists.',
+  },
+  {
+    title: 'Window-Aware Time Generation',
+    body: 'Departure and arrival helper methods generate datetimes inside a scheduling window while keeping realistic minimum and maximum travel durations.',
+  },
+  {
+    title: 'Debug-Oriented Forced Early Flights',
+    body: 'When ensure_in_window is enabled, the first generated flight is forced as a departure from LIAG and the second as an arrival to LIAG to exercise both scheduler branches quickly.',
+  },
+];
 
-## Spawn tracking / DB guarantees
+export const keyFiles = [
+  {
+    kicker: 'Flight Service',
+    title: 'flight_generator.py',
+    summary: 'Builds randomized Flight rows from airport, airline, terminal, and compatibility metadata.',
+  },
+  {
+    kicker: 'Spawn Service',
+    title: 'spawn_tracking.py',
+    summary: 'Ensures Airplane rows exist for spawned prefabs and derives safe type and range values at creation time.',
+  },
+  {
+    kicker: 'Guide',
+    title: 'src/services/README.md',
+    summary: 'Narrative overview of the service layer responsibilities and integration points.',
+  },
+  {
+    kicker: 'Dependency',
+    title: 'utils/mapping.py',
+    summary: 'Provides the model-to-type and model-to-range helpers used during airplane provisioning.',
+  },
+  {
+    kicker: 'Dependency',
+    title: 'db/db_functions.py',
+    summary: 'Supplies normalization helpers and later lifecycle transitions that consume generated and provisioned records.',
+  },
+  {
+    kicker: 'Dependency',
+    title: 'transport/ws_server.py',
+    summary: 'Calls these services from runtime orchestration paths such as spawn tracking and flight scheduling startup.',
+  },
+];
 
-File: `../../services/spawn_tracking.py`
+export const nextReads = [
+  {
+    href: '/docs/12-code-services/',
+    title: 'Code - Services',
+    summary: 'Walk through flight_generator.py and spawn_tracking.py in the same tabbed code-tour format used by the other code pages.',
+    tone: 'amber',
+  },
+  {
+    href: '/docs/10-schedulers/',
+    title: 'Schedulers',
+    summary: 'See how generated flights flow into sliding-window scheduling and runtime stage gates.',
+    tone: 'cyan',
+  },
+  {
+    href: '/docs/06-database/',
+    title: 'Database',
+    summary: 'Use the database page for the ORM entities and helper functions that the services layer loads and updates.',
+    tone: 'violet',
+  },
+  {
+    href: '/docs/11-domain/',
+    title: 'Domain',
+    summary: 'Follow the shared domain objects and constants these services depend on for classification and runtime meaning.',
+    tone: 'sky',
+  },
+];
 
-- `ensure_airplane_row(...)` ensures a DB `Airplane` row exists for a spawned prefab.
-- Derives type/range from `../../utils/mapping.py` with safe defaults.
+<DocsIntroHero
+  eyebrow="Services"
+  lead="The services layer holds reusable business logic that orchestration code depends on but should not reimplement: randomized flight dataset creation for simulation scenarios and guaranteed airplane-row provisioning when spawn commands introduce new aircraft into runtime state."
+  primaryAction={{ href: '/docs/12-code-services/', label: 'Open Code View' }}
+  secondaryAction={{ href: '/docs/10-schedulers/', label: 'Open Schedulers' }}
+  meta={['Flight generation', 'Spawn tracking', 'DB-backed rules', 'Reusable business logic']}
+ />
 
-## Next reads
+## Theory Overview
 
-- Full services guide: `../../services/README.md`
-- DB helpers: `../06-database/`
+### Service Runtime Roles
+
+<DocsTopicGrid items={roles} variant="featured" />
+
+### Spawn Provisioning Workflow
+
+<DocsSteps items={spawnFlow} variant="timeline" />
+
+### Flight Generation Workflow
+
+<DocsSteps items={generationFlow} variant="timeline" />
+
+### Business Rules
+
+<DocsSteps items={ruleFlow} variant="timeline" />
+
+## Implementation Guide
+
+This section is for direct code navigation when changing flight-dataset generation, spawn-time airplane provisioning, or the compatibility logic shared by runtime orchestration code.
+
+### Core Service Scripts
+
+<DocsTopicGrid items={keyFiles} compact />
+
+## Where To Dive Deeper
+
+<DocsTopicGrid items={nextReads} compact />

@@ -1,0 +1,308 @@
+import DocsSteps from '../DocsSteps.astro';
+import TransportCodeBlock from '../Code-Transport/TransportCodeBlock.astro';
+
+export const flightSchedulerTimeline = [
+  {
+    title: 'Scheduler is configured by airport and time window',
+    body: 'FlightSlidingWindowScheduler is instantiated with the local airport ICAO and a default one-hour sliding window used for most stage checks.',
+  },
+  {
+    title: 'Polling loops ask eligibility questions, not execution questions',
+    body: 'Transport feeds flights and current UTC time into the scheduler and receives boolean answers for each stage rather than side effects.',
+  },
+  {
+    title: 'Shared validation applies the common flight gate',
+    body: 'Direction, status, selected event time, optional airplane requirement, and optional already-started constraints all live in one predicate.',
+  },
+  {
+    title: 'One-shot stage keys prevent duplicate approvals',
+    body: 'Each stage such as dep, landing_dep, landing_arr, dep_start, landing_spawn, and landing_start is guarded in process memory by flight id plus stage name.',
+  },
+  {
+    title: 'Near-landing actions use a tighter delta',
+    body: 'Landing spawn and landing approach do not use the main one-hour window; they reuse a shared landing-ready predicate with a one-minute delta.',
+  },
+  {
+    title: 'Transport executes the approved side effects elsewhere',
+    body: 'Once a stage returns true, transport-owned DB helpers and command builders carry out the actual airplane assignment, stand reservation, spawn, or path start.',
+  },
+];
+
+## `flight_scheduler.py`
+
+Read this file as a stage gate table turned into code. It does not schedule by mutating the world directly. It answers whether a particular flight is eligible for a particular stage right now, based on time, side, status, and one-shot memory.
+
+## Call Timeline
+
+<DocsSteps items={flightSchedulerTimeline} variant="timeline" />
+
+<div class="transport-code-stack flight-scheduler-panel">
+<section class="transport-code-section">
+
+## Scheduler State And Timing Constants
+
+The whole scheduler revolves around a small amount of state:
+
+- `airport_icao` to classify outbound versus inbound flights
+- `window` for the main sliding scheduling horizon
+- `handled` for in-process idempotency
+- `scheduled_flight_ids` as an auxiliary writable set
+
+The current code uses a one-hour main window and a one-minute near-landing delta.
+
+<TransportCodeBlock title="flight_scheduler.py">
+```python
+SLIDING_WINDOW = timedelta(hours=1)
+LANDING_NEAR_DELTA = timedelta(minutes=1)
+
+@dataclass
+class FlightSlidingWindowScheduler:
+    airport_icao: str
+    window: timedelta = SLIDING_WINDOW
+    scheduled_flight_ids: set[str] = field(default_factory=set)
+    handled: set[tuple[str, str]] = field(default_factory=set)
+```
+</TransportCodeBlock>
+
+</section>
+
+<section class="transport-code-section">
+
+## One-Shot Guard
+
+Repeated polling is expected, so the scheduler needs an in-memory guard that only approves each flight-stage pair once per process lifetime.
+
+That is what `_once(...)` does. It is the last step in every public gate method after the eligibility predicate passes.
+
+<TransportCodeBlock title="flight_scheduler.py">
+```python
+def _once(self, flight, stage: str) -> bool:
+    """Idempotency enforcing function"""
+
+    flight_id = getattr(flight, "id", None)
+    if not isinstance(flight_id, str) or not flight_id:
+        return False
+
+    key = (flight_id, stage)
+    if key in self.handled:
+        return False
+
+    self.handled.add(key)
+    return True
+```
+</TransportCodeBlock>
+
+</section>
+
+<section class="transport-code-section">
+
+## Shared Eligibility Predicate
+
+The most important abstraction in this file is `_is_stage_eligible(...)`. It centralizes the common checks that almost every stage needs:
+
+- flight side against `airport_icao`
+- expected status
+- optional airplane requirement
+- selected event time normalized to UTC
+- optional max delta
+- optional `event_time <= now` rule
+
+That keeps the public gate methods short and consistent.
+
+<TransportCodeBlock title="flight_scheduler.py">
+```python
+def _is_stage_eligible(
+        self,
+        *,
+        flight,
+        now_utc: datetime,
+        expected_side: str,
+        expected_status: str,
+        event_field: str,
+        max_delta: timedelta | None,
+        requires_airplane: bool = False,
+        must_be_started: bool = False,
+) -> bool:
+    """Shared validation for most stage checks"""
+
+    if getattr(flight, expected_side, None) != self.airport_icao:
+        return False
+
+    if getattr(flight, "status", None) != expected_status:
+        return False
+
+    if requires_airplane and getattr(flight, "airplane_id", None) is None:
+        return False
+
+    event_utc = as_utc(getattr(flight, event_field, None))
+    if event_utc is None:
+        return False
+
+    if must_be_started and event_utc > now_utc:
+        return False
+
+    if max_delta is not None and (event_utc - now_utc) > max_delta:
+        return False
+
+    return True
+```
+</TransportCodeBlock>
+
+</section>
+
+<section class="transport-code-section">
+
+## Departure And Inbound Preparation Gates
+
+The first public stage methods use the main one-hour window:
+
+- `should_schedule_departure(...)`
+- `should_assign_landing_plane(...)`
+- `should_reserve_landing_stand(...)`
+
+They differ mainly in side, status, event field, and whether an airplane link is required.
+
+<TransportCodeBlock title="flight_scheduler.py">
+```python
+def should_schedule_departure(self, *, flight, now_utc: datetime) -> bool:
+    if not self._is_stage_eligible(
+        flight=flight,
+        now_utc=now_utc,
+        expected_side="origin",
+        expected_status="Unscheduled",
+        event_field="departure_time",
+        max_delta=self.window
+    ):
+        return False
+
+    return self._once(flight, "dep")
+
+def should_assign_landing_plane(self, *, flight, now_utc: datetime) -> bool:
+    if not self._is_stage_eligible(
+        flight=flight,
+        now_utc=now_utc,
+        expected_side="destination",
+        expected_status="Unscheduled",
+        event_field="departure_time",
+        max_delta=self.window,
+    ):
+        return False
+
+    return self._once(flight, "landing_dep")
+```
+</TransportCodeBlock>
+
+<TransportCodeBlock title="flight_scheduler.py">
+```python
+def should_reserve_landing_stand(self, *, flight, now_utc: datetime) -> bool:
+    if not self._is_stage_eligible(
+        flight=flight,
+        now_utc=now_utc,
+        expected_side="destination",
+        expected_status="Lan_Ongoing",
+        event_field="arrival_time",
+        max_delta=self.window,
+        requires_airplane=True,
+    ):
+        return False
+
+    return self._once(flight, "landing_arr")
+```
+</TransportCodeBlock>
+
+</section>
+
+<section class="transport-code-section">
+
+## Started-Now Gates
+
+Two stages are not about “within window”; they are about “the scheduled time has already been reached”:
+
+- `should_mark_landing_departed(...)`
+- `should_start_departure_movement(...)`
+
+Those both set `must_be_started=True`.
+
+<TransportCodeBlock title="flight_scheduler.py">
+```python
+def should_mark_landing_departed(self, *, flight, now_utc: datetime) -> bool:
+    if not self._is_stage_eligible(
+        flight=flight,
+        now_utc=now_utc,
+        expected_side="destination",
+        expected_status="Scheduled",
+        event_field="departure_time",
+        max_delta=None,
+        must_be_started=True,
+    ):
+        return False
+
+    return self._once(flight, "landing_departed")
+
+def should_start_departure_movement(self, *, flight, now_utc: datetime) -> bool:
+    if not self._is_stage_eligible(
+        flight=flight,
+        now_utc=now_utc,
+        expected_side="origin",
+        expected_status="Scheduled",
+        event_field="departure_time",
+        max_delta=None,
+        must_be_started=True,
+    ):
+        return False
+
+    return self._once(flight, "dep_start")
+```
+</TransportCodeBlock>
+
+</section>
+
+<section class="transport-code-section">
+
+## Near-Landing Spawn And Approach
+
+Landing spawn and landing approach share an even narrower predicate. Both require:
+
+- inbound side
+- `Landing` status
+- linked airplane
+- `arrival_time` within the one-minute `LANDING_NEAR_DELTA`
+
+The shared helper `_is_landing_near_ready(...)` keeps those two public gates aligned.
+
+<TransportCodeBlock title="flight_scheduler.py">
+```python
+def _is_landing_near_ready(self, *, flight, now_utc: datetime) -> bool:
+    """Shared predicate for near arrival landing actions"""
+
+    return self._is_stage_eligible(
+        flight=flight,
+        now_utc=now_utc,
+        expected_side="destination",
+        expected_status="Landing",
+        event_field="arrival_time",
+        max_delta=LANDING_NEAR_DELTA,
+        requires_airplane=True,
+        must_be_started=False
+    )
+```
+</TransportCodeBlock>
+
+<TransportCodeBlock title="flight_scheduler.py">
+```python
+def should_spawn_landing_plane(self, *, flight, now_utc: datetime) -> bool:
+    if not self._is_landing_near_ready(flight=flight, now_utc=now_utc):
+        return False
+
+    return self._once(flight, "landing_spawn")
+
+def should_start_landing_approach(self, *, flight, now_utc: datetime) -> bool:
+    if not self._is_landing_near_ready(flight=flight, now_utc=now_utc):
+        return False
+
+    return self._once(flight, "landing_start")
+```
+</TransportCodeBlock>
+
+</section>
+</div>

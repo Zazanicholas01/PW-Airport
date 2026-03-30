@@ -1,0 +1,286 @@
+import DocsSteps from '../DocsSteps.astro';
+import TransportCodeBlock from '../Code-Transport/TransportCodeBlock.astro';
+
+export const spawnSchedulerTimeline = [
+  {
+    title: 'Spawn scheduler is built with prefab and command dependencies',
+    body: 'SpawnScheduler receives PrefabStore, command builders, and a SQLAlchemy session factory so bootstrap planning can sample prefabs and reserve stands.',
+  },
+  {
+    title: 'Bootstrap reset runs only once',
+    body: 'Before the initial spawn batch is planned, the scheduler clears stand occupancy, unlinks flights, and deletes dependent operational rows one time per process.',
+  },
+  {
+    title: 'Stand cache is loaded into memory',
+    body: 'The scheduler snapshots stands into StandState records so subsequent bootstrap planning works from an in-memory view of availability and positions.',
+  },
+  {
+    title: 'Available stands and plane prefabs are sampled',
+    body: 'Bootstrap planning draws from available stand ids and imported plane prefabs, returning no commands if either pool is empty.',
+  },
+  {
+    title: 'Each planned stand is reserved before command emission',
+    body: 'The scheduler marks chosen stands occupied both in memory and in the database before returning the spawn_plane command payloads.',
+  },
+  {
+    title: 'Transport owns the actual sending step',
+    body: 'SpawnScheduler returns command payloads; transport loops are responsible for sending them to Unity and managing later movement.',
+  },
+];
+
+## `spawn_scheduler.py`
+
+Read this file as the bootstrap planner for the initial apron population. It does not continuously manage the simulation. Its job is to do a one-time cleanup, sample viable stands and prefabs, reserve those stands, and return `spawn_plane` commands for transport to send.
+
+## Call Timeline
+
+<DocsSteps items={spawnSchedulerTimeline} variant="timeline" />
+
+<div class="transport-code-stack spawn-scheduler-panel">
+<section class="transport-code-section">
+
+## Bootstrap State And Dependencies
+
+The scheduler keeps a small amount of process-local state:
+
+- stand cache load flag
+- stand reset flag
+- in-memory stand snapshot
+- default initial spawn batch size
+
+It also depends on:
+
+- `prefab_store` for imported prefab inventory
+- `commands` for building `spawn_plane` payloads
+- `Session` for stand and bootstrap cleanup persistence
+
+<TransportCodeBlock title="spawn_scheduler.py">
+```python
+@dataclass
+class StandState:
+    """In-memory snapshot of a stand."""
+    id: str
+    status: str
+    position: dict | None = None
+    type: str | None = None
+
+class SpawnScheduler:
+    """Plan plane spawns and reserve stands during simulation bootstrap."""
+
+    def __init__(self, prefab_store, commands, session_factory: sessionmaker | None = None) -> None:
+        self.prefab_store = prefab_store
+        self.Session = session_factory
+        self.commands = commands
+
+        self._stands_loaded = False
+        self._stand_state: dict[str, StandState] = {}
+        self.starting_n_prefabs = 3
+        self._stands_reset = False
+```
+</TransportCodeBlock>
+
+</section>
+
+<section class="transport-code-section">
+
+## One-Time Bootstrap Reset
+
+The destructive bootstrap cleanup is isolated in `_reset_all_stands_once()`. This is the method that guarantees the initial spawn plan starts from a clean runway and stand state.
+
+The function is intentionally one-shot because deleting operational rows repeatedly would corrupt a running simulation.
+
+<TransportCodeBlock title="spawn_scheduler.py">
+```python
+def _reset_all_stands_once(self) -> None:
+    """Set all stands to free_status once at simulation start"""
+
+    if self._stands_reset:
+        return
+
+    with self.Session() as session:
+        session.execute(
+            update(models.Stand).values(status=STAND_STATUS.AVAILABLE, airplane_id=None,)
+        )
+        session.execute(update(models.Flight).values(airplane_id=None))
+        session.execute(delete(models.Operation))
+        session.execute(delete(models.ParkingSpot))
+        session.execute(delete(models.Airplane))
+        session.commit()
+
+    self._stands_reset = True
+```
+</TransportCodeBlock>
+
+</section>
+
+<section class="transport-code-section">
+
+## Planning The Initial Spawn Batch
+
+`plan_initial_spawns()` is the main entrypoint transport uses. The flow is:
+
+1. run one-time reset
+2. ensure stand cache exists
+3. sample stand ids and prefabs
+4. reserve each chosen stand
+5. build a bootstrap `spawn_plane` payload with a fresh airplane id
+
+The return value is a list of commands, not immediate side effects on the Unity connection.
+
+<TransportCodeBlock title="spawn_scheduler.py">
+```python
+def plan_initial_spawns(self) -> list[dict]:
+    """Pick stands and prefabs for the initial spawn batch."""
+
+    self._reset_all_stands_once()
+    self._ensure_stand_cache()
+
+    stand_ids = self._pick_available_stand_ids(self.starting_n_prefabs)
+    prefabs = self._pick_prefabs(count=self.starting_n_prefabs, allowed_type="plane")
+
+    if not stand_ids or not prefabs:
+        return []
+
+    with self.Session() as session:
+        spawn_commands = []
+```
+</TransportCodeBlock>
+
+<TransportCodeBlock title="spawn_scheduler.py">
+```python
+        for stand_id, prefab in zip(stand_ids, prefabs):
+            self._reserve_stand(session, stand_id)
+
+            position = None
+            if stand_id in self._stand_state:
+                position = self._stand_state[stand_id].position
+
+            airplane_id = str(uuid4())
+
+            spawn_commands.append(self.commands.spawn_plane(
+                prefab=prefab["name"],
+                stand_id=stand_id,
+                position=position,
+                airplane_id=airplane_id,
+                spawn_context="bootstrap",
+            ))
+
+        session.commit()
+        return spawn_commands
+```
+</TransportCodeBlock>
+
+</section>
+
+<section class="transport-code-section">
+
+## Stand Cache And Availability Sampling
+
+Stand selection depends on the in-memory cache created by `_ensure_stand_cache()`. The scheduler snapshots stand data once, then `_pick_available_stand_ids(...)` filters that snapshot down to stands currently marked `Available`.
+
+This keeps bootstrap stand selection cheap and deterministic within a single planning pass.
+
+<TransportCodeBlock title="spawn_scheduler.py">
+```python
+def _ensure_stand_cache(self) -> None:
+    """Load stand state once and keep it in memory."""
+
+    if self._stands_loaded:
+        return
+
+    with self.Session() as session:
+        stands: Iterable[models.Stand] = session.scalars(select(models.Stand))
+
+        snapshot = {
+            stand.id: StandState(
+                id=stand.id,
+                status=stand.status,
+                position=getattr(stand, "position", None),
+                type=getattr(stand, "type", None),
+            )
+            for stand in stands
+        }
+
+    self._stand_state = snapshot
+    self._stands_loaded = True
+```
+</TransportCodeBlock>
+
+<TransportCodeBlock title="spawn_scheduler.py">
+```python
+def _pick_available_stand_ids(self, count: int) -> list[str]:
+    """Return a sample of stand IDs that are currently marked as free in cache."""
+
+    candidates = [
+        stand_id
+        for stand_id, state in self._stand_state.items()
+        if state.status == STAND_STATUS.AVAILABLE
+    ]
+
+    if not candidates:
+        logging.warning("[spawn scheduler] No free stands available")
+        return []
+
+    if len(candidates) <= count:
+        return candidates
+
+    return random.sample(candidates, k=count)
+```
+</TransportCodeBlock>
+
+</section>
+
+<section class="transport-code-section">
+
+## Prefab Sampling And Stand Reservation
+
+The other bootstrap dependency is imported prefab inventory. `_pick_prefabs(...)` reads straight from `prefab_store.prefabs`, optionally filters by allowed type, and samples a batch.
+
+Once a stand is chosen, `_reserve_stand(...)` updates both the in-memory stand snapshot and the database record so the same stand is not reused in the same bootstrap plan.
+
+<TransportCodeBlock title="spawn_scheduler.py">
+```python
+def _pick_prefabs(self, count: int, *, allowed_type: str | None = None) -> list[dict]:
+    """Randomly sample prefabs from the prefab store payloads."""
+
+    if not self.prefab_store.prefabs:
+        logging.warning("[spawn scheduler] No prefabs available for spawning")
+        return []
+
+    candidates = list(self.prefab_store.prefabs)
+    if allowed_type is not None:
+        candidates = [
+            prefab for prefab in candidates
+            if str(prefab.get("type", "")).lower() == allowed_type
+        ]
+
+    if not candidates:
+        logging.warning("No prefabs available for spawning")
+        return []
+
+    if len(candidates) <= count:
+        return candidates
+
+    return random.sample(candidates, k=count)
+```
+</TransportCodeBlock>
+
+<TransportCodeBlock title="spawn_scheduler.py">
+```python
+def _reserve_stand(self, session: Session, stand_id: str) -> None:
+    """Mark a stand as occupied in cache and persist the change."""
+
+    state = self._stand_state.get(stand_id)
+    if state is not None:
+        state.status = STAND_STATUS.OCCUPIED
+
+    session.execute(
+        update(models.Stand)
+        .where(models.Stand.id == stand_id)
+        .values(status=STAND_STATUS.OCCUPIED)
+    )
+```
+</TransportCodeBlock>
+
+</section>
+</div>

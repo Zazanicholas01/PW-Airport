@@ -1,0 +1,114 @@
+import DocsSteps from '../DocsSteps.astro';
+import TransportCodeBlock from '../Code-Transport/TransportCodeBlock.astro';
+
+export const containerTimeline = [
+  {
+    title: 'Container defines the runtime dependency shape',
+    body: 'AppContainer is a frozen dataclass that declares the core dependencies the rest of the runtime expects to receive together.',
+  },
+  {
+    title: 'Infrastructure dependencies are created inside the builder',
+    body: 'build_container(...) creates the SQLAlchemy engine and session factory as the shared persistence layer for the application.',
+  },
+  {
+    title: 'Domain objects are injected from the caller',
+    body: 'PrefabStore, InitGraph, and WorldState are created by the startup module and then passed into the container builder rather than hidden inside it.',
+  },
+  {
+    title: 'Command builders are provisioned centrally',
+    body: 'default_command_builders() is called once during container assembly so transport and other layers receive one stable command-building interface.',
+  },
+  {
+    title: 'The result is an immutable runtime bundle',
+    body: 'The returned AppContainer is a single dependency object that transport startup can receive instead of rebuilding shared state internally.',
+  },
+];
+
+## `app/container.py`
+
+Read this file as the project’s lightweight dependency-injection boundary. It is intentionally simple: define the shape of the runtime bundle, construct the infrastructure pieces that belong in that bundle, and return one immutable object to the caller.
+
+## Call Timeline
+
+<DocsSteps items={containerTimeline} variant="timeline" />
+
+<div class="transport-code-stack server-di-container-panel">
+<section class="transport-code-section">
+
+## Container Contract
+
+`AppContainer` is the typed contract for the runtime dependency bundle. It groups:
+
+- persistence infrastructure
+- shared domain objects
+- command builders
+
+The dataclass is frozen so callers treat the container as assembled runtime state rather than a mutable registry.
+
+<TransportCodeBlock title="container.py">
+```python
+@dataclass(frozen=True)
+class AppContainer:
+
+    engine: Engine
+    Session: sessionmaker
+
+    prefab_store: Any
+    graph: Any
+    world_state: Any
+
+    commands: CommandBuilders
+```
+</TransportCodeBlock>
+
+</section>
+
+<section class="transport-code-section">
+
+## Builder Function
+
+`build_container(...)` is the only constructor here. It creates the DB infrastructure locally, accepts shared runtime objects from the caller, provisions command builders, and returns the assembled container.
+
+This keeps the container honest: infrastructure that should be shared is created once here, while caller-owned domain objects remain explicit constructor inputs.
+
+<TransportCodeBlock title="container.py">
+```python
+def build_container(*, prefab_store: Any = None, graph: Any = None, world_state: Any = None) -> AppContainer:
+
+    engine = get_engine()
+    Session = sessionmaker(bind=engine, future=True)
+
+    return AppContainer(
+        engine=engine,
+        Session=Session,
+        prefab_store=prefab_store,
+        graph=graph,
+        world_state=world_state,
+        commands=default_command_builders()
+    )
+```
+</TransportCodeBlock>
+
+</section>
+
+<section class="transport-code-section">
+
+## Why This DI Boundary Matters
+
+The practical value of this module is not complexity but stability:
+
+- `server.py` assembles shared runtime objects once
+- `build_container(...)` adds the DB and command-builder infrastructure
+- `ws_server.main(...)` receives one dependency bundle instead of a long argument list of unrelated pieces
+
+That gives startup and transport a clean handoff point.
+
+<TransportCodeBlock title="container.py">
+```python
+from src.db.engine import get_engine
+from src.transport.command_builders import CommandBuilders, default_command_builders
+```
+</TransportCodeBlock>
+
+</section>
+</div>

@@ -1,0 +1,115 @@
+import DocsSteps from '../DocsSteps.astro';
+import TransportCodeBlock from '../Code-Transport/TransportCodeBlock.astro';
+
+export const mappingTimeline = [
+  {
+    title: 'Mapping normalizes external model names first',
+    body: 'All helper functions begin by lowercasing and trimming the incoming model string so runtime callers do not need to normalize prefab names themselves.',
+  },
+  {
+    title: 'Model metadata is sourced from shared domain constants',
+    body: 'The mapping layer reads MODEL_INFO and spline-range constants from status_constants.py instead of embedding duplicate lookup tables.',
+  },
+  {
+    title: 'Type and range helpers are strict lookups',
+    body: 'range_for_airplane_model(...) and type_for_airplane_model(...) either return a canonical value or raise ValueError for unknown models.',
+  },
+  {
+    title: 'Landing source selection is a lightweight routing helper',
+    body: 'landing_source_for_range(...) maps airplane range strings into the corresponding landing spline source used elsewhere in the runtime.',
+  },
+  {
+    title: 'Services and handlers depend on this shared translation layer',
+    body: 'spawn_tracking.py, prefab_store.py, and other runtime code call these helpers so model classification logic stays centralized.',
+  },
+];
+
+## `utils/mapping.py`
+
+Read this file as the translation layer between loosely formatted model names and the canonical domain values used by the rest of the system. It is intentionally small, but it is on the critical path for prefab classification and range-driven routing decisions.
+
+## Call Timeline
+
+<DocsSteps items={mappingTimeline} variant="timeline" />
+
+<div class="transport-code-stack mapping-panel">
+<section class="transport-code-section">
+
+## Normalization And Shared Constant Dependency
+
+Every helper starts from `_norm(...)`, which strips and lowercases the model string. From there, the module reads shared canonical metadata from `status_constants.py`.
+
+That means mapping stays simple while the vocabulary stays centralized in one domain module.
+
+<TransportCodeBlock title="mapping.py">
+```python
+from src.domain.status_constants import *
+
+def _norm(model: str | None) -> str:
+    return (model or "").strip().lower()
+```
+</TransportCodeBlock>
+
+</section>
+
+<section class="transport-code-section">
+
+## Type And Range Lookups
+
+The two main helpers are strict lookups over `MODEL_INFO`:
+
+- `range_for_airplane_model(...)`
+- `type_for_airplane_model(...)`
+
+They deliberately raise `ValueError` when the model is unknown so higher layers can decide whether to fail, log, or apply a fallback.
+
+<TransportCodeBlock title="mapping.py">
+```python
+def range_for_airplane_model(model: str | None) -> str:
+    model = _norm(model)
+    try:
+        return MODEL_INFO[model][1]
+    except KeyError:
+        raise ValueError(f"Unknown airplane model: {model!r}") from None
+```
+</TransportCodeBlock>
+
+<TransportCodeBlock title="mapping.py">
+```python
+def type_for_airplane_model(model: str | None) -> str:
+    model = _norm(model)
+    try:
+        return MODEL_INFO[model][0]
+    except KeyError:
+        raise ValueError(f"Unknown airplane model: {model!r}") from None
+```
+</TransportCodeBlock>
+
+</section>
+
+<section class="transport-code-section">
+
+## Range-To-Landing Source Translation
+
+The last helper is not about classification by model name but about selecting the proper landing source spline from a range value.
+
+This gives the rest of the runtime a single place to translate `Short`, `Medium`, or `Long` into the matching landing source vocabulary.
+
+<TransportCodeBlock title="mapping.py">
+```python
+def landing_source_for_range(range_value: str | None) -> str:
+    """Map an airplane range string into a path source spline name"""
+
+    r = (range_value or "").lower()
+
+    if "long" in r:
+        return LONG_LANDING_SPLINE
+    if "medium" in r:
+        return MEDIUM_LANDING_SPLINE
+
+    return SHORT_LANDING_SPLINE
+```
+</TransportCodeBlock>
+
+</section>
+</div>

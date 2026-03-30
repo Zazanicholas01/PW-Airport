@@ -1,0 +1,96 @@
+import DocsSteps from '../DocsSteps.astro';
+import TransportCodeBlock from '../Code-Transport/TransportCodeBlock.astro';
+
+export const engineTimeline = [
+  {
+    title: 'Environment decides the connection string',
+    body: 'The DB layer prefers a single DATABASE_URL, but can also assemble a Postgres URL from the POSTGRES_* variables used by the local stack.',
+  },
+  {
+    title: 'The SQLAlchemy engine is cached once per process',
+    body: 'get_engine() is wrapped in lru_cache so callers across handlers, services, and scripts share the same engine object.',
+  },
+  {
+    title: 'Session helpers stay intentionally minimal',
+    body: 'The module exposes the declarative Base and a simple generator helper used when a caller already owns the Session factory.',
+  },
+];
+
+## `engine.py`
+
+Read this file as the narrow bootstrap layer for SQLAlchemy. It does not contain business rules. It only decides how the rest of the app reaches Postgres and where ORM metadata is rooted.
+
+## Call Timeline
+
+<DocsSteps items={engineTimeline} variant="timeline" />
+
+<div class="transport-code-stack database-engine-panel">
+<section class="transport-code-section">
+
+## Base And URL Construction
+
+The file defines the shared declarative `Base` and then builds a connection URL. The important design point is the fallback sequence:
+
+- use `DATABASE_URL` when present
+- otherwise compose the URL from `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_HOST`, `POSTGRES_PORT`, and `POSTGRES_DB`
+
+<TransportCodeBlock title="engine.py">
+```python
+Base = declarative_base()
+
+def build_database_url() -> str:
+    """Return the Postgres connection URL, preferring DATABASE_URL when set."""
+    url = os.environ.get("DATABASE_URL")
+    if url:
+        return str(make_url(url))
+
+    user = os.environ.get("POSTGRES_USER", "airport")
+    password = os.environ.get("POSTGRES_PASSWORD", "airport")
+    host = os.environ.get("POSTGRES_HOST", "localhost")
+    port = os.environ.get("POSTGRES_PORT", "5433")
+    db = os.environ.get("POSTGRES_DB", "Airport")
+
+    return f"postgresql+psycopg://{user}:{password}@{host}:{port}/{db}"
+```
+</TransportCodeBlock>
+
+</section>
+
+<section class="transport-code-section">
+
+## Cached Engine Factory
+
+`get_engine()` is the real entry point consumed by the rest of the codebase. Because it is cached, repeated imports from schedulers, services, or scripts do not create a new engine every time.
+
+<TransportCodeBlock title="engine.py">
+```python
+@lru_cache()
+def get_engine():
+    """Create (and cache) a SQLAlchemy engine."""
+    return create_engine(build_database_url(), future=True, pool_pre_ping=True)
+```
+</TransportCodeBlock>
+
+`pool_pre_ping=True` matters here because this app runs against a Dockerized Postgres service that can be restarted while the Python process is still alive.
+
+</section>
+
+<section class="transport-code-section">
+
+## Session Yield Helper
+
+This helper is deliberately tiny. It does not own transaction policy; it only standardizes open and close behavior when a caller already has a `Session` factory.
+
+<TransportCodeBlock title="engine.py">
+```python
+def get_db(Session):
+    db = Session()
+    try:
+        yield db
+    finally:
+        db.close()
+```
+</TransportCodeBlock>
+
+</section>
+</div>

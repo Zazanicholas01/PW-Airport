@@ -1,0 +1,330 @@
+import DocsSteps from '../DocsSteps.astro';
+import TransportCodeBlock from '../Code-Transport/TransportCodeBlock.astro';
+
+export const setupBusTimeline = [
+  {
+    title: 'Handler bootstrap and dependency injection',
+    body: 'SetupBusHandler starts with PrefabStore, InitGraph, and a SQLAlchemy session factory so transport can wire it once and reuse it across setup imports.',
+  },
+  {
+    title: 'Single-consumer queue boundary',
+    body: 'Transport enqueues decoded payloads into an internal asyncio.Queue and the handler processes them sequentially through one background task.',
+  },
+  {
+    title: 'Control events drive the setup phase machine',
+    body: 'setup-init, send-splines, finish-send-splines, send-prefabs, and finish-send-prefabs are the only events that move setup state forward.',
+  },
+  {
+    title: 'Spline and prefab payloads are buffered by phase',
+    body: 'The handler ignores out-of-phase payloads and only stores spline or prefab data when the matching batch window is active.',
+  },
+  {
+    title: 'Dependencies commit setup state',
+    body: 'InitGraph receives splines, PrefabStore receives prefabs, and SQLAlchemy sessions persist stand positions plus rebuilt Path rows.',
+  },
+  {
+    title: 'Setup completion becomes the routing gate',
+    body: 'Only after spline commit, prefab commit, and path rebuild all succeed does setup_completed flip to true and let transport switch to runtime handling.',
+  },
+];
+
+## `setup_bus.py`
+
+Read this file as the setup import state machine for Unity. It is not a generic event handler. It only exists to buffer setup payloads, commit them through its dependencies, and decide when transport is allowed to leave setup mode.
+
+## Call Timeline
+
+<DocsSteps items={setupBusTimeline} variant="timeline" />
+
+<div class="transport-code-stack setup-bus-panel">
+<section class="transport-code-section">
+
+## Bootstrap And Injected Dependencies
+
+`SetupBusHandler` is assembled by transport, not internally. The dependencies here define what the handler is allowed to mutate:
+
+- `prefab_store` for committed prefab imports
+- `init_graph` for spline ingestion and path generation
+- `Session` for DB updates
+- `SetupState` for the in-memory phase machine
+
+This keeps setup import behavior narrow and explicit.
+
+<TransportCodeBlock title="setup_bus.py">
+```python
+@dataclass
+class SetupState:
+    """Mutable state for a single Unity setup/import run."""
+
+    phase: SetupPhase = SetupPhase.IDLE
+
+    pending_splines = []
+    pending_prefabs = []
+
+    splines_done = False
+    prefabs_done = False
+    paths_done = False
+
+    landing_spawn_position: dict[str, Any] | None = None
+    last_error: str | None = None
+
+class SetupBusHandler:
+    """Handles setup payloads from Unity, Buffers them and commits them in batches via async queue loop"""
+
+    def __init__(self, prefab_store, init_graph, *, session_factory: sessionmaker | None = None) -> None:
+
+        self.prefab_store = prefab_store
+        self.init_graph = init_graph
+        self.state = SetupState()
+
+        self.queue: asyncio.Queue = asyncio.Queue()
+        self._task: asyncio.Task | None = None
+
+        self.Session = session_factory or sessionmaker(bind=get_engine(), future=True)
+
+        self.setup_completed = False
+```
+</TransportCodeBlock>
+
+</section>
+
+<section class="transport-code-section">
+
+## Queue Consumer Boundary
+
+Like the transport code pages, the useful way to read this is by runtime flow. Transport never calls business methods directly. It just enqueues decoded payloads and lets a single consumer task process them in order.
+
+That ordering matters because setup is phase-based and path rebuild must not race with incoming import batches.
+
+<TransportCodeBlock title="setup_bus.py">
+```python
+async def start(self) -> None:
+    """Start the background event-processing loop."""
+    if self._task is None or self._task.done():
+        self._task = asyncio.create_task(self._event_loop())
+
+async def enqueue(self, payload: dict) -> None:
+    """Pushes a decoded JSON payload into the internal async queue"""
+    await self.queue.put(payload)
+
+async def _event_loop(self) -> None:
+    """Consumer loop (Pulls payloads, processes them and marks the queue item done)"""
+
+    while True:
+        payload = await self.queue.get()
+        try:
+            await self.handle_payload(payload)
+        except Exception:
+            logging.exception("Error Handling Payload: %r", payload)
+        finally:
+            self.queue.task_done()
+```
+</TransportCodeBlock>
+
+</section>
+
+<section class="transport-code-section">
+
+## Phase Routing And Control Events
+
+`handle_payload(...)` is the narrow router. It first rejects invalid input, then protects completed or failed setup runs, then forwards control events into the phase handlers before buffering any spline or prefab data.
+
+The dependency here is transport itself: `ws_server.py` uses `setup_completed` as the outer routing gate, while `SetupState.phase` is the inner gate that decides what each payload can do.
+
+<TransportCodeBlock title="setup_bus.py">
+```python
+async def handle_payload(self, payload: dict) -> None:
+    """Main handler for all JSON payloads coming from the queue."""
+
+    if not isinstance(payload, dict):
+        return
+
+    if self.state.phase in (SetupPhase.DONE, SetupPhase.FAILED):
+        if payload.get("type") == "event" and payload.get("event") == "setup-init":
+            await self._handle_control_event(payload)
+        return
+
+    if payload.get("type") == "event":
+        await self._handle_control_event(payload)
+
+    if "spline" in payload:
+        await self._buffer_spline(payload["spline"])
+        return
+
+    if "prefabs" in payload:
+        await self._buffer_prefabs(payload["prefabs"])
+        return
+```
+</TransportCodeBlock>
+
+<TransportCodeBlock title="setup_bus.py">
+```python
+async def _handle_control_event(self, evt_payload: dict) -> None:
+    event_name = evt_payload.get("event")
+    if event_name == "spline":
+        return
+
+    handlers = {
+        "setup-init": self._evt_setup_init,
+        "send-splines": self._evt_send_splines,
+        "finish-send-splines": self._evt_finish_send_splines,
+        "send-prefabs": self._evt_send_prefabs,
+        "finish-send-prefabs": self._evt_finish_send_prefabs,
+    }
+    handler = handlers.get(event_name)
+
+    if handler is None:
+        logging.info("[setup bus] Unhandled control event: %s", event_name)
+        return
+
+    try:
+        await handler()
+    except Exception as e:
+        self.state.phase = SetupPhase.FAILED
+        self.state.last_error = repr(e)
+        raise
+```
+</TransportCodeBlock>
+
+</section>
+
+<section class="transport-code-section">
+
+## Dependency Walk: InitGraph And PrefabStore
+
+The key setup dependencies are not abstract. They are direct calls into concrete subsystems:
+
+- `InitGraph.add_master_spline(...)`
+- `InitGraph.add_spline(...)`
+- `InitGraph.build_paths()`
+- `PrefabStore.add_prefabs(...)`
+
+This is the handoff from Unity import payloads into backend graph state.
+
+<TransportCodeBlock title="setup_bus.py">
+```python
+async def _commit_splines(self) -> None:
+    if not self.state.pending_splines:
+        logging.info("[setup bus] No splines to commit")
+        return
+
+    stand_positions = self._commit_splines_to_graph(self.state.pending_splines)
+    logging.info(f"[setup bus] Committed splines {len(self.state.pending_splines)}")
+    self.state.pending_splines.clear()
+
+    if stand_positions:
+        self._persist_stand_positions(stand_positions)
+
+async def _commit_prefabs(self) -> None:
+    if not self.state.pending_prefabs:
+        logging.info("[setup bus] No Prefabs to Commit")
+        return
+
+    self.prefab_store.add_prefabs(self.state.pending_prefabs)
+    logging.info(f"[setup bus] Committed {len(self.state.pending_prefabs)} Prefabs")
+    self.state.pending_prefabs.clear()
+```
+</TransportCodeBlock>
+
+<TransportCodeBlock title="setup_bus.py">
+```python
+def _commit_splines_to_graph(self, splines):
+    stand_positions: dict[str, dict[str, Any]] = {}
+
+    for spline in splines:
+        name = spline.get("name", "<unnamed>")
+
+        if name == MASTER_SPLINE:
+            self.init_graph.add_master_spline(spline)
+            logging.info("[setup bus] Committed Master Spline")
+            continue
+
+        self.init_graph.add_spline(spline)
+        first = spline.get("firstKnotPos")
+
+        if (
+            self.state.landing_spawn_position is None
+            and name == f"Spline_{LONG_LANDING_SPLINE}"
+            and self._is_vec3(first)
+        ):
+            self.state.landing_spawn_position = self._vec3(first)
+
+        if name.startswith("Spline_") and self._is_vec3(first):
+            stand_id = name.removeprefix("Spline_")
+            stand_positions[stand_id] = self._vec3(first)
+
+    return stand_positions
+```
+</TransportCodeBlock>
+
+</section>
+
+<section class="transport-code-section">
+
+## Dependency Walk: Database Persistence
+
+The database dependency is split in two layers:
+
+- stand position updates after spline commit
+- full path rebuild after both import phases complete
+
+This is where the handler crosses from in-memory import state into persisted runtime state. The route clearing before deleting `Path` rows is the important safety step.
+
+<TransportCodeBlock title="setup_bus.py">
+```python
+def _persist_stand_positions(self, stand_positions) -> None:
+    updated = 0
+    with self.Session() as session:
+        with session.begin():
+            for stand_id, pos in stand_positions.items():
+                if stand_id in EXCLUDED_STAND_IDS:
+                    continue
+
+                stand = session.get(models.Stand, stand_id)
+                if stand is None:
+                    logging.warning(f"[setup bus] Stand not found: {stand_id}")
+                    continue
+
+                stand.position = pos
+                updated += 1
+```
+</TransportCodeBlock>
+
+<TransportCodeBlock title="setup_bus.py">
+```python
+async def _maybe_finish_setup(self) -> None:
+    if self.state.paths_done:
+        return
+    if not (self.state.splines_done and self.state.prefabs_done):
+        return
+
+    self.state.phase = SetupPhase.BUILDING_PATHS
+
+    paths = self._build_path_models()
+    self._rebuild_paths_in_db(paths)
+
+    self.state.paths_done = True
+    self.state.phase = SetupPhase.DONE
+    self.setup_completed = True
+```
+</TransportCodeBlock>
+
+<TransportCodeBlock title="setup_bus.py">
+```python
+def _rebuild_paths_in_db(self, paths: list[models.Path]) -> None:
+    with self.Session() as session:
+        with session.begin():
+            session.execute(update(models.Airplane).values(route_id=None))
+            session.execute(update(models.Vehicle).values(route_id=None))
+            session.execute(delete(models.Path))
+            session.execute(
+                text(
+                    "SELECT setval(pg_get_serial_sequence('\"Percorso\"', 'id'), 1, false);"
+                )
+            )
+            session.add_all(paths)
+```
+</TransportCodeBlock>
+
+</section>
+</div>

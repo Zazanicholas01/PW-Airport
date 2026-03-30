@@ -17,7 +17,36 @@ const isMessageBusCodePage =
   frontmatter?.title === 'Code - Message Bus' ||
   currentPath === '/docs/08-code-message-bus/' ||
   currentPath === '/08-code-message-bus/';
-const isTransportCodePage = isWsServerCodePage || isMessageBusCodePage;
+const isHandlersCodePage =
+  frontmatter?.title === 'Code - Setup & Runtime' ||
+  currentPath === '/docs/09-code-handlers/' ||
+  currentPath === '/09-code-handlers/';
+const isSchedulersCodePage =
+  frontmatter?.title === 'Code - Schedulers' ||
+  currentPath === '/docs/10-code-schedulers/' ||
+  currentPath === '/10-code-schedulers/';
+const isDomainCodePage =
+  frontmatter?.title === 'Code - Domain' ||
+  currentPath === '/docs/11-code-domain/' ||
+  currentPath === '/11-code-domain/';
+const isServicesCodePage =
+  frontmatter?.title === 'Code - Services' ||
+  currentPath === '/docs/12-code-services/' ||
+  currentPath === '/12-code-services/';
+const isDatabaseCodePage =
+  frontmatter?.title === 'Code - Database' ||
+  currentPath === '/docs/06-code-database/' ||
+  currentPath === '/06-code-database/';
+const isDashboardWebCodePage =
+  frontmatter?.title === 'Code - Dashboard Web' ||
+  currentPath === '/docs/13-code-dashboard-web/' ||
+  currentPath === '/13-code-dashboard-web/';
+const isServerDiCodePage =
+  frontmatter?.title === 'Code - Server & DI' ||
+  currentPath === '/docs/16-code-server-di/' ||
+  currentPath === '/16-code-server-di/';
+const isTransportCodePage =
+  isWsServerCodePage || isMessageBusCodePage || isHandlersCodePage || isSchedulersCodePage || isDomainCodePage || isServicesCodePage || isDatabaseCodePage || isDashboardWebCodePage || isServerDiCodePage;
 const isTransportWebsocketPage =
   frontmatter?.title === 'Transport Websocket' ||
   currentPath === '/docs/08-transport-websocket/' ||

@@ -1,0 +1,107 @@
+import DocsSteps from '../DocsSteps.astro';
+import TransportCodeBlock from '../Code-Transport/TransportCodeBlock.astro';
+
+export const liveTimeline = [
+  {
+    title: 'DashboardState holds both cached payloads and connected sockets',
+    body: 'The module stores the latest events, clock sync, flight window, and plane-on-ground snapshots alongside the current WebSocket client sets.',
+  },
+  {
+    title: 'One loop tails the event log and clock sync stream',
+    body: 'The events-clock loop tracks file offsets, reads only appended lines, updates cached payloads, and broadcasts incremental updates.',
+  },
+  {
+    title: 'A second loop recomputes DB-backed snapshots',
+    body: 'The snapshot loop refreshes the flight-window and ground-plane snapshots, compares signatures, and broadcasts only when the shape changes.',
+  },
+];
+
+## `dashboard_live.py`
+
+Read this file as the live synchronization layer between backend state and browser sockets. It manages cached payloads, polling loops, and broadcast fan-out.
+
+## Call Timeline
+
+<DocsSteps items={liveTimeline} variant="timeline" />
+
+<div class="transport-code-stack dashboard-web-live-panel">
+<section class="transport-code-section">
+
+## Shared Runtime State
+
+<TransportCodeBlock title="dashboard_live.py">
+```python
+@dataclass
+class DashboardState:
+    latest_events: list[dict[str, str]] = field(default_factory=list)
+    latest_clock: dict[str, float | int | str] | None = None
+    latest_window: dict[str, object] = field(default_factory=lambda: {"rows": []})
+    latest_planes: dict[str, object] = field(default_factory=lambda: {"rows": []})
+
+    events_clients: set[WebSocket] = field(default_factory=set)
+    clock_clients: set[WebSocket] = field(default_factory=set)
+    window_clients: set[WebSocket] = field(default_factory=set)
+    planes_clients: set[WebSocket] = field(default_factory=set)
+```
+</TransportCodeBlock>
+
+</section>
+
+<section class="transport-code-section">
+
+## Broadcast Utility And Background Loops
+
+<TransportCodeBlock title="dashboard_live.py">
+```python
+async def _broadcast_json(clients: set[WebSocket], payload) -> None:
+    stale: list[WebSocket] = []
+
+    for client in list(clients):
+        try:
+            await client.send_json(payload)
+        except Exception:
+            stale.append(client)
+```
+</TransportCodeBlock>
+
+<TransportCodeBlock title="dashboard_live.py">
+```python
+async def _events_clock_loop() -> None:
+    if EVENTS_LOG_FILE.exists():
+        dashboard_state.latest_events = read_recent_events(limit=20)
+        dashboard_state.latest_clock = read_latest_clock_sync()
+        dashboard_state.events_offset = EVENTS_LOG_FILE.stat().st_size
+```
+</TransportCodeBlock>
+
+<TransportCodeBlock title="dashboard_live.py">
+```python
+async def _snapshot_loop() -> None:
+    last_window_sig = ""
+    last_planes_sig = ""
+
+    while True:
+        window_snapshot = read_window_flights_snapshot()
+        window_sig = _snapshot_signature(window_snapshot)
+        ...
+```
+</TransportCodeBlock>
+
+</section>
+
+<section class="transport-code-section">
+
+## Lifecycle Ownership
+
+<TransportCodeBlock title="dashboard_live.py">
+```python
+async def startup_dashboard_state() -> None:
+    if dashboard_state.events_task is None or dashboard_state.events_task.done():
+        dashboard_state.events_task = asyncio.create_task(_events_clock_loop())
+    if dashboard_state.snapshots_task is None or dashboard_state.snapshots_task.done():
+        dashboard_state.snapshots_task = asyncio.create_task(_snapshot_loop())
+```
+</TransportCodeBlock>
+
+</section>
+</div>

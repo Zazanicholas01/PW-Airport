@@ -1,0 +1,30 @@
+---
+title: Code - Dashboard Web
+layout: ../../layouts/DocsLayout.astro
+description: Dashboard web implementation walkthrough with switchable code tabs for dashboard_app.py, dashboard_data.py, dashboard_live.py, dashboard.html or dashboard.js, and the detail page flow.
+---
+
+import DocsCodeTabs from '../../components/Code-Transport/DocsCodeTabs.astro';
+import DashboardWebCodeApp from '../../components/Code-Dashboard-Web/DashboardWebCodeApp.mdx';
+import DashboardWebCodeData from '../../components/Code-Dashboard-Web/DashboardWebCodeData.mdx';
+import DashboardWebCodeLive from '../../components/Code-Dashboard-Web/DashboardWebCodeLive.mdx';
+import DashboardWebCodeMainUi from '../../components/Code-Dashboard-Web/DashboardWebCodeMainUi.mdx';
+import DashboardWebCodeDetailUi from '../../components/Code-Dashboard-Web/DashboardWebCodeDetailUi.mdx';
+
+## Code Tabs
+
+<DocsCodeTabs
+  tabs={[
+    { id: 'app', label: 'App & Routes' },
+    { id: 'data', label: 'Snapshots & Data' },
+    { id: 'live', label: 'Live State' },
+    { id: 'main-ui', label: 'Dashboard UI' },
+    { id: 'detail-ui', label: 'Detail UI' },
+  ]}
+>
+  <DashboardWebCodeApp slot="panel-ws-server" />
+  <DashboardWebCodeData slot="panel-message-bus" />
+  <DashboardWebCodeLive slot="panel-session" />
+  <DashboardWebCodeMainUi slot="panel-clock" />
+  <DashboardWebCodeDetailUi slot="panel-flight-scheduling" />
+</DocsCodeTabs>

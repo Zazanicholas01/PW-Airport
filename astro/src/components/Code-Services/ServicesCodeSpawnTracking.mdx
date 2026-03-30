@@ -1,0 +1,134 @@
+import DocsSteps from '../DocsSteps.astro';
+import TransportCodeBlock from '../Code-Transport/TransportCodeBlock.astro';
+
+export const spawnTrackingTimeline = [
+  {
+    title: 'Spawn flow calls the service with prefab and optional airplane id',
+    body: 'ensure_airplane_row(...) is invoked when orchestration code needs to guarantee that a spawned prefab has a corresponding Airplane row in the database.',
+  },
+  {
+    title: 'Session factory is resolved lazily',
+    body: 'If the caller does not provide a Session factory, the service creates a default one from the engine so it can still operate independently.',
+  },
+  {
+    title: 'Existing airplane rows are reused',
+    body: 'When a caller already provides an airplane_id and that row exists, the service returns the same id immediately instead of creating a duplicate.',
+  },
+  {
+    title: 'Unknown airplanes are classified from prefab names',
+    body: 'The service derives airplane range and type from the prefab name through mapping helpers, with a fallback classification if mapping fails.',
+  },
+  {
+    title: 'A default Airplane row is created and committed',
+    body: 'The service inserts a new Airplane record with baseline operational defaults and returns the resolved airplane id.',
+  },
+];
+
+## `spawn_tracking.py`
+
+Read this file as the persistence guarantee behind runtime spawns. It is deliberately small: given a prefab and an optional airplane id, it ensures there is a usable Airplane row in the database before later state transitions depend on it.
+
+## Call Timeline
+
+<DocsSteps items={spawnTrackingTimeline} variant="timeline" />
+
+<div class="transport-code-stack spawn-tracking-panel">
+<section class="transport-code-section">
+
+## Session Resolution And Entry Point
+
+The service is a single function rather than a class. Its first job is to resolve the session factory and open a DB session safely.
+
+<TransportCodeBlock title="spawn_tracking.py">
+```python
+def ensure_airplane_row(*, Session=None, airplane_id: str | None, prefab: str) -> str:
+
+    if Session is None:
+        Session = sessionmaker(bind=get_engine(), future=True)
+
+    with Session() as session:
+```
+</TransportCodeBlock>
+
+</section>
+
+<section class="transport-code-section">
+
+## Existing-Row Reuse
+
+If the caller already provides an airplane id and the row exists, the function exits early. That keeps spawn tracking idempotent for already-persisted airplanes.
+
+If no id is provided, a new UUID is generated up front.
+
+<TransportCodeBlock title="spawn_tracking.py">
+```python
+        if airplane_id:
+            existing = session.get(models.Airplane, airplane_id)
+
+            if existing is not None:
+                return airplane_id
+        else:
+            airplane_id = str(uuid4())
+```
+</TransportCodeBlock>
+
+</section>
+
+<section class="transport-code-section">
+
+## Prefab Classification And Safe Fallback
+
+The key business dependency here is `src.utils.mapping`. The service tries to classify the prefab into:
+
+- airplane range
+- airplane type
+
+If mapping fails, it still proceeds with safe default values rather than aborting the spawn flow.
+
+<TransportCodeBlock title="spawn_tracking.py">
+```python
+        try:
+            range_value = range_for_airplane_model(prefab)
+            airplane_type = type_for_airplane_model(prefab)
+        except ValueError:
+            logging.warning("Unknown prefab=%r; using defaults", prefab)
+
+            range_value, airplane_type = "Medium", "Passengers"
+```
+</TransportCodeBlock>
+
+</section>
+
+<section class="transport-code-section">
+
+## Airplane Row Creation
+
+Once the id and classification are known, the service creates a baseline Airplane row with default operational values and commits it immediately.
+
+That is the whole guarantee it provides: from this point on, later runtime layers can safely refer to that airplane id in the database.
+
+<TransportCodeBlock title="spawn_tracking.py">
+```python
+        airplane = models.Airplane(
+            id=airplane_id,
+            type=airplane_type,
+            range=range_value,
+            model=prefab,
+            capacity=100,
+            status="Parked",
+            speed=0.0,
+            fuel_level=1.0,
+            maintenance=False,
+            airline_code=None,
+            route_id=None,
+        )
+
+        session.add(airplane)
+        session.commit()
+        logging.info("[db] Airplane created id=%s prefab=%s", airplane_id, prefab)
+        return airplane_id
+```
+</TransportCodeBlock>
+
+</section>
+</div>

@@ -1,0 +1,21 @@
+---
+title: Code - Schedulers
+layout: ../../layouts/DocsLayout.astro
+description: Schedulers implementation walkthrough with switchable code tabs for flight_scheduler.py and spawn_scheduler.py.
+---
+
+import DocsCodeTabs from '../../components/Code-Transport/DocsCodeTabs.astro';
+import SchedulersCodeFlightScheduler from '../../components/Code-Schedulers/SchedulersCodeFlightScheduler.mdx';
+import SchedulersCodeSpawnScheduler from '../../components/Code-Schedulers/SchedulersCodeSpawnScheduler.mdx';
+
+## Code Tabs
+
+<DocsCodeTabs
+  tabs={[
+    { id: 'flight-scheduler', label: 'Flight Scheduler' },
+    { id: 'spawn-scheduler', label: 'Spawn Scheduler' },
+  ]}
+>
+  <SchedulersCodeFlightScheduler slot="panel-ws-server" />
+  <SchedulersCodeSpawnScheduler slot="panel-message-bus" />
+</DocsCodeTabs>

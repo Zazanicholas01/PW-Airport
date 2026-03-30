@@ -1,0 +1,380 @@
+import DocsSteps from '../DocsSteps.astro';
+import TransportCodeBlock from '../Code-Transport/TransportCodeBlock.astro';
+
+export const runtimeBusTimeline = [
+  {
+    title: 'Runtime handler is injected with transport-owned dependencies',
+    body: 'Transport constructs RuntimeBusHandler with the active bus proxy, command builders, simulation clock primitives, and the SQLAlchemy session factory.',
+  },
+  {
+    title: 'Decoded runtime payloads enter one queue',
+    body: 'Like setup handling, runtime events are consumed sequentially through one asyncio.Queue-backed task instead of being processed inline in the websocket layer.',
+  },
+  {
+    title: 'Event validation gates all side effects',
+    body: 'Only event payloads with a valid airplane_id move forward into stand lookups, route checks, or state transitions.',
+  },
+  {
+    title: 'Path completion splits departure and landing behavior',
+    body: 'The current route destination decides whether runtime emits a despawn command for departure or starts disembark handling for landing.',
+  },
+  {
+    title: 'Simulation clock dependencies control timer completion',
+    body: 'Disembark completion depends on injected clock, clock_lock, and clock_changed primitives so time scale and pause state affect timer progress.',
+  },
+  {
+    title: 'Database and event-log dependencies finalize runtime state',
+    body: 'SQLAlchemy models persist airplane, flight, and stand transitions while append_event records the backend milestones exposed to observability.',
+  },
+];
+
+## `runtime_bus.py`
+
+Read this file as the post-setup event processor. Transport has already decoded JSON and decided setup is complete. The runtime handler’s job is to validate event payloads, load the related domain rows, apply state transitions, and trigger any follow-up effects such as despawn commands or disembark timers.
+
+## Call Timeline
+
+<DocsSteps items={runtimeBusTimeline} variant="timeline" />
+
+<div class="transport-code-stack runtime-bus-panel">
+<section class="transport-code-section">
+
+## Bootstrap And Injected Dependencies
+
+`RuntimeBusHandler` depends on more transport-owned collaborators than the setup handler:
+
+- `bus` and `commands` for outbound Unity commands
+- `clock`, `clock_lock`, and `clock_changed` for simulation-time sleeps
+- `Session` for runtime DB transitions
+- `append_event(...)` for backend event logging
+
+That makes this file the bridge between inbound runtime events and the rest of the backend runtime.
+
+<TransportCodeBlock title="runtime_bus.py">
+```python
+@lru_cache()
+def _default_sessionmaker() -> sessionmaker:
+    return sessionmaker(bind=get_engine(), future=True)
+
+class RuntimeBusHandler:
+    def __init__(
+        self,
+        prefab_store,
+        session_factory: sessionmaker | None = None,
+        *,
+        bus = None,
+        commands = None,
+        clock=None,
+        clock_lock: asyncio.Lock | None = None,
+        clock_changed: asyncio.Event | None = None,
+        disembark_sim_seconds: float = float(DISEMBARK_SIM_SECONDS),
+    ):
+        self.prefab_store = prefab_store
+        self.queue = asyncio.Queue()
+        self._task = None
+
+        self.Session = session_factory or _default_sessionmaker()
+        self._flight_generator = RandomFlightGenerator(self.Session)
+
+        self._disembark_tasks: dict[str, asyncio.Task] = {}
+        self._disembark_sim_seconds = float(disembark_sim_seconds)
+
+        self._clock = clock
+        self._clock_lock = clock_lock
+        self._clock_changed = clock_changed
+
+        self._bus = bus
+        self._commands = commands
+```
+</TransportCodeBlock>
+
+</section>
+
+<section class="transport-code-section">
+
+## Queue Consumer Boundary
+
+The processing model stays the same as `setup_bus.py`: transport enqueues decoded payloads, the handler owns one consumer task, and state mutations happen in-order.
+
+That avoids cross-event races between stand release, path completion, and timer startup.
+
+<TransportCodeBlock title="runtime_bus.py">
+```python
+async def start(self):
+    """Launch the background consumer task"""
+    if self._task is None or self._task.done():
+        self._task = asyncio.create_task(self._event_loop())
+
+async def enqueue(self, payload: dict):
+    """Entrypoint to push a payload into the async queue"""
+    await self.queue.put(payload)
+
+async def _event_loop(self):
+    """Consume forever loop"""
+    while True:
+        payload = await self.queue.get()
+        try:
+            await self.handle_payload(payload)
+        finally:
+            self.queue.task_done()
+```
+</TransportCodeBlock>
+
+</section>
+
+<section class="transport-code-section">
+
+## Event Routing And Runtime Dependencies
+
+`handle_payload(...)` begins with a narrow filter:
+
+- payload must be `type="event"`
+- `airplane_id` must be a non-empty string
+- stand lookup happens through SQLAlchemy before event-specific logic
+
+From there the handler branches into `path_completed` and `plane_left_stand`.
+
+<TransportCodeBlock title="runtime_bus.py">
+```python
+def _find_stand_id_by_airplane_id(self, session, airplane_id: str) -> str | None:
+    """Helper DB Function to lookup at which stand currently references this airplane"""
+
+    return session.execute(select(models.Stand.id).where(models.Stand.airplane_id == airplane_id)).scalar_one_or_none()
+
+async def handle_payload(self, payload: dict):
+    """Payload Handling event router"""
+
+    if payload.get("type") != "event":
+        return
+
+    evt = payload.get("event")
+    airplane_id = payload.get("airplane_id")
+    if not isinstance(airplane_id, str) or not airplane_id:
+        return
+
+    with self.Session() as session:
+        stand_id = self._find_stand_id_by_airplane_id(session, airplane_id)
+```
+</TransportCodeBlock>
+
+</section>
+
+<section class="transport-code-section">
+
+## Departure Versus Landing Path Completion
+
+The central dependency here is the database model graph. Runtime loads the airplane, then the current `Path`, then branches on `path.destination`.
+
+If the route ends at `Departure`, runtime:
+
+- advances airplane and flight state
+- commits DB changes
+- optionally sends a despawn command back to Unity through the injected bus proxy
+
+If the route is not `Departure`, runtime instead enters landing completion flow.
+
+<TransportCodeBlock title="runtime_bus.py">
+```python
+if evt == RUNTIME_EVENTS.PATH_COMPLETED:
+    airplane = session.get(models.Airplane, airplane_id)
+    if airplane is None or getattr(airplane, "route_id", None) is None:
+        return
+
+    path = session.get(models.Path, airplane.route_id)
+    if path is None:
+        return
+
+    destination = getattr(path, "destination", None)
+
+    if destination == "Departure":
+        if airplane.status == AIRPLANE_STATUS.DEPARTING:
+            airplane.status = AIRPLANE_STATUS.IN_FLIGHT
+
+        flight = session.scalars(
+            select(models.Flight)
+            .where(models.Flight.airplane_id == airplane_id)
+            .where(models.Flight.status.in_(FLIGHT_STATUS.DEPARTING_OUTBOUND))
+            .order_by(models.Flight.departure_time.desc())
+        ).first()
+
+        if flight is not None and flight.status != FLIGHT_STATUS.DEP_ONGOING:
+            flight.status = FLIGHT_STATUS.DEP_ONGOING
+
+        session.commit()
+
+        if self._bus is not None and self._commands is not None:
+            await self._bus.send_command(
+                self._commands.despawn_plane(airplane_id=airplane_id)
+            )
+```
+</TransportCodeBlock>
+
+<TransportCodeBlock title="runtime_bus.py">
+```python
+else:
+    airplane.status = AIRPLANE_STATUS.DISEMBARKING
+
+    flight = session.scalars(
+        select(models.Flight)
+        .where(models.Flight.airplane_id == airplane_id)
+        .where(models.Flight.status.in_((FLIGHT_STATUS.DISEMBARKING, FLIGHT_STATUS.LANDING)))
+        .order_by(models.Flight.arrival_time.desc())
+    ).first()
+
+    if flight is not None:
+        flight.status = FLIGHT_STATUS.DISEMBARKING
+
+    if stand_id is not None:
+        stand = session.get(models.Stand, stand_id)
+        if stand is not None and stand.airplane_id == airplane_id:
+            stand.status = STAND_STATUS.OCCUPIED
+
+    session.commit()
+    self._start_disembark_timer(airplane_id)
+    return
+```
+</TransportCodeBlock>
+
+</section>
+
+<section class="transport-code-section">
+
+## Plane Left Stand And Event Logging
+
+The second runtime event is simpler but still dependency-driven. The handler resolves the stand through SQLAlchemy, validates that the stand still belongs to the reported airplane, then releases it and appends a backend event.
+
+This is deliberately conservative: mismatches are logged and ignored.
+
+<TransportCodeBlock title="runtime_bus.py">
+```python
+elif evt == RUNTIME_EVENTS.PLANE_LEFT_STAND:
+    logging.info("[runtime] plane_left_stand received airplane_id=%s", airplane_id)
+
+    if stand_id is None:
+        logging.info("[runtime] plane_left_stand ignored airplane_id=%s reason=no linked stand", airplane_id)
+        return
+
+    stand = session.get(models.Stand, stand_id)
+    if stand is None or stand.airplane_id != airplane_id:
+        logging.info(
+            "[runtime] plane_left_stand ignored airplane_id=%s stand_id=%s reason=stand mismatch",
+            airplane_id,
+            stand_id,
+        )
+        return
+
+    stand.airplane_id = None
+    stand.status = STAND_STATUS.AVAILABLE
+    session.commit()
+
+    append_event({
+        "type": "backend_event",
+        "event": "plane_left_stand",
+        "airplane_id": airplane_id,
+        "stand_id": stand_id,
+    })
+```
+</TransportCodeBlock>
+
+</section>
+
+<section class="transport-code-section">
+
+## Simulation-Time Disembark Dependencies
+
+The most transport-coupled part of `runtime_bus.py` is the disembark timer. It does not sleep in wall-clock time when a simulation clock is present.
+
+Instead it depends on:
+
+- `clock.now()` for the authoritative simulated time
+- `clock.time_scale` for pause or fast-forward
+- `clock_lock` for consistent reads
+- `clock_changed` so scale changes can wake the timer loop early
+
+This is what makes pause freeze disembark completion and time-scale changes accelerate or slow it correctly.
+
+<TransportCodeBlock title="runtime_bus.py">
+```python
+def _start_disembark_timer(self, airplane_id: str) -> None:
+    old = self._disembark_tasks.pop(airplane_id, None)
+    if old is not None:
+        old.cancel()
+
+    self._disembark_tasks[airplane_id] = asyncio.create_task(self._finish_disembark(airplane_id))
+```
+</TransportCodeBlock>
+
+<TransportCodeBlock title="runtime_bus.py">
+```python
+async def _sleep_sim_seconds(self, seconds: float) -> None:
+    if seconds <= 0:
+        return
+
+    clock = self._clock
+    if clock is None:
+        await asyncio.sleep(seconds)
+        return
+
+    if self._clock_lock is None:
+        target = clock.now() + timedelta(seconds=seconds)
+    else:
+        async with self._clock_lock:
+            target = clock.now() + timedelta(seconds=seconds)
+
+    while True:
+        if self._clock_lock is None:
+            now = clock.now()
+            time_scale = float(getattr(clock, "time_scale", 1.0))
+        else:
+            async with self._clock_lock:
+                now = clock.now()
+                time_scale = float(getattr(clock, "time_scale", 1.0))
+
+        remaining_sim_s = (target - now).total_seconds()
+        if remaining_sim_s <= 0:
+            return
+
+        if (not math.isfinite(time_scale)) or time_scale <= 0.0:
+            timeout = 1.0
+        else:
+            timeout = min(1.0, max(0.01, remaining_sim_s / time_scale))
+```
+</TransportCodeBlock>
+
+<TransportCodeBlock title="runtime_bus.py">
+```python
+async def _finish_disembark(self, airplane_id: str) -> None:
+    try:
+        await self._sleep_sim_seconds(self._disembark_sim_seconds)
+
+        with self.Session() as session:
+            airplane = session.get(models.Airplane, airplane_id)
+            if airplane is None:
+                return
+            if getattr(airplane, "status", None) != AIRPLANE_STATUS.DISEMBARKING:
+                return
+
+            airplane.status = AIRPLANE_STATUS.PARKED
+
+            flight = session.scalars(
+                select(models.Flight)
+                .where(models.Flight.airplane_id == airplane_id)
+                .where(models.Flight.status.in_((FLIGHT_STATUS.DISEMBARKING, FLIGHT_STATUS.LANDING)))
+                .order_by(models.Flight.arrival_time.desc())
+            ).first()
+
+            if flight is not None:
+                flight.status = FLIGHT_STATUS.COMPLETED
+
+            session.commit()
+
+        append_event({
+            "type": "backend_event",
+            "event": "disembark_complete",
+            "airplane_id": airplane_id,
+        })
+```
+</TransportCodeBlock>
+
+</section>
+</div>

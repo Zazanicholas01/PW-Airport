@@ -1,0 +1,24 @@
+---
+title: Code - Domain
+layout: ../../layouts/DocsLayout.astro
+description: Domain implementation walkthrough with switchable code tabs for sim_clock.py, world_state.py, and status_constants.py.
+---
+
+import DocsCodeTabs from '../../components/Code-Transport/DocsCodeTabs.astro';
+import DomainCodeSimClock from '../../components/Code-Domain/DomainCodeSimClock.mdx';
+import DomainCodeWorldState from '../../components/Code-Domain/DomainCodeWorldState.mdx';
+import DomainCodeStatusConstants from '../../components/Code-Domain/DomainCodeStatusConstants.mdx';
+
+## Code Tabs
+
+<DocsCodeTabs
+  tabs={[
+    { id: 'sim-clock', label: 'Sim Clock' },
+    { id: 'world-state', label: 'World State' },
+    { id: 'status-constants', label: 'Status Constants' },
+  ]}
+>
+  <DomainCodeSimClock slot="panel-ws-server" />
+  <DomainCodeWorldState slot="panel-message-bus" />
+  <DomainCodeStatusConstants slot="panel-session" />
+</DocsCodeTabs>

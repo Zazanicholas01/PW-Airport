@@ -1,0 +1,307 @@
+import DocsSteps from '../DocsSteps.astro';
+import TransportCodeBlock from '../Code-Transport/TransportCodeBlock.astro';
+
+export const flightGeneratorTimeline = [
+  {
+    title: 'Generator is configured with session factory and RNG',
+    body: 'RandomFlightGenerator is created with a DB session factory and an optional injected random source so flight generation can be reused and tested deterministically.',
+  },
+  {
+    title: 'Metadata pools are loaded from the database',
+    body: 'Remote airports, terminals, and allowed airlines are queried once per generation run and become the source pool for route construction.',
+  },
+  {
+    title: 'Timing helpers create window-aware departures and arrivals',
+    body: 'Dedicated helper methods generate departure-time or arrival-time windows while enforcing guard rails and flight-duration bounds.',
+  },
+  {
+    title: 'Compatibility rules shape the generated flights',
+    body: 'Route category, airline filtering, terminal compatibility, and parked-airplane type-range pairs influence the final direction, route, and aircraft type choices.',
+  },
+  {
+    title: 'Each flight is built as a complete ORM record',
+    body: 'The generator assembles timestamps, route endpoints, airline code, terminal id, and ICAO-like identifiers into a new Flight row.',
+  },
+  {
+    title: 'Generation replaces the existing scenario batch',
+    body: 'generate_flights(...) currently deletes all Flight rows before inserting the new generated set, so it behaves as scenario regeneration rather than incremental planning.',
+  },
+];
+
+## `flight_generator.py`
+
+Read this file as the scenario-builder service for the simulation dataset. It does not dispatch commands or advance runtime state. Its job is to construct a coherent batch of Flight rows from DB metadata, compatibility rules, and randomized but window-aware time selection.
+
+## Call Timeline
+
+<DocsSteps items={flightGeneratorTimeline} variant="timeline" />
+
+<div class="transport-code-stack flight-generator-panel">
+<section class="transport-code-section">
+
+## Generator State And Dependencies
+
+The service keeps only a small amount of state:
+
+- the local airport ICAO
+- a session factory
+- an injectable RNG
+
+Everything else is loaded or derived per generation run.
+
+<TransportCodeBlock title="flight_generator.py">
+```python
+class RandomFlightGenerator:
+    def __init__(self, session_factory, *, rng: random.Random | None = None):
+        self.personal_airport = PERSONAL_AIRPORT
+        self.Session = session_factory or sessionmaker(bind=get_engine(), future=True)
+        self.rng = rng or random.Random()
+```
+</TransportCodeBlock>
+
+</section>
+
+<section class="transport-code-section">
+
+## Metadata Loading
+
+`load_metadata(...)` is the first DB-facing step. It defines the pools the generator is allowed to use:
+
+- remote airports only
+- all terminals
+- airlines restricted to the allowed codes
+
+<TransportCodeBlock title="flight_generator.py">
+```python
+def load_metadata(self, session):
+    """Prende la sessione DB e esegue le query"""
+
+    airports = (
+        session.query(models.Airport)
+        .filter(models.Airport.icao != self.personal_airport)
+        .all()
+    )
+
+    terminals = session.query(models.Terminal).all()
+
+    airlines = (
+        session.query(models.Airline)
+        .filter(models.Airline.icao.in_(ALLOWED_AIRLINES))
+        .all()
+    )
+    return airports, terminals, airlines
+```
+</TransportCodeBlock>
+
+</section>
+
+<section class="transport-code-section">
+
+## Time Window Helpers
+
+Two helper methods drive the temporal side of generation:
+
+- `_times_departure_within_window(...)`
+- `_times_arrival_within_window(...)`
+
+They keep generated flights inside an active window while preserving a minimum and maximum travel duration.
+
+<TransportCodeBlock title="flight_generator.py">
+```python
+def _times_departure_within_window(
+    self,
+    *,
+    window: timedelta,
+    min_duration: timedelta = timedelta(minutes=30),
+    max_duration: timedelta = timedelta(minutes=240),
+    guard: timedelta = timedelta(minutes=1),
+) -> tuple[datetime, datetime]:
+    now = self._utc_now()
+
+    dep_lower = now + guard
+    dep_upper = now + window - guard
+
+    if dep_upper <= dep_lower:
+        dep_time = dep_lower
+    else:
+        dep_time = self._random_time_between(dep_lower, dep_upper)
+
+    duration_s = self.rng.randint(int(min_duration.total_seconds()), int(max_duration.total_seconds()))
+    arr_time = dep_time + timedelta(seconds=duration_s)
+    return dep_time, arr_time
+```
+</TransportCodeBlock>
+
+<TransportCodeBlock title="flight_generator.py">
+```python
+def _times_arrival_within_window(
+    self,
+    *,
+    window: timedelta,
+    min_duration: timedelta = timedelta(minutes=30),
+    max_duration: timedelta = timedelta(minutes=240),
+    guard: timedelta = timedelta(minutes=1),
+) -> tuple[datetime, datetime]:
+    now = self._utc_now()
+
+    arr_lower = now + guard + min_duration
+    arr_upper = now + window - guard
+
+    if arr_upper <= arr_lower:
+        arr_time = arr_lower
+    else:
+        arr_time = self._random_time_between(arr_lower, arr_upper)
+```
+</TransportCodeBlock>
+
+</section>
+
+<section class="transport-code-section">
+
+## Compatibility And Flight Construction
+
+The service builds each flight through several smaller rules:
+
+- parked-airplane compatibility for the first forced departure
+- route category from remote airport country
+- airline selection from route category and flight type
+- terminal selection by cargo or passenger preference
+- ICAO-like code generation through per-airline counters
+
+<TransportCodeBlock title="flight_generator.py">
+```python
+def _route_category(self, remote_airport: models.Airport) -> str:
+    country = (remote_airport.country or "").lower()
+
+    if country == "italia":
+        return AIRLINE_CATEGORIES.NATIONAL
+    if country in EUROPEAN_COUNTRIES:
+        return AIRLINE_CATEGORIES.EUROPEAN
+    return AIRLINE_CATEGORIES.INTERNATIONAL
+
+def _pick_terminal_id(self, terminals: list[models.Terminal], flight_type: str) -> int:
+    flight_type = flight_type.lower()
+    if not terminals:
+        raise RuntimeError("No terminals available")
+```
+</TransportCodeBlock>
+
+<TransportCodeBlock title="flight_generator.py">
+```python
+def _build_flight(
+    self,
+    *,
+    idx: int,
+    airports: list[models.Airport],
+    terminals: list[models.Terminal],
+    airlines: list[models.Airline],
+    parked_pairs: list[tuple[str, str]],
+    counters: dict[str, int],
+    ensure_in_window: bool,
+    window: timedelta
+) -> models.Flight:
+    is_departure_from_personal = (
+        True if (ensure_in_window and idx == 0)
+        else False if (ensure_in_window and idx == 1)
+        else self.rng.choice([True, False])
+    )
+
+    flight_type = self.rng.choice(FLIGHT_STATUS.AVAILABLE_TYPES)
+    remote_airport = self.rng.choice(airports)
+```
+</TransportCodeBlock>
+
+<TransportCodeBlock title="flight_generator.py">
+```python
+    flight_number = self._next_flight_code(airline, counters)
+    flight_date = departure_time.astimezone(timezone.utc).date()
+    date_str = flight_date.strftime("%Y%m%d")
+    full_icao = f"{airline.icao}_{flight_number:04d}_{date_str}_{origin}_{destination}_1"
+
+    return models.Flight(
+        id=str(uuid4()),
+        airplane_id=None,
+        arrival_time=arrival_time,
+        departure_time=departure_time,
+        terminal_id=terminal_id,
+        origin=origin,
+        destination=destination,
+        status=FLIGHT_STATUS.UNSCHEDULED,
+        icao=full_icao,
+        date=flight_date,
+        tipo=flight_type,
+        airline_code=airline.icao,
+    )
+```
+</TransportCodeBlock>
+
+</section>
+
+<section class="transport-code-section">
+
+## Scenario Regeneration Entry Point
+
+`generate_flights(...)` is the public entrypoint. It:
+
+1. deletes all current `Flight` rows
+2. loads metadata
+3. derives parked compatibility pairs
+4. builds `n` new flights
+5. commits the new scenario batch
+
+<TransportCodeBlock title="flight_generator.py">
+```python
+def generate_flights(self, n: int, *, ensure_in_window: bool = True, window: timedelta = timedelta(hours=1)) -> list[models.Flight]:
+    """Generazione effettiva dei viaggi random"""
+
+    if n <= 0:
+        return []
+
+    flights: list[models.Flight] = []
+
+    with self.Session() as session:
+        session.execute(
+            delete(models.Flight)
+        )
+        session.commit()
+
+        airports, terminals, airlines = self.load_metadata(session)
+```
+</TransportCodeBlock>
+
+<TransportCodeBlock title="flight_generator.py">
+```python
+        parked_pairs = list(
+            {
+                (t, r)
+                for (t, r) in session.query(models.Airplane.type, models.Airplane.range)
+                .filter(models.Airplane.status == AIRPLANE_STATUS.PARKED)
+                .all()
+                if isinstance(t, str) and isinstance(r, str)
+            }
+        )
+
+        counters = self._init_flight_counters(session, airlines)
+
+        for idx in range(n):
+            flight = self._build_flight(
+                idx=idx,
+                airports=airports,
+                terminals=terminals,
+                airlines=airlines,
+                parked_pairs=parked_pairs,
+                counters=counters,
+                ensure_in_window=ensure_in_window,
+                window=window
+            )
+            session.add(flight)
+            flights.append(flight)
+
+        session.commit()
+
+    return flights
+```
+</TransportCodeBlock>
+
+</section>
+</div>

@@ -1,0 +1,138 @@
+import DocsSteps from '../DocsSteps.astro';
+import TransportCodeBlock from '../Code-Transport/TransportCodeBlock.astro';
+
+export const appTimeline = [
+  {
+    title: 'The FastAPI app serves both HTML and live feeds',
+    body: 'dashboard_app.py is the web entrypoint. It mounts static assets, serves the dashboard shell, exposes detail pages, and hosts the WebSocket endpoints the browser connects to.',
+  },
+  {
+    title: 'Snapshot endpoints and HTML pages share the same data sources',
+    body: 'The HTML routes and the JSON detail APIs both call the same cached snapshot helpers, so the browser and server-rendered pages stay aligned.',
+  },
+  {
+    title: 'Background loops are started with application lifecycle hooks',
+    body: 'On startup the app launches dashboard_state tasks that tail the event log and refresh DB-backed snapshots; on shutdown those tasks are cancelled cleanly.',
+  },
+];
+
+## `dashboard_app.py`
+
+Read this file as the public surface of the dashboard layer. It is the place where browser-facing routes, static assets, WebSocket channels, and lifecycle hooks come together.
+
+## Call Timeline
+
+<DocsSteps items={appTimeline} variant="timeline" />
+
+<div class="transport-code-stack dashboard-web-app-panel">
+<section class="transport-code-section">
+
+## App Bootstrap
+
+The app itself is intentionally small. It computes the `static/` and template paths, mounts static files, and returns a `FastAPI` instance.
+
+<TransportCodeBlock title="dashboard_app.py">
+```python
+WEB_DIR = Path(__file__).resolve().parent
+STATIC_DIR = WEB_DIR / "static"
+TEMPLATE_FILE = WEB_DIR / "templates" / "dashboard.html"
+
+def create_app() -> FastAPI:
+    app = FastAPI()
+    app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+    return app
+
+app = create_app()
+```
+</TransportCodeBlock>
+
+</section>
+
+<section class="transport-code-section">
+
+## HTML Routes And Detail Pages
+
+There are three browser-facing HTML routes:
+
+- `/` for the main dashboard shell
+- `/flight/{flight_id}` for flight detail
+- `/plane/{airplane_id}` for plane detail
+
+The two detail pages do not use a template engine. They render plain HTML by passing a snapshot into `render_detail_page_from_snapshot(...)`.
+
+<TransportCodeBlock title="dashboard_app.py">
+```python
+@app.get("/")
+def index() -> FileResponse:
+    return FileResponse(TEMPLATE_FILE, media_type="text/html")
+
+app.get("/flight/{flight_id}")(flight_detail)
+app.get("/plane/{airplane_id}")(plane_detail)
+```
+</TransportCodeBlock>
+
+</section>
+
+<section class="transport-code-section">
+
+## WebSocket Channels
+
+The main dashboard page opens four WebSocket connections:
+
+- `/ws/events`
+- `/ws/clock`
+- `/ws/window-flights`
+- `/ws/planes-ground`
+
+Each handler follows the same pattern:
+
+1. accept the socket
+2. register it in `dashboard_state`
+3. send an immediate snapshot if one already exists
+4. keep the socket open until the client disconnects
+
+<TransportCodeBlock title="dashboard_app.py">
+```python
+@app.websocket("/ws/window-flights")
+async def window_flights_ws(websocket: WebSocket) -> None:
+    await websocket.accept()
+    dashboard_state.window_clients.add(websocket)
+
+    try:
+        await websocket.send_json({"kind": "snapshot", "window": dashboard_state.latest_window})
+        while True:
+            await websocket.receive_text()
+    except WebSocketDisconnect:
+        pass
+    finally:
+        dashboard_state.window_clients.discard(websocket)
+```
+</TransportCodeBlock>
+
+</section>
+
+<section class="transport-code-section">
+
+## API Endpoints And Lifecycle Hooks
+
+The JSON APIs are mostly supporting endpoints:
+
+- `/api/status` for quick health visibility
+- `/api/flight/{flight_id}` and `/api/plane/{airplane_id}` for detail-page refreshes
+
+The lifecycle hooks own the live dashboard loops.
+
+<TransportCodeBlock title="dashboard_app.py">
+```python
+@app.on_event("startup")
+async def startup_dashboard() -> None:
+    await startup_dashboard_state()
+
+@app.on_event("shutdown")
+async def shutdown_dashboard() -> None:
+    await shutdown_dashboard_state()
+```
+</TransportCodeBlock>
+
+</section>
+</div>

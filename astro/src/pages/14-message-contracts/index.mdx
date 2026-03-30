@@ -1,29 +1,282 @@
 ---
 title: Message Contracts
 layout: ../../layouts/DocsLayout.astro
+description: Contract guide for Unity-WebSocket payloads, Python commands, dashboard feed payloads, and the canonical status vocabulary shared across the system.
 ---
 
-# Message contracts and vocabulary
+import DocsIntroHero from '../../components/DocsIntroHero.astro';
+import DocsTopicGrid from '../../components/DocsTopicGrid.astro';
+import DocsSteps from '../../components/DocsSteps.astro';
 
-This topic consolidates the high-level contracts documented in `../../../README.md` and expands the canonical vocabulary into a dedicated file.
+export const contractChannels = [
+  {
+    kicker: 'Inbound',
+    title: 'Unity To Python',
+    summary: 'Decoded JSON payloads arrive over the transport WebSocket and are routed into setup handling, runtime handling, or clock control.',
+    tone: 'sky',
+    meta: 'ws:// transport',
+  },
+  {
+    kicker: 'Outbound',
+    title: 'Python To Unity',
+    summary: 'Python emits commands such as welcome, spawn_plane, start_path, despawn_plane, and clock_sync back over the same transport bus.',
+    tone: 'emerald',
+    meta: 'command builders',
+  },
+  {
+    kicker: 'Log Stream',
+    title: 'Backend To Dashboard Log',
+    summary: 'The backend appends JSONL events to data/logs/events.jsonl, including clock sync records and backend_event markers used by the web dashboard.',
+    tone: 'amber',
+    meta: 'events.jsonl',
+  },
+  {
+    kicker: 'Dashboard Feed',
+    title: 'Python To Browser',
+    summary: 'FastAPI exposes WebSocket snapshot channels and JSON detail APIs that translate DB state and event logs into browser-facing payloads.',
+    tone: 'rose',
+    meta: 'dashboard_app.py',
+  },
+];
 
-## Primary message types
+export const setupFlow = [
+  {
+    title: 'Setup starts with a control event',
+    body: 'Unity begins a new import run with type=event and event=setup-init, which resets the setup handler state.',
+  },
+  {
+    title: 'Spline and prefab batches are opened and closed explicitly',
+    body: 'Control events send-splines, finish-send-splines, send-prefabs, and finish-send-prefabs define when buffered payloads are accepted and committed.',
+  },
+  {
+    title: 'Spline payloads carry world topology',
+    body: 'Individual spline payloads include spline metadata and knot positions; non-master splines also provide stand-position and landing-spawn cues.',
+  },
+  {
+    title: 'Prefab payloads carry available spawnable assets',
+    body: 'Prefab batches are lists of dictionaries consumed by PrefabStore so later scheduling can choose compatible prefabs.',
+  },
+  {
+    title: 'Once both batches complete, paths become persistent contract data',
+    body: 'The setup handler builds Path rows from the imported graph and from that point runtime and transport commands rely on those persisted route ids.',
+  },
+];
 
-### Unity -> Python
+export const vocabularyGroups = [
+  {
+    title: 'Flight Statuses',
+    summary: 'Unscheduled, StandReserved, Scheduled, Departing, Dep_Ongoing, Lan_Ongoing, Landing, Disembarking, Completed.',
+  },
+  {
+    title: 'Airplane Statuses',
+    summary: 'Parked, Reserved, Scheduled, Departing, InFlight, Disembarking.',
+  },
+  {
+    title: 'Stand Statuses',
+    summary: 'Available, Reserved, Occupied, with O, P, and C stand categories used by reservation logic.',
+  },
+  {
+    title: 'Flight And Plane Types',
+    summary: 'Cargo and Passengers are the canonical type values shared by DB helpers, schedulers, and spawn classification.',
+  },
+  {
+    title: 'Range Values',
+    summary: 'Short, Medium, and Long are used for airport distance, airplane compatibility, and landing-route source selection.',
+  },
+  {
+    title: 'Runtime Events',
+    summary: 'The main Unity runtime events are path_completed and plane_left_stand.',
+  },
+];
 
-- Setup control: `setup-init`, `send-splines`, `finish-send-splines`, `send-prefabs`, `finish-send-prefabs`
-- Spline payload: `{ "type":"event", "event":"spline", "spline": {...} }`
-- Runtime events: `path_completed`, `plane_left_stand`
-- Time commands: `set_time_scale`, `set_sim_time`
+export const nextReads = [
+  {
+    href: '/docs/08-transport-websocket/',
+    title: 'Transport WebSocket',
+    summary: 'Read the transport docs for queue ownership, routing, and where decoded payloads enter the system.',
+    tone: 'sky',
+  },
+  {
+    href: '/docs/09-handlers/',
+    title: 'Handlers',
+    summary: 'The handler docs show how setup and runtime event payloads are consumed once transport has decoded them.',
+    tone: 'amber',
+  },
+  {
+    href: '/docs/06-database/',
+    title: 'Database',
+    summary: 'Many contract values, especially statuses and stand categories, are persisted directly into the ORM and database rows.',
+    tone: 'emerald',
+  },
+  {
+    href: '/docs/13-dashboard-web/',
+    title: 'Dashboard Web',
+    summary: 'The dashboard docs explain how event-log and snapshot payloads are exposed to the browser.',
+    tone: 'rose',
+  },
+];
 
-### Python -> Unity
+<DocsIntroHero
+  eyebrow="Contracts"
+  lead="This page documents the payload boundary between Unity, the Python backend, and the browser dashboard. The important idea is that a few shared strings and JSON shapes flow through every layer: setup control events, runtime events, outbound bus commands, dashboard snapshots, and canonical status vocabulary."
+  primaryAction={{ href: '/docs/08-transport-websocket/', label: 'Open Transport Docs' }}
+  secondaryAction={{ href: '/docs/13-dashboard-web/', label: 'Open Dashboard Docs' }}
+  meta={['WebSocket payloads', 'Clock sync', 'Runtime events', 'Shared vocabulary']}
+/>
 
-- `welcome`
-- `spawn_plane`
-- `start_path` (ordered spline segments)
-- `clock_sync`
+## Contract Surfaces
 
-## Canonical vocabulary
+<DocsTopicGrid items={contractChannels} variant="featured" />
 
-See: `standard_vocabulary.md`
+## Setup Import Contract
 
+<DocsSteps items={setupFlow} variant="timeline" />
+
+### Unity Control Events
+
+These are the setup-phase control events handled by `SetupBusHandler`:
+
+- `setup-init`
+- `send-splines`
+- `finish-send-splines`
+- `send-prefabs`
+- `finish-send-prefabs`
+
+### Example Spline Payload
+
+```json
+{
+  "type": "event",
+  "event": "spline",
+  "spline": {
+    "name": "Spline_O1",
+    "firstKnotPos": { "x": 0, "y": 0, "z": 0 }
+  }
+}
+```
+
+### Example Prefab Batch
+
+```json
+{
+  "prefabs": [
+    { "name": "a320" },
+    { "name": "b737" }
+  ]
+}
+```
+
+## Runtime Event Contract
+
+After setup completes, runtime payloads are expected to be `type="event"` objects. The currently relevant runtime event names are:
+
+- `path_completed`
+- `plane_left_stand`
+
+Both runtime handlers expect an `airplane_id`, and `path_completed` is interpreted by looking up the current route destination in the database.
+
+### Example Runtime Event
+
+```json
+{
+  "type": "event",
+  "event": "path_completed",
+  "airplane_id": "plane-123"
+}
+```
+
+## Python To Unity Command Contract
+
+These are the command shapes built in `src/transport/command_builders.py`.
+
+### Welcome
+
+```json
+{
+  "command": "welcome",
+  "type": "welcome",
+  "message": "Connected to Python server"
+}
+```
+
+### Clock Sync
+
+```json
+{
+  "command": "clock_sync",
+  "sync_id": 42,
+  "sim_unix_ms": 1774838400000,
+  "time_scale": 1.0
+}
+```
+
+### Spawn Plane
+
+```json
+{
+  "command": "spawn_plane",
+  "prefab": "a320",
+  "stand_id": "P1",
+  "position": { "x": 0, "y": 0, "z": 0 },
+  "airplane_id": "plane-123",
+  "spawn_context": "landing"
+}
+```
+
+### Start Path
+
+```json
+{
+  "command": "start_path",
+  "airplane_id": "plane-123",
+  "route_id": 17,
+  "speed": 0.2,
+  "segments": []
+}
+```
+
+### Clock Control Commands From Unity
+
+Clock control is the main command-shaped payload Python consumes directly in transport before handler routing:
+
+- `set_time_scale` with `time_scale` and optional `request_id`
+- `set_sim_time` with `sim_unix_ms`
+
+## Dashboard Feed Contract
+
+The web dashboard consumes two different payload families.
+
+### JSONL Event Log Records
+
+`src/utils/event_log.py` writes one JSON object per line to `data/logs/events.jsonl`. The current important event shapes are:
+
+- `{"type":"clock","sim_unix_ms":...,"time_scale":...,"sync_id":...}`
+- `{"type":"backend_event","event":"departure_assigned",...}`
+- `{"type":"log","level":"INFO","subsystem":"...",...}` when present in the log stream
+
+### Browser WebSocket Payloads
+
+The browser-facing FastAPI WebSockets use a small `kind` envelope:
+
+- `/ws/events`: `{"kind":"snapshot","events":[...]}` and `{"kind":"append","events":[...]}`
+- `/ws/clock`: `{"kind":"sync","clock":{...}}`
+- `/ws/window-flights`: `{"kind":"snapshot","window":{...}}`
+- `/ws/planes-ground`: `{"kind":"snapshot","planes":{...}}`
+
+## Canonical Vocabulary
+
+These shared values come from `src/domain/status_constants.py` and should be treated as the contract vocabulary across transport, DB helpers, handlers, schedulers, and dashboard rendering.
+
+<DocsTopicGrid items={vocabularyGroups} compact />
+
+## Contract Rules
+
+- Use exact string values from `status_constants.py` for statuses, event names, and bus commands.
+- Treat `clock_sync` and JSONL `type="clock"` records as related but different contracts: one is Unity-facing over WebSocket, the other is dashboard-facing via the event log.
+- Treat dashboard snapshots as display-oriented payloads, not raw ORM objects.
+- Keep `type="event"` runtime payloads small and explicit; runtime meaning is resolved server-side from DB state.
+- Keep setup control events separate from runtime events. The setup handler ignores late setup payloads once the setup phase is complete.
+
+## Next Reads
+
+<DocsTopicGrid items={nextReads} compact variant="subsystems" />

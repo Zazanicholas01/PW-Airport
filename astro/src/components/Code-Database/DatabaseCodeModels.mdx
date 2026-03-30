@@ -1,0 +1,128 @@
+import DocsSteps from '../DocsSteps.astro';
+import TransportCodeBlock from '../Code-Transport/TransportCodeBlock.astro';
+
+export const modelsTimeline = [
+  {
+    title: 'Python names stay English while the schema stays Italian',
+    body: 'The ORM layer acts as the translation boundary between developer-facing Python names and the legacy or predefined database table and column names.',
+  },
+  {
+    title: 'Operational entities form the center of the graph',
+    body: 'Flight, Airplane, Stand, and Path are the tables most runtime code touches during scheduling, movement, and dashboard reads.',
+  },
+  {
+    title: 'Support tables fill in airport metadata and secondary workflows',
+    body: 'Airports, airlines, terminals, vehicles, operations, cargo, passengers, and parking spots provide the rest of the schema needed by the simulation.',
+  },
+];
+
+## `models.py`
+
+Read this file as the schema contract the Python code relies on. The rest of the runtime assumes these mappings stay aligned with the DDL created by `scripts/init_db.py`.
+
+## Call Timeline
+
+<DocsSteps items={modelsTimeline} variant="timeline" />
+
+<div class="transport-code-stack database-models-panel">
+<section class="transport-code-section">
+
+## Core Naming Rule
+
+The most important thing to notice is not a single field. It is the naming convention:
+
+- Python class names are English and readable in code
+- `__tablename__` values and `Column(...)` names preserve the actual Italian database schema
+
+<TransportCodeBlock title="models.py">
+```python
+class Path(Base):
+    __tablename__ = "Percorso"
+
+    id = Column("id", Integer, primary_key=True, autoincrement=True)
+    path_name = Column("Nome", String, nullable=False)
+    source = Column("Sorgente", String, nullable=False)
+    destination = Column("Destinazione", String, nullable=False)
+    spline = Column("Spline", JSON)
+```
+</TransportCodeBlock>
+
+That same pattern appears everywhere else in the file.
+
+</section>
+
+<section class="transport-code-section">
+
+## Operational Center: Airplane, Stand, Flight
+
+These three tables carry most of the runtime state transitions:
+
+- `Airplane.status`, `route_id`, and `airline_code`
+- `Stand.status` and `airplane_id`
+- `Flight.airplane_id`, scheduled times, side, and lifecycle status
+
+<TransportCodeBlock title="models.py">
+```python
+class Airplane(Base):
+    __tablename__ = "Aereo"
+
+    id = Column("Id", String, primary_key=True)
+    type = Column("Tipo", String, nullable=False)
+    range = Column("Raggio", String, nullable=False)
+    model = Column("Modello", String, nullable=False)
+    status = Column("Stato", String, nullable=False)
+    airline_code = Column("CA", String, ForeignKey("Compagnia_Aerea.ICAO"))
+    route_id = Column("id_percorso", Integer, ForeignKey("Percorso.id"), nullable=True)
+
+class Stand(Base):
+    __tablename__ = "Piazzola"
+
+    id = Column("id", String, primary_key=True)
+    type = Column("Tipo", String, nullable=False)
+    status = Column("Stato", String, nullable=False)
+    airplane_id = Column("id_aereo", String, ForeignKey("Aereo.Id"))
+
+class Flight(Base):
+    __tablename__ = "Viaggio"
+
+    id = Column("id", String, primary_key=True)
+    airplane_id = Column("id_aereo", String, ForeignKey("Aereo.Id"))
+    arrival_time = Column("Orario_arrivo", DateTime(timezone=True), nullable=True)
+    departure_time = Column("Orario_partenza", DateTime(timezone=True), nullable=True)
+    origin = Column("Provenienza", String, ForeignKey("Aeroporto.ICAO"), nullable=False)
+    destination = Column("Destinazione", String, ForeignKey("Aeroporto.ICAO"), nullable=False)
+    status = Column("Stato", String, nullable=False)
+```
+</TransportCodeBlock>
+
+</section>
+
+<section class="transport-code-section">
+
+## Relationship Graph
+
+The file uses SQLAlchemy relationships to make the runtime code simpler to traverse:
+
+- airports expose departure and arrival flights
+- airplanes connect to paths, stands, flights, operations, and parking spots
+- flights connect outward to airline, terminal, airports, cargo, passengers, vehicles, and operations
+
+<TransportCodeBlock title="models.py">
+```python
+departures = relationship(
+    "Flight",
+    back_populates="origin_airport",
+    foreign_keys="Flight.origin",
+)
+arrivals = relationship(
+    "Flight",
+    back_populates="destination_airport",
+    foreign_keys="Flight.destination",
+)
+```
+</TransportCodeBlock>
+
+These relationships are what let the runtime and dashboard treat the schema as a connected object graph instead of as isolated SQL tables.
+
+</section>
+</div>

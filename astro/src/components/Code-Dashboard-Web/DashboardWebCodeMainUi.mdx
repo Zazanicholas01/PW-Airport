@@ -1,0 +1,114 @@
+import DocsSteps from '../DocsSteps.astro';
+import TransportCodeBlock from '../Code-Transport/TransportCodeBlock.astro';
+
+export const mainUiTimeline = [
+  {
+    title: 'The dashboard starts from server-rendered static HTML',
+    body: 'dashboard.html ships the structural shell: sidebar, top stats, departures table, arrivals table, planes-on-ground table, and live events panel.',
+  },
+  {
+    title: 'dashboard.js hydrates the shell with four sockets',
+    body: 'The client script connects to events, clock, flight-window, and plane-ground feeds, then rewrites the placeholder rows with live data.',
+  },
+  {
+    title: 'CSS preserves the operator-facing visual identity',
+    body: 'dashboard.css owns the large visual system: glassmorphism sidebar, amber board styling, responsive layout, pills, event log, and table display cells.',
+  },
+];
+
+## `dashboard.html`, `dashboard.js`, and `dashboard.css`
+
+Read these files together. The HTML defines the operator shell, the JavaScript fills it with live state, and the CSS provides the visual language.
+
+## Call Timeline
+
+<DocsSteps items={mainUiTimeline} variant="timeline" />
+
+<div class="transport-code-stack dashboard-web-main-ui-panel">
+<section class="transport-code-section">
+
+## HTML Shell
+
+<TransportCodeBlock title="dashboard.html">
+```html
+<div class="meta-card">
+  <div class="meta-stat meta-stat-primary">
+    <div class="meta-stat-label">Sim Time</div>
+    <div class="meta-stat-value" id="sim-time-status">--:--:--</div>
+  </div>
+  ...
+</div>
+
+<tbody id="departure_rows">
+  <tr>
+    <td colspan="8" class="muted">Waiting for departure snapshot...</td>
+  </tr>
+</tbody>
+```
+</TransportCodeBlock>
+
+</section>
+
+<section class="transport-code-section">
+
+## WebSocket-Driven Rendering
+
+<TransportCodeBlock title="dashboard.js">
+```javascript
+const eventsRoot = document.getElementById("events");
+const departureRows = document.getElementById("departure_rows");
+const arrivalRows = document.getElementById("arrival_rows");
+const planesRows = document.getElementById("plane_rows");
+const simTimeStatus = document.getElementById("sim-time-status");
+```
+</TransportCodeBlock>
+
+The main renderers are `renderFlightsSnapshot(windowSnapshot)` and `renderPlanesSnapshot(planesSnapshot)`. They rebuild table rows and attach click handlers that navigate to `/flight/...` or `/plane/...`.
+
+</section>
+
+<section class="transport-code-section">
+
+## Simulated Clock Projection
+
+<TransportCodeBlock title="dashboard.js">
+```javascript
+function currentSimUnixMs() {
+  if (!clockAnchor) return null;
+  const elapsedRealMs = Date.now() - clockAnchor.receivedAtMs;
+  return clockAnchor.simUnixMs + elapsedRealMs * clockAnchor.timeScale;
+}
+```
+</TransportCodeBlock>
+
+That projected clock drives both the visible time label and the per-flight delta-minute cells.
+
+</section>
+
+<section class="transport-code-section">
+
+## Visual System
+
+<TransportCodeBlock title="dashboard.css">
+```css
+:root {
+  --board-bg: #090b0d;
+  --board-line: rgba(255, 196, 110, 0.28);
+  --board-text: #ffd27a;
+  --board-head: #ffe7b3;
+}
+
+.app-shell {
+  display: grid;
+  grid-template-columns: 342px minmax(0, 1fr);
+}
+
+.meta-card {
+  display: grid;
+  grid-template-columns: minmax(220px, 1.3fr) repeat(4, minmax(160px, 1fr));
+}
+```
+</TransportCodeBlock>
+
+</section>
+</div>

@@ -1,24 +1,34 @@
-# Message contracts and vocabulary
+# Message Contracts
 
-This topic consolidates the high-level contracts documented in `../../../README.md` and expands the canonical vocabulary into a dedicated file.
+This topic summarizes the contract boundary between Unity, the Python backend, and the browser dashboard.
 
-## Primary message types
+## Main channels
 
-### Unity -> Python
+- Unity -> Python transport payloads:
+  - setup control events: `setup-init`, `send-splines`, `finish-send-splines`, `send-prefabs`, `finish-send-prefabs`
+  - runtime events: `path_completed`, `plane_left_stand`
+  - clock commands: `set_time_scale`, `set_sim_time`
+- Python -> Unity commands:
+  - `welcome`
+  - `clock_sync`
+  - `spawn_plane`
+  - `start_path`
+  - `despawn_plane`
+- Python -> Dashboard payloads:
+  - JSONL event-log records in `data/logs/events.jsonl`
+  - FastAPI websocket payloads for events, clock, window flights, and planes on ground
 
-- Setup control: `setup-init`, `send-splines`, `finish-send-splines`, `send-prefabs`, `finish-send-prefabs`
-- Spline payload: `{ "type":"event", "event":"spline", "spline": {...} }`
-- Runtime events: `path_completed`, `plane_left_stand`
-- Time commands: `set_time_scale`, `set_sim_time`
+## Example payloads
 
-### Python -> Unity
-
-- `welcome`
-- `spawn_plane`
-- `start_path` (ordered spline segments)
-- `clock_sync`
+- Setup spline event:
+  - `{ "type":"event", "event":"spline", "spline": {...} }`
+- Runtime event:
+  - `{ "type":"event", "event":"path_completed", "airplane_id":"..." }`
+- Spawn command:
+  - `{ "command":"spawn_plane", "prefab":"...", "stand_id":"...", "airplane_id":"..." }`
 
 ## Canonical vocabulary
 
-See: `standard_vocabulary.md`
+- See `standard_vocabulary.md`
+- Source of truth in code: `../../domain/status_constants.py`
 

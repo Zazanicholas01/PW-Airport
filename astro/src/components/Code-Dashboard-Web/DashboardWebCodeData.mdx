@@ -1,0 +1,133 @@
+import DocsSteps from '../DocsSteps.astro';
+import TransportCodeBlock from '../Code-Transport/TransportCodeBlock.astro';
+
+export const dataTimeline = [
+  {
+    title: 'The module reads from both the database and the event log',
+    body: 'dashboard_data.py combines ORM queries, db_functions scheduling reads, and JSONL event-log parsing to produce browser-friendly snapshots.',
+  },
+  {
+    title: 'Detail views are cached briefly',
+    body: 'Flight and plane detail snapshots use a small TTL cache so repeated page refresh polling does not hit the database on every request.',
+  },
+  {
+    title: 'The main dashboard is driven by serialized row snapshots',
+    body: 'Instead of exposing raw ORM objects, the module normalizes flights and planes into compact dictionaries with labels, classes, and display-oriented fields.',
+  },
+];
+
+## `dashboard_data.py`
+
+Read this file as the projection layer for the dashboard. It translates persistence and log state into JSON shapes the UI can render directly.
+
+## Call Timeline
+
+<DocsSteps items={dataTimeline} variant="timeline" />
+
+<div class="transport-code-stack dashboard-web-data-panel">
+<section class="transport-code-section">
+
+## Shared Paths And Session
+
+The module starts by fixing the dashboard runtime roots:
+
+- the JSONL event log file
+- the static plane-image directories
+- the airport and time-window configuration
+- a dedicated SQLAlchemy session factory
+
+<TransportCodeBlock title="dashboard_data.py">
+```python
+EVENTS_LOG_FILE = WEB_DIR.parent.parent / "data" / "logs" / "events.jsonl"
+PLANE_MODELS_DIR = PLANES_DIR / "models"
+WINDOW_AIRPORT_ICAO = PERSONAL_AIRPORT
+WINDOW_DURATION = timedelta(hours=WINDOW_TIMEDELTA_HOURS)
+DASHBOARD_SESSION = sessionmaker(bind=get_engine(), future=True)
+```
+</TransportCodeBlock>
+
+</section>
+
+<section class="transport-code-section">
+
+## Short-Lived Detail Cache
+
+Detail pages refresh themselves every few seconds. The module avoids hammering the DB by caching snapshots for two seconds.
+
+<TransportCodeBlock title="dashboard_data.py">
+```python
+DETAIL_CACHE_TTL_SECONDS = 2.0
+FLIGHT_DETAIL_CACHE = {}
+PLANE_DETAIL_CACHE = {}
+
+def _cache_get(cache, key) -> dict[str, object] | None:
+    cached = cache.get(key)
+    if cached is None:
+        return None
+```
+</TransportCodeBlock>
+
+</section>
+
+<section class="transport-code-section">
+
+## Flight And Plane Detail Snapshots
+
+The detail readers gather data from several tables, normalize labels for display, and compute progress metadata for the visual progress bar.
+
+<TransportCodeBlock title="dashboard_data.py">
+```python
+def _read_flight_detail_snapshot(flight_id: str) -> dict[str, object]:
+    with DASHBOARD_SESSION() as session:
+        flight = session.get(models.Flight, flight_id)
+        ...
+        return {
+            "title": str(getattr(flight, "icao", None) or flight_id),
+            "subtitle": f"{getattr(flight, 'origin', '--')} -> {getattr(flight, 'destination', '--')}",
+            "fields": [...],
+            "image_url": _plane_image_url(model),
+            "detail_api_path": f"/api/flight/{flight_id}",
+        }
+```
+</TransportCodeBlock>
+
+<TransportCodeBlock title="dashboard_data.py">
+```python
+def _read_plane_detail_snapshot(airplane_id: str) -> dict[str, object]:
+    with DASHBOARD_SESSION() as session:
+        airplane = session.get(models.Airplane, airplane_id)
+        ...
+        return {
+            "title": str(airplane_id),
+            "subtitle": f"{getattr(airplane, 'model', '--')} / {getattr(airplane, 'status', '--')}",
+            "fields": [...],
+            "detail_api_path": f"/api/plane/{airplane_id}",
+        }
+```
+</TransportCodeBlock>
+
+</section>
+
+<section class="transport-code-section">
+
+## Event Log, Clock, And Main Snapshots
+
+The module parses log lines and clock sync lines from `events.jsonl`, reconstructs simulated current time, and then builds two dashboard-wide snapshots:
+
+- `read_window_flights_snapshot()`
+- `read_planes_on_ground_snapshot()`
+
+<TransportCodeBlock title="dashboard_data.py">
+```python
+def read_window_flights_snapshot() -> dict[str, object]:
+    now_utc = _current_sim_now_utc()
+    flights = list_flights_in_sliding_window(
+        airport_icao=WINDOW_AIRPORT_ICAO,
+        now_utc=now_utc,
+        window=WINDOW_DURATION,
+    )
+```
+</TransportCodeBlock>
+
+</section>
+</div>
