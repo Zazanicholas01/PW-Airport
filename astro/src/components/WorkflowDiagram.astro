@@ -1,0 +1,286 @@
+---
+interface Card {
+  title: string;
+  note?: string;
+  tone?: 'cyan' | 'violet' | 'amber' | 'emerald' | 'rose' | 'sky';
+}
+
+const {
+  title,
+  primary = [],
+  branchLabel,
+  branches = [],
+  footer = [],
+} = Astro.props as {
+  title: string;
+  primary: Card[];
+  branchLabel?: string;
+  branches?: Card[];
+  footer?: Card[];
+};
+---
+
+<section class="docs-workflow-diagram">
+  <h3>{title}</h3>
+
+  <div class="workflow-frame">
+    <div class="workflow-stage workflow-stage-primary">
+      {primary.map((card, index) => (
+        <>
+          <article class:list={['workflow-card', `tone-${card.tone ?? 'cyan'}`]}>
+            <div class="workflow-card-head">
+              <div class="workflow-card-index">{index + 1}</div>
+              <strong>{card.title}</strong>
+            </div>
+            {card.note && <span>{card.note}</span>}
+          </article>
+          {index < primary.length - 1 && (
+            <div class="workflow-drop" aria-hidden="true">
+              <div class="workflow-drop-line"></div>
+              <div class="workflow-drop-arrow">v</div>
+            </div>
+          )}
+        </>
+      ))}
+    </div>
+
+    {branches.length > 0 && (
+      <div class="workflow-stage workflow-stage-branch">
+        <div class="workflow-branch-join" aria-hidden="true">
+          <div class="workflow-drop-line"></div>
+          <div class="workflow-drop-arrow">v</div>
+        </div>
+        <div class="workflow-stage-label">{branchLabel ?? 'Branches'}</div>
+        <div class="workflow-branch-grid">
+          {branches.map((card, index) => (
+            <article class:list={['workflow-card', 'workflow-card-branch', `tone-${card.tone ?? 'violet'}`]}>
+              <div class="workflow-card-head">
+                <div class="workflow-card-index">{primary.length + index + 1}</div>
+                <strong>{card.title}</strong>
+              </div>
+              {card.note && <span>{card.note}</span>}
+            </article>
+          ))}
+        </div>
+      </div>
+    )}
+
+    {footer.length > 0 && (
+      <div class="workflow-stage workflow-stage-footer">
+        <div class="workflow-branch-join" aria-hidden="true">
+          <div class="workflow-drop-line"></div>
+          <div class="workflow-drop-arrow">v</div>
+        </div>
+        <div class="workflow-stage-label">Outputs</div>
+        <div class="workflow-footer-grid">
+          {footer.map((card, index) => (
+            <article class:list={['workflow-card', 'workflow-card-footer', `tone-${card.tone ?? 'amber'}`]}>
+              <div class="workflow-card-head">
+                <div class="workflow-card-index">{primary.length + branches.length + index + 1}</div>
+                <strong>{card.title}</strong>
+              </div>
+              {card.note && <span>{card.note}</span>}
+            </article>
+          ))}
+        </div>
+      </div>
+    )}
+  </div>
+</section>
+
+<style>
+  .docs-workflow-diagram {
+    margin: 1.6rem 0 2.4rem;
+  }
+
+  .docs-workflow-diagram h3 {
+    margin: 0 0 0.8rem;
+    color: var(--docs-heading);
+    font-size: 1.1rem;
+    letter-spacing: -0.02em;
+  }
+
+  .workflow-frame {
+    position: relative;
+    padding: 3.3rem 1.15rem 1.2rem;
+    border: 1px solid rgba(111, 231, 247, 0.22);
+    border-radius: 1.2rem;
+    background:
+      radial-gradient(circle at top right, rgba(0, 255, 200, 0.12), transparent 24%),
+      radial-gradient(circle at bottom left, rgba(40, 163, 255, 0.12), transparent 28%),
+      repeating-linear-gradient(
+        0deg,
+        rgba(95, 255, 227, 0.06) 0,
+        rgba(95, 255, 227, 0.06) 1px,
+        transparent 1px,
+        transparent 26px
+      ),
+      linear-gradient(180deg, rgba(255,255,255,0.035), rgba(255,255,255,0.015));
+    box-shadow:
+      inset 0 1px 0 rgba(255,255,255,0.04),
+      0 22px 48px rgba(0, 0, 0, 0.26),
+      0 0 1.2rem rgba(53, 239, 203, 0.08);
+  }
+
+  .workflow-frame::before {
+    content: '';
+    position: absolute;
+    inset: 0 0 auto 0;
+    height: 3rem;
+    border-bottom: 1px solid rgba(111, 231, 247, 0.18);
+    border-top-left-radius: 1.2rem;
+    border-top-right-radius: 1.2rem;
+    background:
+      linear-gradient(90deg, rgba(38, 255, 198, 0.14), transparent 36%),
+      linear-gradient(180deg, rgba(7, 16, 22, 0.94), rgba(7, 16, 22, 0.68));
+    pointer-events: none;
+  }
+
+  .workflow-stage {
+    position: relative;
+    z-index: 1;
+  }
+
+  .workflow-stage-primary {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+
+  .workflow-card {
+    width: min(100%, 28rem);
+    min-height: 5.8rem;
+    padding: 0.95rem 1rem;
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 1rem;
+    background: linear-gradient(180deg, rgba(255,255,255,0.06), rgba(255,255,255,0.02));
+    box-shadow:
+      inset 0 1px 0 rgba(255,255,255,0.05),
+      0 16px 28px rgba(0,0,0,0.2);
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+  }
+
+  .workflow-card-branch,
+  .workflow-card-footer {
+    width: 100%;
+    min-height: 5.6rem;
+  }
+
+  .workflow-card-head {
+    display: flex;
+    align-items: center;
+    gap: 0.55rem;
+  }
+
+  .workflow-card strong {
+    color: var(--docs-heading);
+    font-size: 0.98rem;
+    line-height: 1.2;
+  }
+
+  .workflow-card span {
+    margin-top: 0.45rem;
+    color: var(--docs-text-soft);
+    font-size: 0.84rem;
+    line-height: 1.45;
+  }
+
+  .workflow-card-index {
+    display: inline-grid;
+    place-items: center;
+    width: 1.8rem;
+    height: 1.8rem;
+    flex: 0 0 auto;
+    border-radius: 999px;
+    border: 1px solid rgba(255,255,255,0.16);
+    background: rgba(7, 16, 22, 0.48);
+    color: var(--docs-heading);
+    font-size: 0.82rem;
+    font-weight: 800;
+    box-shadow:
+      inset 0 1px 0 rgba(255,255,255,0.08),
+      0 0 0.8rem rgba(154, 216, 255, 0.08);
+  }
+
+  .workflow-drop,
+  .workflow-branch-join {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    margin: 0.65rem 0;
+  }
+
+  .workflow-drop-line {
+    width: 2px;
+    height: 1.15rem;
+    background: linear-gradient(180deg, rgba(111, 231, 247, 0.7), rgba(111, 231, 247, 0.18));
+  }
+
+  .workflow-drop-arrow {
+    color: #9ad8ff;
+    font-size: 1rem;
+    font-weight: 700;
+    line-height: 1;
+    text-shadow: 0 0 0.8rem rgba(111, 231, 247, 0.22);
+  }
+
+  .workflow-stage-label {
+    margin: 0 0 0.65rem;
+    text-align: center;
+    color: var(--docs-text-soft);
+    font-size: 0.78rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  .workflow-branch-grid,
+  .workflow-footer-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.9rem;
+  }
+
+  .tone-cyan {
+    border-color: rgba(111, 231, 247, 0.28);
+    background: linear-gradient(180deg, rgba(111, 231, 247, 0.14), rgba(255,255,255,0.02));
+  }
+
+  .tone-sky {
+    border-color: rgba(154, 216, 255, 0.28);
+    background: linear-gradient(180deg, rgba(154, 216, 255, 0.14), rgba(255,255,255,0.02));
+  }
+
+  .tone-violet {
+    border-color: rgba(158, 168, 255, 0.28);
+    background: linear-gradient(180deg, rgba(158, 168, 255, 0.14), rgba(255,255,255,0.02));
+  }
+
+  .tone-amber {
+    border-color: rgba(255, 205, 115, 0.28);
+    background: linear-gradient(180deg, rgba(255, 205, 115, 0.14), rgba(255,255,255,0.02));
+  }
+
+  .tone-emerald {
+    border-color: rgba(89, 215, 162, 0.28);
+    background: linear-gradient(180deg, rgba(89, 215, 162, 0.14), rgba(255,255,255,0.02));
+  }
+
+  .tone-rose {
+    border-color: rgba(255, 138, 165, 0.28);
+    background: linear-gradient(180deg, rgba(255, 138, 165, 0.14), rgba(255,255,255,0.02));
+  }
+
+  @media (max-width: 860px) {
+    .workflow-branch-grid,
+    .workflow-footer-grid {
+      grid-template-columns: 1fr;
+    }
+
+    .workflow-card {
+      width: 100%;
+    }
+  }
+</style>

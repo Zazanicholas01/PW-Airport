@@ -49,8 +49,11 @@ const isTransportCodePage =
   isWsServerCodePage || isMessageBusCodePage || isHandlersCodePage || isSchedulersCodePage || isDomainCodePage || isServicesCodePage || isDatabaseCodePage || isDashboardWebCodePage || isServerDiCodePage;
 const isTransportWebsocketPage =
   frontmatter?.title === 'Transport Websocket' ||
+  frontmatter?.title === 'Diagrams - Transport' ||
   currentPath === '/docs/08-transport-websocket/' ||
-  currentPath === '/08-transport-websocket/';
+  currentPath === '/08-transport-websocket/' ||
+  currentPath === '/docs/08-diagrams-transport/' ||
+  currentPath === '/08-diagrams-transport/';
 const isTransportStyledPage = isTransportWebsocketPage || isTransportCodePage;
 ---
 <!doctype html>

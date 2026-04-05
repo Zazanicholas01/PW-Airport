@@ -1,0 +1,163 @@
+<section class="transport-visuals">
+  <article class="transport-visual-card">
+    <div class="transport-visual-copy">
+      <h3>Connection Boundary</h3>
+      <p>Unity talks to one transport boundary. The Message Bus separates raw socket IO from the rest of the backend.</p>
+    </div>
+    <svg viewBox="0 0 520 180" aria-hidden="true">
+      <defs>
+        <linearGradient id="tv-cyan" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stop-color="#6fe7f7" />
+          <stop offset="100%" stop-color="#9ad8ff" />
+        </linearGradient>
+        <linearGradient id="tv-violet" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stop-color="#9ea8ff" />
+          <stop offset="100%" stop-color="#c4c8ff" />
+        </linearGradient>
+      </defs>
+      <rect x="20" y="42" width="128" height="92" rx="18" fill="rgba(111,231,247,0.12)" stroke="rgba(111,231,247,0.5)" />
+      <rect x="196" y="28" width="128" height="120" rx="18" fill="rgba(158,168,255,0.12)" stroke="rgba(158,168,255,0.5)" />
+      <rect x="372" y="42" width="128" height="92" rx="18" fill="rgba(154,216,255,0.12)" stroke="rgba(154,216,255,0.42)" />
+      <path d="M148 88h36" stroke="url(#tv-cyan)" stroke-width="4" stroke-linecap="round" />
+      <path d="M324 88h36" stroke="url(#tv-violet)" stroke-width="4" stroke-linecap="round" />
+      <path d="m176 80 8 8-8 8" fill="none" stroke="url(#tv-cyan)" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" />
+      <path d="m352 80 8 8-8 8" fill="none" stroke="url(#tv-violet)" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" />
+      <text x="84" y="95" text-anchor="middle">Unity</text>
+      <text x="260" y="90" text-anchor="middle">Message Bus</text>
+      <text x="260" y="120" text-anchor="middle" class="muted">recv/send loops</text>
+      <text x="436" y="84" text-anchor="middle">Incoming</text>
+      <text x="436" y="104" text-anchor="middle">Outgoing Queue</text>
+    </svg>
+  </article>
+
+  <article class="transport-visual-card">
+    <div class="transport-visual-copy">
+      <h3>Dispatch Split</h3>
+      <p>The Dispatcher is the fork in the system: clock commands stay in transport, setup goes left, runtime goes right.</p>
+    </div>
+    <svg viewBox="0 0 520 220" aria-hidden="true">
+      <defs>
+        <linearGradient id="tv-amber" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stop-color="#ffcd73" />
+          <stop offset="100%" stop-color="#ffdca0" />
+        </linearGradient>
+        <linearGradient id="tv-emerald" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stop-color="#59d7a2" />
+          <stop offset="100%" stop-color="#86ecc0" />
+        </linearGradient>
+        <linearGradient id="tv-rose" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stop-color="#ff8aa5" />
+          <stop offset="100%" stop-color="#ffc0cd" />
+        </linearGradient>
+      </defs>
+      <rect x="178" y="22" width="164" height="70" rx="18" fill="rgba(255,205,115,0.12)" stroke="rgba(255,205,115,0.52)" />
+      <rect x="24" y="138" width="144" height="56" rx="16" fill="rgba(111,231,247,0.12)" stroke="rgba(111,231,247,0.46)" />
+      <rect x="188" y="138" width="144" height="56" rx="16" fill="rgba(89,215,162,0.12)" stroke="rgba(89,215,162,0.46)" />
+      <rect x="352" y="138" width="144" height="56" rx="16" fill="rgba(255,138,165,0.12)" stroke="rgba(255,138,165,0.46)" />
+      <circle cx="260" cy="116" r="7" fill="#ffdca0" stroke="rgba(255,205,115,0.72)" stroke-width="2" />
+
+      <path d="M260 92v17" stroke="url(#tv-amber)" stroke-width="4" stroke-linecap="round" />
+
+      <path d="M260 116H96v22" stroke="url(#tv-cyan)" stroke-width="4" fill="none" stroke-linecap="round" stroke-linejoin="round" />
+      <path d="m104 130-8 8-8-8" fill="none" stroke="url(#tv-cyan)" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" />
+
+      <path d="M260 116v14" stroke="url(#tv-emerald)" stroke-width="4" fill="none" stroke-linecap="round" />
+      <path d="m268 122-8 8-8-8" fill="none" stroke="url(#tv-emerald)" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" />
+
+      <path d="M260 116H424v22" stroke="url(#tv-rose)" stroke-width="4" fill="none" stroke-linecap="round" stroke-linejoin="round" />
+      <path d="m432 130-8 8-8-8" fill="none" stroke="url(#tv-rose)" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" />
+      <text x="260" y="55" text-anchor="middle">Dispatcher</text>
+      <text x="260" y="74" text-anchor="middle" class="muted">routing decision</text>
+      <text x="96" y="170" text-anchor="middle">Clock Control</text>
+      <text x="260" y="170" text-anchor="middle">Setup Handler</text>
+      <text x="424" y="170" text-anchor="middle">Runtime Handler</text>
+    </svg>
+  </article>
+
+  <article class="transport-visual-card">
+    <div class="transport-visual-copy">
+      <h3>Outbound Effects</h3>
+      <p>Loops and handlers emit commands back to Unity, while clock and backend events also feed the Dashboard Web.</p>
+    </div>
+    <svg viewBox="0 0 520 220" aria-hidden="true">
+      <rect x="24" y="28" width="144" height="56" rx="16" fill="rgba(89,215,162,0.12)" stroke="rgba(89,215,162,0.46)" />
+      <rect x="188" y="28" width="144" height="56" rx="16" fill="rgba(111,231,247,0.12)" stroke="rgba(111,231,247,0.46)" />
+      <rect x="352" y="28" width="144" height="56" rx="16" fill="rgba(255,138,165,0.12)" stroke="rgba(255,138,165,0.46)" />
+      <rect x="178" y="108" width="164" height="58" rx="18" fill="rgba(158,168,255,0.12)" stroke="rgba(158,168,255,0.5)" />
+      <rect x="24" y="172" width="144" height="28" rx="14" fill="rgba(255,205,115,0.12)" stroke="rgba(255,205,115,0.46)" />
+      <rect x="352" y="172" width="144" height="28" rx="14" fill="rgba(255,205,115,0.12)" stroke="rgba(255,205,115,0.46)" />
+      <path d="M96 84v24h164" stroke="#59d7a2" stroke-width="4" fill="none" stroke-linecap="round" />
+      <path d="M260 84v24" stroke="#6fe7f7" stroke-width="4" fill="none" stroke-linecap="round" />
+      <path d="M424 84v24H260" stroke="#ff8aa5" stroke-width="4" fill="none" stroke-linecap="round" />
+      <path d="M260 166v12" stroke="#9ea8ff" stroke-width="4" fill="none" stroke-linecap="round" />
+      <path d="M260 178H168" stroke="#ffcd73" stroke-width="4" fill="none" stroke-linecap="round" />
+      <path d="M260 178H352" stroke="#ffcd73" stroke-width="4" fill="none" stroke-linecap="round" />
+      <text x="96" y="52" text-anchor="middle">Spawn Loop</text>
+      <text x="96" y="71" text-anchor="middle">Flight Loop</text>
+      <text x="260" y="61" text-anchor="middle">Clock Sync</text>
+      <text x="424" y="61" text-anchor="middle">Runtime Effects</text>
+      <text x="260" y="134" text-anchor="middle">Command Builders</text>
+      <text x="96" y="191" text-anchor="middle">Unity</text>
+      <text x="424" y="191" text-anchor="middle">Dashboard Web</text>
+    </svg>
+  </article>
+</section>
+
+<style>
+  .transport-visuals {
+    display: grid;
+    gap: 1rem;
+    margin: 1.2rem 0 2rem;
+  }
+
+  .transport-visual-card {
+    display: grid;
+    grid-template-columns: minmax(16rem, 20rem) minmax(0, 1fr);
+    gap: 1rem;
+    align-items: center;
+    padding: 1rem 1.05rem;
+    border: 1px solid rgba(111, 231, 247, 0.16);
+    border-radius: 1.1rem;
+    background:
+      radial-gradient(circle at top right, rgba(111, 231, 247, 0.08), transparent 28%),
+      linear-gradient(180deg, rgba(255,255,255,0.035), rgba(255,255,255,0.015));
+    box-shadow: 0 18px 42px rgba(0, 0, 0, 0.22);
+  }
+
+  .transport-visual-copy h3 {
+    margin: 0 0 0.45rem;
+    color: var(--docs-heading);
+    font-size: 1rem;
+  }
+
+  .transport-visual-copy p {
+    margin: 0;
+    color: var(--docs-text-soft);
+    font-size: 0.95rem;
+    line-height: 1.7;
+  }
+
+  .transport-visual-card svg {
+    width: 100%;
+    height: auto;
+  }
+
+  .transport-visual-card text {
+    fill: #f7fbff;
+    font-size: 14px;
+    font-weight: 700;
+    font-family: "Satoshi", system-ui, sans-serif;
+  }
+
+  .transport-visual-card text.muted {
+    fill: #b5bbc7;
+    font-size: 12px;
+    font-weight: 600;
+  }
+
+  @media (max-width: 860px) {
+    .transport-visual-card {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>
