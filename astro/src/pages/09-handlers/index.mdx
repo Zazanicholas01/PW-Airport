@@ -7,6 +7,8 @@ description: Setup and runtime handler responsibilities for Unity payload buffer
 import DocsIntroHero from '../../components/DocsIntroHero.astro';
 import DocsTopicGrid from '../../components/DocsTopicGrid.astro';
 import DocsSteps from '../../components/DocsSteps.astro';
+import ZoomableImage from '../../components/ZoomableImage.astro';
+import dispatchDiagramImage from '../../images/Dispatch.png';
 
 export const roles = [
   {
@@ -189,6 +191,13 @@ export const nextReads = [
 <DocsTopicGrid items={roles} variant="featured" />
 
 ### Setup Lifecycle
+
+<ZoomableImage
+  src={dispatchDiagramImage.src}
+  alt="Incoming dispatch split diagram showing the Unity client sending inbound payloads into transport dispatch, which routes them to clock control, setup handling, or runtime handling."
+  title="Incoming Dispatch Split"
+  caption="Handlers depend on transport’s dispatch split: before setup completes, payloads go to setup handling; after that, runtime events are forwarded to the runtime handler."
+/>
 
 <DocsSteps items={setupFlow} variant="timeline" />
 

@@ -6,8 +6,13 @@ description: Visual connection, dispatch, and outbound-flow diagrams for the Web
 
 import DocsIntroHero from '../../components/DocsIntroHero.astro';
 import DocsTopicGrid from '../../components/DocsTopicGrid.astro';
-import TransportWorkflowVisuals from '../../components/TransportWorkflowVisuals.astro';
-import WorkflowDiagram from '../../components/WorkflowDiagram.astro';
+import ZoomableImage from '../../components/ZoomableImage.astro';
+import transportDiagramImage from '../../images/Transport.png';
+import dispatchDiagramImage from '../../images/Dispatch.png';
+import clockDiagramImage from '../../images/Clock.png';
+import connectionLifecycleDiagramImage from '../../images/Connection_Lifecycle.png';
+import outboundDiagramImage from '../../images/Outbound.png';
+import disconnectionDiagramImage from '../../images/Disconnection.png';
 
 export const diagramNotes = [
   {
@@ -85,99 +90,138 @@ export const nextReads = [
 
 ## Diagram Index
 
-<DocsTopicGrid items={diagramNotes} compact />
+<div className="diagram-index-table" role="table" aria-label="Transport diagram index">
+  <div className="diagram-index-row diagram-index-head" role="row">
+    <div className="diagram-index-cell" role="columnheader">Diagram</div>
+    <div className="diagram-index-cell" role="columnheader">Purpose</div>
+  </div>
+  {diagramNotes.map((item) => (
+    <div className="diagram-index-row" role="row">
+      <div className="diagram-index-cell" role="cell">
+        <strong>{item.title}</strong>
+        <div className="diagram-index-meta">{item.meta}</div>
+      </div>
+      <div className="diagram-index-cell" role="cell">{item.summary}</div>
+    </div>
+  ))}
+</div>
 
-## Transport Visuals
-
-<TransportWorkflowVisuals />
-
-<WorkflowDiagram
+<ZoomableImage
+  src={transportDiagramImage.src}
+  alt="Transport in context diagram showing the Unity client, transport websocket service, setup and runtime handlers, simulation clock, scheduler loops, PostgreSQL, event log, and dashboard web with labeled arrows between them."
   title="Transport In Context"
-  primary={[
-    { title: 'Unity', note: 'WebSocket client', tone: 'cyan' },
-    { title: 'Transport', note: 'realtime boundary', tone: 'violet' },
-    { title: 'Backend Runtime', note: 'handlers and schedulers', tone: 'amber' },
-  ]}
-  branchLabel="Delegates To"
-  branches={[
-    { title: 'Setup / Runtime Handlers', note: 'inbound ownership', tone: 'emerald' },
-    { title: 'Clock / Scheduling Loops', note: 'ongoing orchestration', tone: 'sky' },
-  ]}
-  footer={[
-    { title: 'Unity Commands', note: 'outbound payloads', tone: 'cyan' },
-    { title: 'Dashboard Events', note: 'operator visibility', tone: 'rose' },
-  ]}
+  caption="Transport is the realtime boundary between Unity and the backend runtime, forwarding messages inward and commands or events outward."
 />
 
-<WorkflowDiagram
+<ZoomableImage
+  src={connectionLifecycleDiagramImage.src}
+  alt="Connection lifecycle diagram showing Unity connecting to transport, the websocket message bus starting, session context assembly, active bus attachment, and dispatch startup against the long-lived runtime."
   title="Connection Lifecycle"
-  primary={[
-    { title: 'Server Ready', note: 'listener active', tone: 'sky' },
-    { title: 'Unity Connects', note: 'new socket accepted', tone: 'cyan' },
-    { title: 'WsMessageBus Starts', note: 'recv/send loops', tone: 'violet' },
-    { title: 'Session Context Built', note: 'shared runtime deps', tone: 'amber' },
-    { title: 'Dispatch Attached', note: 'incoming loop starts', tone: 'emerald' },
-  ]}
+  caption="A Unity connection creates the message-bus boundary, attaches to the active runtime, and starts transport-side dispatch."
 />
 
-<WorkflowDiagram
+<ZoomableImage
+  src={dispatchDiagramImage.src}
+  alt="Incoming dispatch split diagram showing the Unity client sending inbound payloads into transport dispatch, which routes them to clock control, setup handling, or runtime handling."
   title="Incoming Dispatch Split"
-  primary={[
-    { title: 'WebSocket Payload', note: 'decoded inbound message', tone: 'cyan' },
-    { title: 'Incoming Queue', note: 'buffered by bus', tone: 'sky' },
-    { title: 'Dispatcher', note: 'transport routing decision', tone: 'amber' },
-  ]}
-  branchLabel="Routes To"
-  branches={[
-    { title: 'Clock Control', note: 'transport-owned time commands', tone: 'cyan' },
-    { title: 'Setup Handler', note: 'setup phase payloads', tone: 'emerald' },
-    { title: 'Runtime Handler', note: 'runtime events', tone: 'rose' },
-  ]}
+  caption="Each inbound payload is routed by transport into clock control, setup handling, or runtime handling depending on message type and phase."
 />
 
-<WorkflowDiagram
+<ZoomableImage
+  src={clockDiagramImage.src}
+  alt="Clock control and sync diagram showing Unity sending clock commands into the clock control service, which updates the simulation clock, publishes clock sync, wakes scheduler loops, and emits clock events."
   title="Clock Control And Sync"
-  primary={[
-    { title: 'Clock Command In', note: 'set_time_scale or set_sim_time', tone: 'cyan' },
-    { title: 'Clock Updated', note: 'authoritative state changes', tone: 'amber' },
-    { title: 'clock_changed Set', note: 'wake dependent loops', tone: 'emerald' },
-    { title: 'clock_sync Out', note: 'publish latest snapshot', tone: 'sky' },
-  ]}
-  branchLabel="Visible To"
-  branches={[
-    { title: 'Unity Client', note: 'receives sync payload', tone: 'cyan' },
-    { title: 'Scheduler Loops', note: 'react to time changes', tone: 'violet' },
-  ]}
-  footer={[
-    { title: 'events.jsonl', note: 'dashboard event stream', tone: 'amber' },
-  ]}
+  caption="Transport applies authoritative time changes locally, wakes dependent loops, and publishes clock_sync back to connected clients."
 />
 
-<WorkflowDiagram
+<ZoomableImage
+  src={outboundDiagramImage.src}
+  alt="Outbound command path diagram showing spawn and flight logic emitting commands into the outbound transport path, which serializes commands to Unity and applies side effects to database and world state."
   title="Outbound Command Path"
-  primary={[
-    { title: 'Spawn / Flight Logic', note: 'transport-driven producers', tone: 'emerald' },
-    { title: 'Command Builders', note: 'stable payload shapes', tone: 'violet' },
-    { title: 'Outgoing Hook', note: 'spawn side effects if needed', tone: 'rose' },
-    { title: 'Outgoing Queue', note: 'send buffer', tone: 'sky' },
-    { title: 'Unity', note: 'command delivered', tone: 'cyan' },
-  ]}
-  footer={[
-    { title: 'DB / World State', note: 'updated by hooks', tone: 'amber' },
-  ]}
+  caption="Spawn and scheduling logic emit commands that pass through builders, hooks, and the outgoing queue before reaching Unity."
 />
 
-<WorkflowDiagram
+<ZoomableImage
+  src={disconnectionDiagramImage.src}
+  alt="Disconnect and reconnect diagram showing Unity disconnecting from the active bus, simulation pause behavior, and a later reconnect attaching a new client to the same long-lived runtime."
   title="Disconnect And Reconnect"
-  primary={[
-    { title: 'Disconnect', note: 'active client drops', tone: 'rose' },
-    { title: 'Bus Cleared', note: 'runtime detaches Unity bus', tone: 'violet' },
-    { title: 'Simulation Paused', note: 'time_scale forced to 0', tone: 'amber' },
-    { title: 'Reconnect', note: 'new client attaches', tone: 'cyan' },
-    { title: 'Simulation Resumed', note: 'same runtime continues', tone: 'emerald' },
-  ]}
+  caption="Transport detaches the active Unity bus on disconnect, pauses simulation, and resumes the same runtime when a new client reconnects."
 />
 
 ## Where To Dive Deeper
 
 <DocsTopicGrid items={nextReads} compact />
+
+<style is:global>{`
+  .diagram-index-table {
+    width: 100%;
+    margin: 1rem 0 2rem;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 1rem;
+    overflow: hidden;
+    background: linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0.015));
+  }
+
+  .diagram-index-head {
+    background: rgba(111, 231, 247, 0.08);
+  }
+
+  .diagram-index-row {
+    display: grid;
+    grid-template-columns: minmax(16rem, 22rem) minmax(0, 1fr);
+  }
+
+  .diagram-index-cell {
+    padding: 0.9rem 1rem;
+    text-align: left;
+    vertical-align: top;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  }
+
+  .diagram-index-head .diagram-index-cell {
+    color: var(--docs-heading);
+    font-size: 0.86rem;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+
+  .diagram-index-row .diagram-index-cell {
+    color: var(--docs-text);
+    line-height: 1.65;
+  }
+
+  .diagram-index-row:last-child .diagram-index-cell {
+    border-bottom: 0;
+  }
+
+  .diagram-index-meta {
+    margin-top: 0.22rem;
+    color: var(--docs-text-soft);
+    font-size: 0.82rem;
+  }
+
+  @media (max-width: 720px) {
+    .diagram-index-head {
+      display: none;
+    }
+
+    .diagram-index-row {
+      display: block;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    }
+
+    .diagram-index-row:last-child {
+      border-bottom: 0;
+    }
+
+    .diagram-index-cell {
+      border-bottom: 0;
+      padding-bottom: 0.55rem;
+    }
+
+    .diagram-index-cell:last-child {
+      padding-top: 0;
+      padding-bottom: 1rem;
+    }
+  }
+`}</style>

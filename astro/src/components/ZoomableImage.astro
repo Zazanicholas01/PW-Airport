@@ -1,0 +1,183 @@
+---
+const {
+  src,
+  alt,
+  title,
+  caption,
+} = Astro.props as {
+  src: string;
+  alt: string;
+  title?: string;
+  caption?: string;
+};
+
+const zoomId = `zoomable-image-${Math.random().toString(36).slice(2, 10)}`;
+---
+
+<figure class="zoomable-image-card" data-zoomable-image>
+  {(title || caption) && (
+    <figcaption>
+      {title && <strong>{title}</strong>}
+      {caption && <p>{caption}</p>}
+    </figcaption>
+  )}
+
+  <button
+    type="button"
+    class="zoomable-image-trigger"
+    data-zoom-trigger={zoomId}
+    aria-label={`Open enlarged image${title ? `: ${title}` : ''}`}
+  >
+    <img src={src} alt={alt} />
+    <span class="zoomable-image-hint">Click to zoom</span>
+  </button>
+
+  <dialog class="zoomable-image-dialog" data-zoom-dialog={zoomId} aria-label={title ?? 'Zoomed image'}>
+    <button
+      type="button"
+      class="zoomable-image-close"
+      data-zoom-close={zoomId}
+      aria-label="Close enlarged image"
+    >
+      Close
+    </button>
+    <img src={src} alt={alt} />
+  </dialog>
+</figure>
+
+<script is:inline>
+  (() => {
+    function initZoomableImage(root) {
+      if (!root || root.dataset.zoomInitialized === 'true') return;
+      root.dataset.zoomInitialized = 'true';
+
+      const trigger = root.querySelector('[data-zoom-trigger]');
+      const dialog = root.querySelector('[data-zoom-dialog]');
+      const close = root.querySelector('[data-zoom-close]');
+      if (!trigger || !dialog || typeof dialog.showModal !== 'function') return;
+
+      trigger.addEventListener('click', () => {
+        dialog.showModal();
+        document.body.style.overflow = 'hidden';
+      });
+
+      close?.addEventListener('click', () => {
+        dialog.close();
+      });
+
+      dialog.addEventListener('click', (event) => {
+        const rect = dialog.getBoundingClientRect();
+        const inside =
+          rect.top <= event.clientY &&
+          event.clientY <= rect.top + rect.height &&
+          rect.left <= event.clientX &&
+          event.clientX <= rect.left + rect.width;
+
+        if (!inside) dialog.close();
+      });
+
+      dialog.addEventListener('close', () => {
+        document.body.style.overflow = '';
+      });
+    }
+
+    function boot() {
+      document.querySelectorAll('[data-zoomable-image]').forEach((root) => initZoomableImage(root));
+    }
+
+    boot();
+    document.addEventListener('astro:page-load', boot);
+  })();
+</script>
+
+<style>
+  .zoomable-image-card {
+    margin: 1.2rem 0 2.2rem;
+    padding: 1rem;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 1rem;
+    background: linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0.015));
+  }
+
+  .zoomable-image-card figcaption {
+    margin-bottom: 0.9rem;
+  }
+
+  .zoomable-image-card figcaption strong {
+    display: block;
+    color: var(--docs-heading);
+    font-size: 1rem;
+  }
+
+  .zoomable-image-card figcaption p {
+    margin: 0.35rem 0 0;
+    color: var(--docs-text-soft);
+    line-height: 1.65;
+  }
+
+  .zoomable-image-trigger {
+    display: block;
+    width: 100%;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    cursor: zoom-in;
+    text-align: left;
+  }
+
+  .zoomable-image-trigger img {
+    display: block;
+    width: 100%;
+    height: auto;
+    border-radius: 0.8rem;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+  }
+
+  .zoomable-image-hint {
+    display: inline-block;
+    margin-top: 0.55rem;
+    color: var(--docs-text-soft);
+    font-size: 0.82rem;
+  }
+
+  .zoomable-image-dialog {
+    width: 98vw;
+    height: 96vh;
+    max-width: none;
+    margin: auto;
+    padding: 0.6rem;
+    border: 1px solid rgba(255,255,255,0.14);
+    border-radius: 0.85rem;
+    background: rgba(11, 13, 18, 0.96);
+    box-shadow: 0 24px 60px rgba(0, 0, 0, 0.42);
+  }
+
+  .zoomable-image-dialog::backdrop {
+    background: rgba(0, 0, 0, 0.7);
+    backdrop-filter: blur(2px);
+  }
+
+  .zoomable-image-dialog img {
+    display: block;
+    max-width: 100%;
+    max-height: calc(96vh - 3.25rem);
+    width: auto;
+    height: auto;
+    margin: 0 auto;
+    border-radius: 0.75rem;
+  }
+
+  .zoomable-image-close {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0 0 0.45rem auto;
+    padding: 0.42rem 0.72rem;
+    border: 1px solid rgba(255,255,255,0.14);
+    border-radius: 999px;
+    background: rgba(255,255,255,0.04);
+    color: var(--docs-heading);
+    font: inherit;
+    cursor: pointer;
+  }
+</style>

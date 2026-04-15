@@ -7,6 +7,8 @@ description: Bootstrap spawn planning and sliding-window flight eligibility logi
 import DocsIntroHero from '../../components/DocsIntroHero.astro';
 import DocsTopicGrid from '../../components/DocsTopicGrid.astro';
 import DocsSteps from '../../components/DocsSteps.astro';
+import ZoomableImage from '../../components/ZoomableImage.astro';
+import outboundDiagramImage from '../../images/Outbound.png';
 
 export const roles = [
   {
@@ -207,6 +209,13 @@ export const nextReads = [
 <DocsSteps items={bootstrapFlow} variant="timeline" />
 
 ### Flight Scheduling Lifecycle
+
+<ZoomableImage
+  src={outboundDiagramImage.src}
+  alt="Outbound command path diagram showing spawn and flight logic emitting commands into the outbound transport path, which serializes commands to Unity and applies side effects to database and world state."
+  title="Outbound Command Path"
+  caption="Schedulers do not send raw websocket payloads themselves. Their decisions become outbound commands that pass through transport shaping, hooks, and send buffering before reaching Unity."
+/>
 
 <DocsSteps items={flightFlow} variant="timeline" />
 

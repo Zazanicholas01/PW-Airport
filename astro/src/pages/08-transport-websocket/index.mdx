@@ -7,6 +7,11 @@ description: WebSocket transport responsibilities, message routing, clock sync, 
 import DocsIntroHero from '../../components/DocsIntroHero.astro';
 import DocsTopicGrid from '../../components/DocsTopicGrid.astro';
 import DocsSteps from '../../components/DocsSteps.astro';
+import ZoomableImage from '../../components/ZoomableImage.astro';
+import transportDiagramImage from '../../images/Transport.png';
+import connectionLifecycleDiagramImage from '../../images/Connection_Lifecycle.png';
+import clockDiagramImage from '../../images/Clock.png';
+import disconnectionDiagramImage from '../../images/Disconnection.png';
 
 export const roles = [
   {
@@ -198,11 +203,25 @@ export const nextReads = [
 
 ## Theory Overview
 
+<ZoomableImage
+  src={transportDiagramImage.src}
+  alt="Transport in context diagram showing the Unity client, transport websocket service, setup and runtime handlers, simulation clock, scheduler loops, PostgreSQL, event log, and dashboard web with labeled arrows between them."
+  title="Transport In Context"
+  caption="Use this view first: transport sits between Unity and the rest of the backend runtime, routing messages inward and commands or events outward."
+/>
+
 ### Transport Runtime Roles
 
 <DocsTopicGrid items={roles} variant="featured" />
 
 ### Connection Lifecycle
+
+<ZoomableImage
+  src={connectionLifecycleDiagramImage.src}
+  alt="Connection lifecycle diagram showing Unity connecting to transport, the websocket message bus starting, session context assembly, active bus attachment, and dispatch startup against the long-lived runtime."
+  title="Connection Lifecycle"
+  caption="This diagram focuses on what is created per connection and how the live client attaches to the already-running backend runtime."
+/>
 
 <DocsSteps items={connectionFlow} variant="timeline" />
 
@@ -212,7 +231,21 @@ export const nextReads = [
 
 ### Background Loops
 
+<ZoomableImage
+  src={clockDiagramImage.src}
+  alt="Clock control and sync diagram showing Unity sending clock commands into the clock control service, which updates the simulation clock, publishes clock sync, wakes scheduler loops, and emits clock events."
+  title="Clock Control And Sync"
+  caption="Clock handling is transport-owned: time commands are applied locally, scheduler loops are woken up, and fresh clock snapshots are published back to Unity."
+/>
+
 <DocsSteps items={loopFlow} variant="timeline" />
+
+<ZoomableImage
+  src={disconnectionDiagramImage.src}
+  alt="Disconnect and reconnect diagram showing Unity disconnecting from the active bus, simulation pause behavior, and a later reconnect attaching a new client to the same long-lived runtime."
+  title="Disconnect And Reconnect"
+  caption="Transport does not destroy the runtime on disconnect. It detaches the active bus, pauses simulation, and later resumes the same runtime when a new client reconnects."
+/>
 
 ## Implementation Guide
 
