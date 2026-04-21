@@ -202,6 +202,39 @@ def _parse_log_event(line: str) -> dict[str, str] | None:
     }
 
 
+def _parse_scheduler_window_event(line: str) -> dict[str, object] | None:
+    try:
+        event = json.loads(line)
+    except json.JSONDecodeError:
+        return None
+
+    if event.get("type") != "scheduler_window":
+        return None
+
+    return {
+        "airport_icao": str(event.get("airport_icao") or WINDOW_AIRPORT_ICAO),
+        "window_minutes": int(event.get("window_minutes") or WINDOW_DURATION.total_seconds() // 60),
+        "generated_at": str(event.get("generated_at") or event.get("ts") or ""),
+        "rows": list(event.get("rows") or []),
+    }
+
+
+def read_latest_scheduler_window() -> dict[str, object] | None:
+    if not EVENTS_LOG_FILE.exists():
+        return None
+
+    latest = None
+
+    with EVENTS_LOG_FILE.open("r", encoding="utf-8") as handle:
+        for line in handle:
+            parsed = _parse_scheduler_window_event(line)
+            if parsed is not None:
+                latest = parsed
+
+    return latest
+
+
+
 def _parse_clock_event(line: str) -> dict[str, float | int | str] | None:
     try:
         event = json.loads(line)
@@ -368,32 +401,15 @@ def _serialize_window_flight(*, flight, airport_icao: str, now_utc: datetime) ->
 
 
 def read_window_flights_snapshot() -> dict[str, object]:
-    now_utc = _current_sim_now_utc()
-    try:
-        flights = list_flights_in_sliding_window(
-            airport_icao=WINDOW_AIRPORT_ICAO,
-            now_utc=now_utc,
-            window=WINDOW_DURATION,
-        )
-        rows = [
-            _serialize_window_flight(flight=flight, airport_icao=WINDOW_AIRPORT_ICAO, now_utc=now_utc)
-            for flight in flights
-        ]
-        rows.sort(
-            key=lambda row: (
-                999999999999 if row["reference_unix_ms"] is None else abs(int(row["reference_unix_ms"]) - int(now_utc.timestamp() * 1000)),
-                str(row["flight"]),
-            )
-        )
-    except Exception:
-        logging.exception("[dashboard] failed to read window flights snapshot")
-        rows = []
+    latest = read_latest_scheduler_window()
+    if latest is not None:
+        return latest
 
     return {
         "airport_icao": WINDOW_AIRPORT_ICAO,
         "window_minutes": int(WINDOW_DURATION.total_seconds() // 60),
-        "generated_at": now_utc.isoformat(),
-        "rows": rows,
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "rows": [],
     }
 
 

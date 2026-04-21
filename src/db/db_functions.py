@@ -86,71 +86,48 @@ def list_flights_in_sliding_window(*, airport_icao: str, now_utc: datetime, wind
     upper = now_db + window
 
     with _get_session_factory()() as session:
-
-        # Base Query to retrieve only Unscheduled flights with no airplane assigned yet
         q = (
             select(models.Flight)
-            .where(models.Flight.airplane_id.is_(None))
-            .where(models.Flight.status == FLIGHT_STATUS.UNSCHEDULED)
             .where(
+                # Every flight that includes the personal airport, both departures and landings
                 or_(
-                    # DEPARTURE on departure_time
-                    and_(
-                        models.Flight.origin == airport_icao,
-                        models.Flight.departure_time.is_not(None),
-                        models.Flight.departure_time <= upper,
-                    ),
-                    # ARRIVAL on arrival_time
-                    and_(
-                        models.Flight.destination == airport_icao,
-                        models.Flight.arrival_time.is_not(None),
-                        models.Flight.arrival_time <= upper,
-                    ),
-                    # DEPARTURE FROM REMOTE AIRPORT on departure_time
-                    and_(
-                        models.Flight.destination == airport_icao,
-                        models.Flight.departure_time.is_not(None),
-                        models.Flight.departure_time <= upper,
-                    )
+                    models.Flight.origin == airport_icao,
+                    models.Flight.destination == airport_icao,
                 )
             )
-        )
-        base = list(session.scalars(q))
+            .where(models.Flight.status != FLIGHT_STATUS.COMPLETED) # Excluded Completed Flights
+            .where(
+                or_(
+                    # Unscheduled flights inside sliding window
+                    and_(
+                        models.Flight.status == FLIGHT_STATUS.UNSCHEDULED,
+                        models.Flight.origin == airport_icao,
+                        models.Flight.departure_time.is_not(None),
+                        models.Flight.departure_time >= now_db,
+                        models.Flight.departure_time <= upper,
+                    ),
 
-        # Second query for Scheduled departures with assigned airplane
-        q_dep_sched = (
-            select(models.Flight)
-            .where(models.Flight.origin == airport_icao)
-            .where(models.Flight.status.in_(FLIGHT_STATUS.DEPARTING_OUTBOUND))
-            .where(models.Flight.airplane_id.is_not(None))
-            .where(models.Flight.departure_time.is_not(None))
-            .where(models.Flight.departure_time <= upper)
-        )
-        base.extend(list(session.scalars(q_dep_sched)))
+                    # Unscheduled flights on remote airports inside sliding window
+                    and_(
+                        models.Flight.status == FLIGHT_STATUS.UNSCHEDULED,
+                        models.Flight.destination == airport_icao,
+                        models.Flight.departure_time.is_not(None),
+                        models.Flight.departure_time >= now_db,
+                        models.Flight.departure_time <= upper,
+                    ),
 
-        # Third query for landing flights that still have to depart from the remote airport
-        q_arrival_scheduled = (
-            select(models.Flight)
-            .where(models.Flight.destination == airport_icao)
-            .where(models.Flight.status == FLIGHT_STATUS.SCHEDULED)
-            .where(models.Flight.airplane_id.is_not(None))
-            .where(models.Flight.departure_time.is_not(None))
-            .where(models.Flight.departure_time <= upper)
+                    # Any active lifecycle flight stays visible regardless of time.
+                    models.Flight.status.in_(LIFECYCLE_STATUSES),
+                )
+            )
+            .order_by(
+                models.Flight.departure_time.asc().nulls_last(),
+                models.Flight.arrival_time.asc().nulls_last(),
+                models.Flight.id.asc(),
+            )
         )
-        base.extend(list(session.scalars(q_arrival_scheduled)))
 
-        # Fourth query for landing flights that are approaching the personal airport
-        q_arrival = (
-            select(models.Flight)
-            .where(models.Flight.destination == airport_icao)
-            .where(models.Flight.status.in_(FLIGHT_STATUS.LANDING_INBOUND))
-            .where(models.Flight.airplane_id.is_not(None))
-            .where(models.Flight.arrival_time.is_not(None))
-            .where(models.Flight.arrival_time <= upper)
-        )
-        base.extend(list(session.scalars(q_arrival)))
-
-        return base
+        return list(session.scalars(q))
 
 
 def reserve_stand_for_arrival_flight(*, flight_id: str, flight_type: str | None) -> str | None:

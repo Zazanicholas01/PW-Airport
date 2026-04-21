@@ -73,28 +73,28 @@ def speed_profile_for_segment(*, route_kind: str, segment: dict, index: int, tot
         if "Landing" in name:
             return {
                 "purpose": "landing_decel",
-                "initial_speed_kmh": 7.0,
-                "target_speed_kmh": 4.0,
+                "initial_speed_kmh": 4.5,
+                "target_speed_kmh": 0.5,
                 "acceleration_mps2": 0.10,
-                "deceleration_mps2": 0.30,
+                "deceleration_mps2": 0.55,
             }
 
         if name == "MasterSpline":
             return {
                 "purpose": "taxi_after_landing",
-                "initial_speed_kmh": 4.0,
-                "target_speed_kmh": 3.0,
-                "acceleration_mps2": 0.08,
-                "deceleration_mps2": 0.18,
+                "initial_speed_kmh": 0.5,
+                "target_speed_kmh": 0.25,
+                "acceleration_mps2": 0.04,
+                "deceleration_mps2": 0.5,
             }
 
         if index == total - 1:
             return {
                 "purpose": "stand_approach",
-                "initial_speed_kmh": 3.0,
-                "target_speed_kmh": 0.8,
-                "acceleration_mps2": 0.05,
-                "deceleration_mps2": 0.12,
+                "initial_speed_kmh": 0.25,
+                "target_speed_kmh": 0.25,
+                "acceleration_mps2": 0.03,
+                "deceleration_mps2": 0.08,
             }
 
     return {

@@ -19,6 +19,66 @@ from src.path_commands import make_start_path_command
 
 from src.transport.session import SessionContext
 
+
+def _status_pill_class(status: str | None) -> str:
+    normalized = str(status or "").lower()
+
+    if normalized in {"parked"}:
+        return "status-parked"
+    if normalized in {"scheduled", "standreserved"}:
+        return "status-scheduled"
+    if normalized in {"reserved"}:
+        return "status-default"
+    if normalized in {"departing", "dep_ongoing", "landing", "lan_ongoing", "disembarking"}:
+        return "status-landing"
+    if normalized in {"completed"}:
+        return "status-completed"
+
+    return "status-default"
+
+
+def _flight_reference_time(flight, airport_icao: str):
+    origin = getattr(flight, "origin", None)
+    destination = getattr(flight, "destination", None)
+
+    if destination == airport_icao and getattr(flight, "arrival_time", None) is not None:
+        return getattr(flight, "arrival_time", None)
+    if origin == airport_icao and getattr(flight, "departure_time", None) is not None:
+        return getattr(flight, "departure_time", None)
+    if getattr(flight, "arrival_time", None) is not None:
+        return getattr(flight, "arrival_time", None)
+    return getattr(flight, "departure_time", None)
+
+
+def _scheduler_window_row(flight, *, airport_icao: str) -> dict:
+    reference_time = _flight_reference_time(flight, airport_icao)
+
+    departure_time = getattr(flight, "departure_time", None)
+    arrival_time = getattr(flight, "arrival_time", None)
+
+    origin = str(getattr(flight, "origin", "") or "")
+    destination = str(getattr(flight, "destination", "") or "")
+    status = str(getattr(flight, "status", "") or "")
+    flight_code = str(getattr(flight, "icao", None) or getattr(flight, "id", "") or "")
+
+    direction = "arrival" if destination == airport_icao else "departure"
+
+    return {
+        "id": str(getattr(flight, "id", "") or ""),
+        "direction": direction,
+        "dep_time": departure_time.astimezone().strftime("%H:%M") if departure_time else "--:--",
+        "arr_time": arrival_time.astimezone().strftime("%H:%M") if arrival_time else "--:--",
+        "reference_unix_ms": int(reference_time.timestamp() * 1000) if reference_time else None,
+        "flight": flight_code,
+        "route": f"{origin} -> {destination}",
+        "type": str(getattr(flight, "tipo", "") or ""),
+        "status": status,
+        "status_class": _status_pill_class(status),
+        "airplane": str(getattr(flight, "airplane_id", None) or "--"),
+    }
+
+
+
 async def flight_scheduler_loop(
     ctx: SessionContext,
     *,
@@ -80,6 +140,28 @@ async def flight_scheduler_loop(
             now_utc=now,
             window=scheduler.window,
         )
+
+        # Generate cached window rows
+        window_rows = [
+            _scheduler_window_row(flight, airport_icao=ctx.airport_icao)
+            for flight in flights
+        ]
+
+        window_rows.sort(
+            key=lambda row: (
+                999999999999 if row["reference_unix_ms"] is None else abs(int(row["reference_unix_ms"]) - int(now.timestamp() * 1000)),
+                str(row["flight"]),
+            )
+        )
+
+        # Stream event to JSON event log file
+        append_event({
+            "type": "scheduler_window",
+            "airport_icao": ctx.airport_icao,
+            "window_minutes": int(scheduler.window.total_seconds() // 60),
+            "generated_at": now.isoformat(),
+            "rows": window_rows,
+        })
 
         # Query flights currently inside the window
         t = time.monotonic()
