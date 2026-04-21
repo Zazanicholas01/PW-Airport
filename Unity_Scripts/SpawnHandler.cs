@@ -67,15 +67,37 @@ public class SpawnHandler : MonoBehaviour
             position = new Vector3(command.position.x, command.position.y, command.position.z);
         }
 
-        var instance = Instantiate(prefab, position, Quaternion.identity, spawnParent);
+        Quaternion rotation = RotationForStand(command.stand_id);
+        var instance = Instantiate(prefab, position, rotation, spawnParent);
 
         if (registry != null && !string.IsNullOrWhiteSpace(command.airplane_id))
             registry.Register(command.airplane_id, instance);
             
-        Debug.Log($"[SpawnHandler] Spawned '{command.prefab}' at {position} (stand {command.stand_id}).");
+        Debug.Log($"[SpawnHandler] Spawned '{command.prefab}' at {position} rotY={rotation.eulerAngles.y:0.##} (stand {command.stand_id}).");
         Debug.Log($"[SpawnHandler] spawn '{command.prefab}' airplane_id={command.airplane_id} " +
           $"pos={(command.position == null ? "NULL" : $"{command.position.x},{command.position.y},{command.position.z}")} " +
           $"spawnParent={(spawnParent == null ? "null" : spawnParent.position.ToString())}");
 
+    }
+
+    private static Quaternion RotationForStand(string standId)
+    {
+        switch (standId)
+        {
+            case "C2":
+            case "P2":
+                return Quaternion.Euler(0f, 180f, 0f);
+
+            case "C3":
+            case "P3":
+                return Quaternion.Euler(0f, 90f, 0f);
+
+            case "C1":
+            case "P1":
+                return Quaternion.Euler(0f, -90f, 0f);
+
+            default:
+                return Quaternion.identity;
+        }
     }
 }

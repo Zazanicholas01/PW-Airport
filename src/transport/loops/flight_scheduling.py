@@ -291,6 +291,32 @@ async def flight_scheduler_loop(
                 })
                 continue
 
+
+            # START DEPARTURE EMBARKING - 5 minutes before departure time
+            if scheduler.should_start_departure_embarking(flight=flight, now_utc=now):
+
+                # Retrieve airplane ID from the flight
+                airplane_id = getattr(flight, "airplane_id", None)
+
+                # Execute flight action
+                ctx.flight_actions.mark_departure_embarking(flight_id=flight_id)
+
+                logging.info(
+                    "[flight_scheduler] departure embarking flight_id=%s airplane_id=%s",
+                    flight_id,
+                    airplane_id,
+                )
+
+                # Stream event to dashboard
+                append_event({
+                    "type": "backend_event",
+                    "event": "departure_embarking_started",
+                    "flight_id": flight_id,
+                    "airplane_id": airplane_id,
+                })
+                continue
+
+
             # START DEPARTURE MOVEMENT - Departure Time > Now
             if scheduler.should_start_departure_movement(flight=flight, now_utc=now):
 

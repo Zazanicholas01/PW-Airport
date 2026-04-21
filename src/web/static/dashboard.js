@@ -12,6 +12,10 @@
 
   let clockAnchor = null;
   let latestFlightRows = [];
+  let lastFlightsSig = "";
+  let lastPlanesSig = "";
+  let deltaCells = [];
+  let eventsReconnectTimer = null;
 
   weatherStatus.textContent = "Unavailable";
 
@@ -20,6 +24,21 @@
     node.className = className;
     node.textContent = value || "";
     return node;
+  }
+
+  const simTimeFormatter = new Intl.DateTimeFormat([], {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  });
+
+  function stableSig(value) {
+    return JSON.stringify(value);
+  }
+
+  function refreshDeltaCellCache() {
+    deltaCells = Array.from(document.querySelectorAll('[data-role="delta-min"]'));
   }
 
   function renderEvent(event) {
@@ -94,6 +113,7 @@
       const emptyRow = document.createElement("tr");
       emptyRow.innerHTML = `<td colspan="8" class="muted">${emptyMessage}</td>`;
       targetBody.appendChild(emptyRow);
+      refreshDeltaCellCache();
       return;
     }
 
@@ -102,9 +122,8 @@
     rows.forEach((row) => {
       const tr = document.createElement("tr");
       tr.className = "clickable-row";
-      tr.addEventListener("click", () => {
-        window.location.href = `/flight/${encodeURIComponent(row.id)}`;
-      });
+      tr.dataset.href = `/flight/${encodeURIComponent(row.id)}`;
+
       tr.innerHTML = `
         <td><span class="display-cell display-time">${row.dep_time || "--:--"}</span></td>
         <td><span class="display-cell display-time">${row.arr_time || "--:--"}</span></td>
@@ -119,14 +138,23 @@
         <td><span class="pill ${row.status_class || "status-default"}">${row.status || "--"}</span></td>
         <td class="muted">${row.airplane || "--"}</td>
       `;
+
       fragment.appendChild(tr);
     });
 
     targetBody.appendChild(fragment);
+    refreshDeltaCellCache();
   }
 
   function renderPlanesSnapshot(planesSnapshot) {
     const rows = (planesSnapshot && planesSnapshot.rows) || [];
+    const sig = stableSig(rows);
+
+    if (sig === lastPlanesSig) {
+      return;
+    }
+
+    lastPlanesSig = sig;
     planesRows.innerHTML = "";
 
     if (!rows.length) {
@@ -141,9 +169,8 @@
     rows.forEach((row) => {
       const tr = document.createElement("tr");
       tr.className = "clickable-row";
-      tr.addEventListener("click", () => {
-        window.location.href = `/plane/${encodeURIComponent(row.airplane)}`;
-      });
+      tr.dataset.href = `/plane/${encodeURIComponent(row.airplane)}`;
+
       tr.innerHTML = `
         <td>${row.airplane || "--"}</td>
         <td><span class="pill ${row.status_class || "status-default"}">${row.status || "--"}</span></td>
@@ -154,6 +181,7 @@
         <td class="muted">${row.stand || "--"}</td>
         <td class="muted">${row.route || "--"}</td>
       `;
+
       fragment.appendChild(tr);
     });
 
@@ -162,9 +190,17 @@
 
   function renderFlightsSnapshot(windowSnapshot) {
     const rows = (windowSnapshot && windowSnapshot.rows) || [];
-    latestFlightRows = rows;
+    const sig = stableSig(rows);
+
     airportStatus.textContent = windowSnapshot && windowSnapshot.airport_icao ? windowSnapshot.airport_icao : "LIAG";
     flightsCountStatus.textContent = String(rows.length);
+
+    if (sig === lastFlightsSig) {
+      return;
+    }
+
+    lastFlightsSig = sig;
+    latestFlightRows = rows;
 
     const departures = rows.filter((row) => row.direction === "departure");
     const arrivals = rows.filter((row) => row.direction === "arrival");
@@ -174,12 +210,7 @@
   }
 
   function formatSimTime(date) {
-    return new Intl.DateTimeFormat([], {
-      hour: "2-digit",
-      minute: "2-digit",
-      second: "2-digit",
-      hour12: false,
-    }).format(date);
+    return simTimeFormatter.format(date);
   }
 
   function renderClock() {
@@ -190,16 +221,19 @@
   }
 
   function refreshFlightDeltas() {
-    [departureRows, arrivalRows].forEach((body) => {
-      const deltaCells = body.querySelectorAll('[data-role="delta-min"]');
-      deltaCells.forEach((cell) => {
-        const referenceUnixMs = Number(cell.dataset.referenceUnixMs || "");
-        cell.textContent = Number.isFinite(referenceUnixMs)
-          ? formatDeltaMinutes(referenceUnixMs)
-          : "--";
-      });
+    deltaCells.forEach((cell) => {
+      const referenceUnixMs = Number(cell.dataset.referenceUnixMs || "");
+      cell.textContent = Number.isFinite(referenceUnixMs)
+        ? formatDeltaMinutes(referenceUnixMs)
+        : "--";
     });
   }
+
+  document.addEventListener("click", (event) => {
+    const row = event.target.closest(".clickable-row[data-href]");
+    if (!row) return;
+    window.location.href = row.dataset.href;
+  });
 
   function applyClockSync(clock) {
     clockAnchor = {
@@ -213,21 +247,43 @@
 
   const scheme = window.location.protocol === "https:" ? "wss" : "ws";
 
-  const eventsSocket = new WebSocket(`${scheme}://${window.location.host}/ws/events`);
-  eventsSocket.addEventListener("message", (messageEvent) => {
-    const payload = JSON.parse(messageEvent.data);
-    if (payload.kind === "snapshot") renderSnapshot(payload.events || []);
-    if (payload.kind === "append") appendEvents(payload.events || []);
-  });
-  eventsSocket.addEventListener("close", () => {
-    appendEvents([{
-      ts: "--:--:--",
-      level: "WARNING",
-      subsystem: "dashboard",
-      message: "Live event stream disconnected.",
-      fields: "",
-    }]);
-  });
+  function connectEventsSocket() {
+    const eventsSocket = new WebSocket(`${scheme}://${window.location.host}/ws/events`);
+
+    eventsSocket.addEventListener("open", () => {
+      if (eventsReconnectTimer !== null) {
+        window.clearTimeout(eventsReconnectTimer);
+        eventsReconnectTimer = null;
+      }
+    });
+
+    eventsSocket.addEventListener("message", (messageEvent) => {
+      const payload = JSON.parse(messageEvent.data);
+      if (payload.kind === "snapshot") renderSnapshot(payload.events || []);
+      if (payload.kind === "append") appendEvents(payload.events || []);
+    });
+
+    eventsSocket.addEventListener("close", () => {
+      if (eventsReconnectTimer !== null) {
+        return;
+      }
+
+      appendEvents([{
+        ts: "--:--:--",
+        level: "WARNING",
+        subsystem: "dashboard",
+        message: "Live event stream disconnected. Reconnecting...",
+        fields: "",
+      }]);
+
+      eventsReconnectTimer = window.setTimeout(() => {
+        eventsReconnectTimer = null;
+        connectEventsSocket();
+      }, 1500);
+    });
+  }
+
+  connectEventsSocket();
 
   const clockSocket = new WebSocket(`${scheme}://${window.location.host}/ws/clock`);
   clockSocket.addEventListener("message", (messageEvent) => {
@@ -263,6 +319,6 @@
   });
 
   renderClock();
-  window.setInterval(renderClock, 250);
-  window.setInterval(refreshFlightDeltas, 250);
+  window.setInterval(renderClock, 500);
+  window.setInterval(refreshFlightDeltas, 1000);
 })();

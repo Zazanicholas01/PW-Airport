@@ -389,6 +389,37 @@ def mark_landing_departed(*, flight_id: str) -> None:
         session.commit()
 
 
+def mark_departure_embarking(*, flight_id: str) -> None:
+    """Mark an outbound departure as embarking"""
+
+    with _get_session_factory()() as session:
+        
+        # Get flight from DB
+        flight = session.get(models.Flight, flight_id)
+        if flight is None:
+            return
+        
+        # Get airplane_id from the flight
+        airplane_id = getattr(flight, "airplane_id", None)
+
+        # Update Flight status to Embarking
+        session.execute(
+            update(models.Flight)
+            .where(models.Flight.id == flight_id)
+            .values(status=FLIGHT_STATUS.EMBARKING)
+        )
+
+        # Update airplane status to Embarking
+        if isinstance(airplane_id, str):
+            session.execute(
+                update(models.Airplane)
+                .where(models.Airplane.id == airplane_id)
+                .values(status=AIRPLANE_STATUS.EMBARKING)
+            )
+        
+        session.commit()
+                
+
 def mark_departure_started(*, flight_id: str) -> None:
     """Mark an outbound departure as started"""
 

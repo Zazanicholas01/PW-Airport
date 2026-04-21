@@ -1,19 +1,21 @@
 import asyncio
 import contextlib
-import json
 import logging
+import time
 from dataclasses import dataclass, field
 
 from fastapi import WebSocket
 
 from src.web.dashboard_data import (
     EVENTS_LOG_FILE,
-    read_clock_syncs_since,
-    read_events_since,
-    read_latest_clock_sync,
+    _parse_clock_event,
+    _parse_log_event,
+    _parse_scheduler_window_event,
+    parse_latest_clock_from_lines,
+    parse_latest_scheduler_window_from_lines,
+    parse_recent_events_from_lines,
     read_planes_on_ground_snapshot,
-    read_recent_events,
-    read_window_flights_snapshot,
+    read_recent_jsonl_lines,
 )
 
 
@@ -30,7 +32,6 @@ class DashboardState:
     planes_clients: set[WebSocket] = field(default_factory=set)
 
     events_offset: int = 0
-    clock_offset: int = 0
 
     events_task: asyncio.Task | None = None
     snapshots_task: asyncio.Task | None = None
@@ -53,23 +54,65 @@ async def _broadcast_json(clients: set[WebSocket], payload) -> None:
         clients.discard(client)
 
 
-def _snapshot_signature(snapshot) -> str:
-    return json.dumps(snapshot, sort_keys=True, default=str)
+def _snapshot_signature(snapshot) -> tuple:
+    rows = snapshot.get("rows") or []
+    return tuple(
+        (
+            row.get("id") or row.get("airplane"),
+            row.get("status"),
+            row.get("airplane"),
+            row.get("stand"),
+            row.get("route"),
+            row.get("reference_unix_ms"),
+        )
+        for row in rows
+    )
+
+
+def _read_dashboard_events_since(offset: int):
+    if not EVENTS_LOG_FILE.exists():
+        return [], [], [], 0
+
+    log_events = []
+    clock_syncs = []
+    scheduler_windows = []
+
+    with EVENTS_LOG_FILE.open("rb") as handle:
+        handle.seek(offset)
+
+        for raw_line in handle:
+            line = raw_line.decode("utf-8", errors="ignore")
+
+            log_event = _parse_log_event(line)
+            if log_event:
+                log_events.append(log_event)
+
+            clock_sync = _parse_clock_event(line)
+            if clock_sync:
+                clock_syncs.append(clock_sync)
+
+            scheduler_window = _parse_scheduler_window_event(line)
+            if scheduler_window:
+                scheduler_windows.append(scheduler_window)
+
+        return log_events, clock_syncs, scheduler_windows, handle.tell()
 
 
 async def _events_clock_loop() -> None:
 
     if EVENTS_LOG_FILE.exists():
-        dashboard_state.latest_events = read_recent_events(limit=20)
-        dashboard_state.latest_clock = read_latest_clock_sync()
+        startup_lines = read_recent_jsonl_lines(limit=50)
+        dashboard_state.latest_events = parse_recent_events_from_lines(startup_lines, limit=20)
+        dashboard_state.latest_clock = parse_latest_clock_from_lines(startup_lines)
+        dashboard_state.latest_window = parse_latest_scheduler_window_from_lines(startup_lines) or {"rows": []}
         dashboard_state.events_offset = EVENTS_LOG_FILE.stat().st_size
-        dashboard_state.clock_offset = dashboard_state.events_offset
     
     last_clock_sync_id = (
         int(dashboard_state.latest_clock["sync_id"])
         if dashboard_state.latest_clock and dashboard_state.latest_clock.get("sync_id") is not None
         else None
     )
+    last_events_heartbeat = 0.0
 
     while True:
         try:
@@ -82,22 +125,19 @@ async def _events_clock_loop() -> None:
             file_size = EVENTS_LOG_FILE.stat().st_size
             if file_size < dashboard_state.events_offset:
                 dashboard_state.events_offset = 0
-                dashboard_state.clock_offset = 0
             
             if file_size > dashboard_state.events_offset:
-                new_events, new_offset = read_events_since(dashboard_state.events_offset)
+                new_events, new_syncs, new_windows, new_offset = _read_dashboard_events_since(
+                    dashboard_state.events_offset
+                )
                 dashboard_state.events_offset = new_offset
 
                 if new_events:
                     dashboard_state.latest_events = (dashboard_state.latest_events + new_events)[-20:]
                     await _broadcast_json(
                         dashboard_state.events_clients,
-                        {"kind": "append", "events": new_events},
+                        {"kind": "append", "events": new_events[-50:]},
                     )
-            
-            if file_size > dashboard_state.clock_offset:
-                new_syncs, new_offset = read_clock_syncs_since(dashboard_state.clock_offset)
-                dashboard_state.clock_offset = new_offset
 
                 for sync in new_syncs:
                     sync_id = int(sync["sync_id"])
@@ -110,6 +150,22 @@ async def _events_clock_loop() -> None:
                         dashboard_state.clock_clients,
                         {"kind": "sync", "clock": sync},
                     )
+
+                if new_windows:
+                    latest_window = new_windows[-1]
+                    dashboard_state.latest_window = latest_window
+                    await _broadcast_json(
+                        dashboard_state.window_clients,
+                        {"kind": "snapshot", "window": latest_window},
+                    )
+
+            now_monotonic = time.monotonic()
+            if dashboard_state.events_clients and (now_monotonic - last_events_heartbeat) >= 15.0:
+                last_events_heartbeat = now_monotonic
+                await _broadcast_json(
+                    dashboard_state.events_clients,
+                    {"kind": "heartbeat"},
+                )
             
             await asyncio.sleep(0.5)
         except asyncio.CancelledError:
@@ -120,21 +176,10 @@ async def _events_clock_loop() -> None:
 
 
 async def _snapshot_loop() -> None:
-    last_window_sig = ""
     last_planes_sig = ""
 
     while True:
         try:
-            window_snapshot = read_window_flights_snapshot()
-            window_sig = _snapshot_signature(window_snapshot)
-            if window_sig != last_window_sig:
-                last_window_sig = window_sig
-                dashboard_state.latest_window = window_snapshot
-                await _broadcast_json(
-                    dashboard_state.window_clients,
-                    {"kind": "snapshot", "window": window_snapshot},
-                )
-            
             planes_snapshot = read_planes_on_ground_snapshot()
             planes_sig = _snapshot_signature(planes_snapshot)
             if planes_sig != last_planes_sig:

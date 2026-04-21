@@ -7,6 +7,7 @@ from src.utils.datetimes import as_utc
 
 SLIDING_WINDOW = timedelta(hours=1)
 LANDING_NEAR_DELTA = timedelta(minutes=1)
+EMBARK_NEAR_DELTA = timedelta(minutes=5)
 
 @dataclass
 class FlightSlidingWindowScheduler:
@@ -178,9 +179,10 @@ class FlightSlidingWindowScheduler:
             flight=flight,
             now_utc=now_utc,
             expected_side="origin",
-            expected_status="Scheduled",
+            expected_status="Embarking",
             event_field="departure_time",
             max_delta=None,
+            requires_airplane=True,
             must_be_started=True,
         ):
             return False
@@ -206,3 +208,21 @@ class FlightSlidingWindowScheduler:
             return False
         
         return self._once(flight, "landing_start")
+
+
+    def should_start_departure_embarking(self, *, flight, now_utc: datetime) -> bool:
+        """Start outbound embarking 5 minutes before departig"""
+
+        if not self._is_stage_eligible(
+            flight=flight,
+            now_utc=now_utc,
+            expected_side="origin",
+            expected_status="Scheduled",
+            event_field="departure_time",
+            max_delta=EMBARK_NEAR_DELTA,
+            requires_airplane=True,
+            must_be_started=False,
+        ):
+            return False
+        
+        return self._once(flight, "dep_embarking")

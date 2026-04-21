@@ -73,10 +73,10 @@ def speed_profile_for_segment(*, route_kind: str, segment: dict, index: int, tot
         if "Landing" in name:
             return {
                 "purpose": "landing_decel",
-                "initial_speed_kmh": 4.5,
+                "initial_speed_kmh": 2,
                 "target_speed_kmh": 0.5,
                 "acceleration_mps2": 0.10,
-                "deceleration_mps2": 0.55,
+                "deceleration_mps2": 0.35,
             }
 
         if name == "MasterSpline":
@@ -85,7 +85,7 @@ def speed_profile_for_segment(*, route_kind: str, segment: dict, index: int, tot
                 "initial_speed_kmh": 0.5,
                 "target_speed_kmh": 0.25,
                 "acceleration_mps2": 0.04,
-                "deceleration_mps2": 0.5,
+                "deceleration_mps2": 0.35,
             }
 
         if index == total - 1:

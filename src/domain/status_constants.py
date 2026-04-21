@@ -42,6 +42,7 @@ EXCLUDED_STAND_IDS: set[str] = {
 AVAILABLE_STANDS = ["O1", "O2", "O3", "O4", "O5", "P1", "P2", "P3", "C1", "C2", "C3"]
 
 DISEMBARK_SIM_SECONDS = 5 * 60
+EMBARK_SIM_SECONDS = 5 * 60
 
 RANDOM_FLIGHTS_COUNT = 20
 ENSURE_IN_WINDOW = True
@@ -78,6 +79,7 @@ class FLIGHT_STATUS:
     UNSCHEDULED = "Unscheduled"
     STAND_RESERVED = "StandReserved"
     SCHEDULED = "Scheduled"
+    EMBARKING = "Embarking"
     DEPARTING = "Departing"
     DEP_ONGOING = "Dep_Ongoing"
     LAN_ONGOING = "Lan_Ongoing"
@@ -85,7 +87,7 @@ class FLIGHT_STATUS:
     DISEMBARKING = "Disembarking"
     COMPLETED = "Completed"
     LANDING_INBOUND = (LANDING, LAN_ONGOING, SCHEDULED, DISEMBARKING)
-    DEPARTING_OUTBOUND = (DEPARTING, SCHEDULED, DEP_ONGOING)
+    DEPARTING_OUTBOUND = (EMBARKING, DEPARTING, SCHEDULED, DEP_ONGOING)
     NEEDS_AIRPLANE = (UNSCHEDULED,)
 
     CARGO_TYPE = "Cargo"
@@ -113,6 +115,7 @@ class AIRPLANE_STATUS:
     PARKED = "Parked"
     RESERVED = "Reserved"
     SCHEDULED = "Scheduled"
+    EMBARKING = "Embarking"
     DEPARTING = "Departing"
     IN_FLIGHT = "InFlight"
     DISEMBARKING = "Disembarking"
@@ -131,6 +134,7 @@ class AIRPLANE_STATUS:
 # Lifecycle Statuses for List in sliding window query
 LIFECYCLE_STATUSES = (
     FLIGHT_STATUS.SCHEDULED,
+    FLIGHT_STATUS.EMBARKING,
     FLIGHT_STATUS.DEPARTING,
     FLIGHT_STATUS.DEP_ONGOING,
     FLIGHT_STATUS.LAN_ONGOING,

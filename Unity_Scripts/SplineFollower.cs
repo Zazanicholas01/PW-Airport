@@ -39,6 +39,8 @@ public class SplineFollower : MonoBehaviour {
     private ArcLengthTable currentTable;
     private float traveled;
     private bool running;
+    private bool currentSegmentReversed;
+    private bool currentSegmentRotationReversed;
 
     private double lastSimMs;
     private bool hasLastSim;
@@ -251,6 +253,19 @@ public class SplineFollower : MonoBehaviour {
         return (float)(dtMs / 1000.0);
     }
 
+    private static bool IsDeparturePath(MessageDispatcher.PathSegment[] pathSegments)
+    {
+        if (pathSegments == null) return false;
+
+        foreach (var segment in pathSegments)
+        {
+            if (string.Equals(segment.name, DepartureSplineName, StringComparison.OrdinalIgnoreCase))
+                return true;
+        }
+
+        return false;
+    }
+
     private bool BeginSegment(int index) {
 
         if (segments == null || index < 0 || index >= segments.Length) return false;
@@ -262,6 +277,9 @@ public class SplineFollower : MonoBehaviour {
 
         float t0 = Mathf.Clamp01(seg.t_start);
         float t1 = Mathf.Clamp01(seg.t_end);
+
+        currentSegmentReversed = t1 < t0;
+        currentSegmentRotationReversed = currentSegmentReversed || (index == 0 && IsDeparturePath(segments));
 
         bool sameSplineAsPrev = index > 0 && string.Equals(segments[index - 1].name, seg.name, StringComparison.OrdinalIgnoreCase);
 
@@ -315,6 +333,10 @@ public class SplineFollower : MonoBehaviour {
 
         var tanLocal = SplineUtility.EvaluateTangent(container.Spline, t);
         Vector3 tanWorld = container.transform.TransformDirection((Vector3)tanLocal);
+
+        if (currentSegmentRotationReversed)
+            tanWorld = -tanWorld;
+
         if (tanWorld.sqrMagnitude > 1e-6f)
             transform.rotation = Quaternion.LookRotation(tanWorld.normalized, up);
     }

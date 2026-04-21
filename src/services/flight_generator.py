@@ -81,13 +81,13 @@ class RandomFlightGenerator:
         window: timedelta,
         min_duration: timedelta = timedelta(minutes=30),
         max_duration: timedelta = timedelta(minutes=240),
-        guard: timedelta = timedelta(minutes=1),
+        guard: timedelta = timedelta(minutes=10),
     ) -> tuple[datetime, datetime]:
         
         """
             window: assicura che venga generato un viaggio all'interno della scheduling window
             min / max: durata massima e minima dello scheduling
-            guard: guardia di 1 minuto per non generare viaggi immediati
+            guard: guardia di 10 minuti per non generare viaggi immediati
         """
 
         now = self._utc_now()
@@ -117,7 +117,7 @@ class RandomFlightGenerator:
         window: timedelta,
         min_duration: timedelta = timedelta(minutes=30),
         max_duration: timedelta = timedelta(minutes=240),
-        guard: timedelta = timedelta(minutes=1),
+        guard: timedelta = timedelta(minutes=10),
     ) -> tuple[datetime, datetime]:
         now = self._utc_now()
 
@@ -385,7 +385,7 @@ class RandomFlightGenerator:
 
         # DEBUG - Primo decollo sempre a 1 minuto da adesso
         if ensure_in_window and idx == 0:
-            departure_time = self._utc_now() + timedelta(minutes=1)
+            departure_time = self._utc_now() + timedelta(minutes=10)
             arrival_time = departure_time + timedelta(seconds=self.rng.randint(30*60, 240*60))
         elif ensure_in_window and idx == 1:
             departure_time, arrival_time = self._times_arrival_within_window(window=window)

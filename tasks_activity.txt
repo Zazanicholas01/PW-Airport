@@ -159,10 +159,11 @@ NEXT TIME:
 NEXT REAL TIME:
     - COSA MANCA
         - Arc Length Mapping & Starting Rotation Mapping
-        - Allungare Piste di Atterraggio
+        - Dynamic Speed -- (DONE)
+        - Allungare Piste di Atterraggio -- (DONE)
         - Reset Aerei Parcheggiati -- (DONE)
-        - Release della piazzola dopo il decollo dell'aereo
-        - Flow del decollo
+        - Release della piazzola dopo il decollo dell'aereo -- (DONE)
+        - Flow del decollo, Imbarco degli aerei -- (DONE)
 
         - Generazione dei viaggi dovrebbe essere esempio (24 ore da adesso)
         e non nel giorno stesso (Problemi con cambio della giornata dopo mezzanotte) -- (DONE)

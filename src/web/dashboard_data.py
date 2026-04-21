@@ -25,6 +25,7 @@ WINDOW_DURATION = timedelta(hours=WINDOW_TIMEDELTA_HOURS)
 DASHBOARD_SESSION = sessionmaker(bind=get_engine(), future=True)
 
 DETAIL_CACHE_TTL_SECONDS = 2.0
+JSONL_STARTUP_TAIL_LINES = 50
 FLIGHT_DETAIL_CACHE = {}
 PLANE_DETAIL_CACHE = {}
 
@@ -200,6 +201,51 @@ def _parse_log_event(line: str) -> dict[str, str] | None:
         "message": str(event.get("message") or ""),
         "fields": str(fields or ""),
     }
+
+
+def read_recent_jsonl_lines(limit: int = JSONL_STARTUP_TAIL_LINES) -> list[str]:
+    if not EVENTS_LOG_FILE.exists():
+        return []
+
+    lines: deque[str] = deque(maxlen=limit)
+    with EVENTS_LOG_FILE.open("r", encoding="utf-8", errors="ignore") as handle:
+        for line in handle:
+            lines.append(line)
+
+    return list(lines)
+
+
+def parse_recent_events_from_lines(lines: list[str], limit: int = 20) -> list[dict[str, str]]:
+    entries: deque[dict[str, str]] = deque(maxlen=limit)
+
+    for line in lines:
+        parsed = _parse_log_event(line)
+        if parsed:
+            entries.append(parsed)
+
+    return list(entries)
+
+
+def parse_latest_clock_from_lines(lines: list[str]) -> dict[str, float | int | str] | None:
+    latest = None
+
+    for line in lines:
+        parsed = _parse_clock_event(line)
+        if parsed:
+            latest = parsed
+
+    return latest
+
+
+def parse_latest_scheduler_window_from_lines(lines: list[str]) -> dict[str, object] | None:
+    latest = None
+
+    for line in lines:
+        parsed = _parse_scheduler_window_event(line)
+        if parsed:
+            latest = parsed
+
+    return latest
 
 
 def _parse_scheduler_window_event(line: str) -> dict[str, object] | None:
