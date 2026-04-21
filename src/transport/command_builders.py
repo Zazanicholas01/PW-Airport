@@ -49,13 +49,12 @@ def build_despawn_plane(*, airplane_id: str) -> dict[str, Any]:
     }
 
 
-def build_start_path_command(*, airplane_id: str, route_id: str, segments: list, speed: float) -> dict[str, Any]:
+def build_start_path_command(*, airplane_id: str, route_id: str, segments: list) -> dict[str, Any]:
     return {
         "command": BUS_COMMANDS.START_PATH,
         "airplane_id": airplane_id,
         "route_id": route_id,
-        "speed": speed,
-        "segments": segments,
+        "segments": segments
     }
 
 

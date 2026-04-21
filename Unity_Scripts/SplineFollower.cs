@@ -21,7 +21,18 @@ public class SplineFollower : MonoBehaviour {
     private int routeId;
 
     private MessageDispatcher.PathSegment[] segments;
-    private float speed;
+
+
+    private const float KmhToMs = 1000f / 3600f;
+    private float currentSpeedMps;
+    private float targetSpeedMps;
+    private float accelerationMps2;
+    private float decelerationMps2;
+    private string currentSpeedPurpose;
+
+    private bool holding;
+    private float holdRemainingSeconds;
+    private bool advanceAfterHold;
 
     private int segIndex = -1;
     private SplineContainer currentContainer;
@@ -42,22 +53,37 @@ public class SplineFollower : MonoBehaviour {
         if (up == default) up = Vector3.up;
     }
 
-    public void SetPath(MessageDispatcher.PathSegment[] newSegments, float newSpeed, string newAirplaneId, int newRouteId) {
+    public void SetPath(
+        MessageDispatcher.PathSegment[] newSegments,
+        string newAirplaneId, 
+        int newRouteId
+    ) {
         
         airplaneId = newAirplaneId;
         routeId = newRouteId;
-        
         segments = newSegments;
-        speed = Mathf.Max(0f, newSpeed);
+
+        currentSpeedMps = 0f;
+        targetSpeedMps = 0f;
+        accelerationMps2 = 0.5f;
+        decelerationMps2 = 0.5f;
+        currentSpeedPurpose = null;
+
         segIndex = -1;
         currentContainer = null;
         traveled = 0f;
-        running = segments != null && segments.Length > 0 && speed > 0f;
+
+        running = segments != null && segments.Length > 0;
+
         hasPrevEnd = false;
         prevSplineName = null;
         prevEndT = 0f;
         hasLastSim = false;
         standLeftReported = false;
+
+        holding = false;
+        holdRemainingSeconds = 0f;
+        advanceAfterHold = false;
     }
 
     public void Stop() {
@@ -73,14 +99,65 @@ public class SplineFollower : MonoBehaviour {
         standLeftReported = false;
 
         airplaneId = null;
-        routeId = 0;     
+        routeId = 0; 
+
+        holding = false;
+        holdRemainingSeconds = 0f;
+        advanceAfterHold = false;    
     }
 
     public Func<string, SplineContainer> ResolveSplineByName { get; set; }
 
+    private void UpdateSpeed(float dt)
+    {
+        float rate = currentSpeedMps < targetSpeedMps
+            ? accelerationMps2
+            : decelerationMps2;
+        
+        currentSpeedMps = Mathf.MoveTowards(
+            currentSpeedMps,
+            targetSpeedMps,
+            rate * dt 
+        );
+    }
+
     private void Update() {
 
         if (!running) return;
+
+        if (holding)
+        {
+            holdRemainingSeconds -= Time.deltaTime;
+
+            if (holdRemainingSeconds > 0f)
+                return;
+            
+            holding = false;
+
+            if (advanceAfterHold)
+            {
+                advanceAfterHold = false;
+                int next = segIndex + 1;
+
+                if (segments == null || next >= segments.Length)
+                {
+                    var doneAirplaneId = airplaneId;
+                    var doneRouteId = routeId;
+                    Stop();
+                    OnPathCompleted?.Invoke(doneAirplaneId, doneRouteId);
+                    return;
+                }
+
+                if (!BeginSegment(next))
+                {
+                    Stop();
+                    return;
+                }
+
+                hasLastSim = false;
+                return;
+            }
+        }
 
         float dt = GetSimDeltaSeconds();
         if (dt <= 0f) return;
@@ -91,18 +168,19 @@ public class SplineFollower : MonoBehaviour {
 
         }
 
-        float reaminingDt = dt;
-        while (reaminingDt > 0f && running) {
+        float remainingDt = dt;
+        while (remainingDt > 0f && running) {
 
-            float stepDist = speed * reaminingDt;
-            float reaminingDist = currentTable.Length - traveled;
+            UpdateSpeed(remainingDt);
 
-            if (stepDist < reaminingDist) {
-                traveled += stepDist;
+            float stepDistMeters = currentSpeedMps * remainingDt;
+            float remainingDistMeters = currentTable.Length - traveled;
+
+            if (stepDistMeters < remainingDistMeters) {
+                traveled += stepDistMeters;
                 ApplyPose(currentContainer, currentTable.EvaluateT(traveled));
-                reaminingDt = 0f;
+                remainingDt = 0f;
             } else {
-
                 traveled = currentTable.Length;
                 ApplyPose(currentContainer, currentTable.EvaluateT(traveled));
 
@@ -110,8 +188,23 @@ public class SplineFollower : MonoBehaviour {
                 prevEndT = Mathf.Clamp01(segments[segIndex].t_end);
                 hasPrevEnd = true;
 
-                float usedDt = reaminingDist / Mathf.Max(0.0001f, speed);
-                reaminingDt = Mathf.Max(0f, reaminingDt - usedDt);
+                float holdSeconds = MathF.Max(0f, segments[segIndex].hold_seconds);
+
+                if (holdSeconds > 0f)
+                {
+                    holding = true;
+                    advanceAfterHold = true;
+                    holdRemainingSeconds = holdSeconds;
+                    currentSpeedMps = 0f;
+
+                    // Prevent GetSimDeltaSeconds from accumulating during hold
+                    hasLastSim = false;
+
+                    return;
+                }
+
+                float usedDt = remainingDistMeters / Mathf.Max(0.0001f, currentSpeedMps);
+                remainingDt = Mathf.Max(0f, remainingDt - usedDt);
 
                 int next = segIndex + 1;
 
@@ -182,10 +275,36 @@ public class SplineFollower : MonoBehaviour {
         traveled = 0f;
         segIndex = index;
 
+        ApplySpeedProfileForSegment(seg);
+
         if (index == 0 || !sameSplineAsPrev)
             ApplyPose(container, t0);
         
         return true;
+    }
+
+    private void ApplySpeedProfileForSegment(MessageDispatcher.PathSegment segment)
+    {
+        var profile = segment.speed_profile;
+
+        if (profile == null)
+        {
+            targetSpeedMps = 12f * KmhToMs;
+            accelerationMps2 = 0.4f;
+            decelerationMps2 = 0.4f;
+            currentSpeedPurpose = "fallback";
+            return;
+        }
+
+        float desiredInitialMps = Mathf.Max(0f, profile.initial_speed_kmh) * KmhToMs;
+
+        if (segIndex == 0 || string.Equals(profile.purpose, "departure_roll", StringComparison.OrdinalIgnoreCase))
+            currentSpeedMps = desiredInitialMps;
+        
+        targetSpeedMps = Mathf.Max(0f, profile.target_speed_kmh) * KmhToMs;
+        accelerationMps2 = Mathf.Max(0.01f, profile.acceleration_mps2);
+        decelerationMps2 = Mathf.Max(0.01f, profile.deceleration_mps2);
+        currentSpeedPurpose = profile.purpose;
     }
 
     private void ApplyPose(SplineContainer container, float t) {

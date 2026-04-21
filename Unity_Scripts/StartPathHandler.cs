@@ -80,8 +80,11 @@ public class StartPathHandler : MonoBehaviour {
             reporter = plane.AddComponent<PathCompletionReporter>();
         reporter.Attach(follower);
 
-        var speed = cmd.speed > 0f ? cmd.speed : 5f;
-        follower.SetPath(cmd.segments, speed, cmd.airplane_id, cmd.route_id);
+        follower.SetPath(
+            cmd.segments,
+            cmd.airplane_id, 
+            cmd.route_id
+        );
     }
 
     private SplineContainer FindSpline(string name) {

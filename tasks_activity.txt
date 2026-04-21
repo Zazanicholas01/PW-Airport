@@ -185,11 +185,6 @@ NEXT REAL TIME:
             - Test App in AR
             - Comunicazione tra Backend & Build AR
 
-        IDEA FOLLE IOT
-            - Utilizzare dei sensori (tipo Fotoresistori o simile)
-            - Ogni sensore rappresenta una piazzola
-            - Premere dei sensori triggera dinamicamente gli spawn iniziali
-
         - Valutare Opzioni x Decolli troppo difficili da allocare 
         - Valutare Dinamicità sulla Direzione dell'aereo
         - Pensare a possibili implementazioni AI

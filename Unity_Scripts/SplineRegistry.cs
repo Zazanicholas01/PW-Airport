@@ -9,6 +9,7 @@ public class SplineRegistry : MonoBehaviour
 {
     [SerializeField] private List<SplineContainer> registeredSplines = new();
     [SerializeField] private string masterSplineName = "MasterSpline";
+    [SerializeField] private string departureSplineName = "Spline_Departure";
     [SerializeField] private bool includeInactive = true;
     [SerializeField] private Transform splineRoot;
 
@@ -107,8 +108,9 @@ public class SplineRegistry : MonoBehaviour
             string splineName = container.gameObject.name;
 
             bool isMaster = container.gameObject.name == masterSplineName;
+            bool isDeparture = container.gameObject.name == departureSplineName;
 
-            List<KnotEntry> knotEntries = isMaster ? new List<KnotEntry>() : null;
+            List<KnotEntry> knotEntries = (isMaster || isDeparture) ? new List<KnotEntry>() : null;
 
             KnotPosition firstKnotPos = null;
             KnotPosition lastKnotPos = null;
@@ -119,7 +121,7 @@ public class SplineRegistry : MonoBehaviour
             {
                 Vector3 pos = container.transform.TransformPoint(knot.Position);
 
-                if (isMaster) {
+                if (isMaster || isDeparture) {
                     Vector3 tanIn = container.transform.TransformDirection(knot.TangentIn);
                     Vector3 tanOut = container.transform.TransformDirection(knot.TangentOut);
                     Quaternion rot = container.transform.rotation * knot.Rotation;

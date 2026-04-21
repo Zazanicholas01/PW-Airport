@@ -45,11 +45,29 @@ public class MessageDispatcher : MonoBehaviour
     }
 
     [Serializable]
+    public class SpeedParams
+    {
+        public float initial_speed_kmh;
+        public float target_speed_kmh;
+        public float acceleration_mps2;
+        public float deceleration_mps2;
+    }
+
+    [Serializable]
+    public class SpeedProfile
+    {
+        public string purpose;
+        public float initial_speed_kmh;
+        public float target_speed_kmh;
+        public float acceleration_mps2;
+        public float deceleration_mps2;
+    }
+
+    [Serializable]
     public class StartPathCommand {
         public string command;
         public string airplane_id;
         public int route_id;
-        public float speed;
         public PathSegment[] segments;
     }
 
@@ -58,6 +76,8 @@ public class MessageDispatcher : MonoBehaviour
         public string name;
         public float t_start;
         public float t_end;
+        public SpeedProfile speed_profile;
+        public float hold_seconds;
     }
 
     [Serializable]

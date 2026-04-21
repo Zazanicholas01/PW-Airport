@@ -22,6 +22,8 @@ from src.domain.status_constants import *
 
 logger = logging.getLogger(__name__)
 
+DEPARTURE_HOLD_KNOT_INDEX = 3
+
 class InitGraph:
     def __init__(self, airport_id: str = PERSONAL_AIRPORT):
 
@@ -68,6 +70,62 @@ class InitGraph:
         self.master_spline = spline
         self.construct_master_links()
         self.extract_t_master_edges()
+
+    def _find_spline_by_name(self, name: str) -> dict | None:
+        for spline in self.splines:
+            if spline.get("name") == name:
+                return spline
+        return None
+
+    def _knot_xz_from_entry(self, entry: dict) -> tuple[float, float] | None:
+        params = entry.get("parameters") or []
+        if not params:
+            return None
+
+        point = params[0]
+
+        try:
+            return float(point["x"]), float(point["z"])
+        except (KeyError, TypeError, ValueError):
+            return None
+
+
+    def _normalized_manhattan_t_for_knot(self, spline: dict, knot_index: int) -> float | None:
+        knot_entries = spline.get("knotEntries") or []
+        positions = []
+
+        for entry in knot_entries:
+            pos = self._knot_xz_from_entry(entry)
+            if pos is not None:
+                positions.append(pos)
+
+        if knot_index < 0 or knot_index >= len(positions):
+            return None
+
+        if len(positions) < 2:
+            return 0.0
+
+        cumulative = [0.0]
+
+        for previous, current in zip(positions, positions[1:]):
+            px, pz = previous
+            cx, cz = current
+            cumulative.append(cumulative[-1] + abs(cx - px) + abs(cz - pz))
+
+        total = cumulative[-1]
+        if total <= 0.000001:
+            return 0.0
+
+        return cumulative[knot_index] / total
+
+
+    def _departure_hold_t(self) -> float:
+        departure_spline = self._find_spline_by_name("Spline_Departure")
+        if departure_spline is None:
+            return 0.1
+
+        hold_t = self._normalized_manhattan_t_for_knot(departure_spline, knot_index=DEPARTURE_HOLD_KNOT_INDEX)
+        return 0.1 if hold_t is None else hold_t
 
     def construct_master_links(self) -> None:
         """Construct a list of links between nodes and other splines"""
@@ -257,12 +315,15 @@ class InitGraph:
                     "t_start": master_edges[0]["t_start"],
                     "t_end": master_edges[-1]["t_end"]
                 })
+
+            departure_hold_t = self._departure_hold_t()
             
             # Departure Spline (0 --> 1)
             segments.append({
                 "name": "Spline_Departure",
                 "t_start": 0.0,
-                "t_end": 1.0
+                "t_end": 1.0,
+                "departure_hold_t": departure_hold_t,
             })
 
             # Remove prefixes for path naming convention
