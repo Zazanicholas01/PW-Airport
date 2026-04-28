@@ -13,6 +13,7 @@ public class MessageDispatcher : MonoBehaviour
     public event Action<ClockSyncCommand> OnClockSync;
     public event Action<StartPathCommand> OnStartPathCommand;
     public event Action<DespawnPlaneCommand> OnDespawnPlaneCommand;
+    public event Action<ClearParkingCommand> OnClearParkingCommand;
 
     [Serializable]
     private class CommandEnvelope
@@ -42,6 +43,13 @@ public class MessageDispatcher : MonoBehaviour
         public long sim_unix_ms;
         public float time_scale;
         public int sync_id;
+    }
+
+    [Serializable]
+    public class ClearParkingCommand
+    {
+        public string command;
+        public string airplane_id;
     }
 
     [Serializable]
@@ -78,6 +86,10 @@ public class MessageDispatcher : MonoBehaviour
         public float t_end;
         public SpeedProfile speed_profile;
         public float hold_seconds;
+
+        public bool auto_start_from_previous_end;
+        public bool loop_until_cleared;
+        public bool auto_exit_to_next_start;
     }
 
     [Serializable]
@@ -171,6 +183,9 @@ public class MessageDispatcher : MonoBehaviour
             case "despawn_plane":
                 HandleDespawnPlane(json);
                 break;
+            case "clear_parking":
+                HandleClearParking(json);
+                break;
             default:
                 Debug.LogWarning($"[MessageDispatcher] Unsupported command '{envelope.command}'.");
                 break;
@@ -245,5 +260,25 @@ public class MessageDispatcher : MonoBehaviour
 
         OnDespawnPlaneCommand?.Invoke(cmd);
         Debug.Log($"[MessageDispatcher] DespawnPlane command dispatched airplane_id={cmd.airplane_id}");
+    }
+
+    private void HandleClearParking(string json)
+    {
+        ClearParkingCommand cmd = null;
+
+        try
+        {
+            JsonUtility.FromJson<ClearParkingCommand>(json);
+        }
+        catch (Exception ex)
+        {
+            Debug.LogWarning($"[MessageDispatcher] Invalid clear_parking payload: {ex.Message}");
+            return;
+        }
+
+        if (cmd == null || string.IsNullOrWhiteSpace(cmd.airplane_id))
+        {
+            
+        }
     }
 }

@@ -220,3 +220,14 @@ LAST SPRINT
         - Monitoring risorse con Prometheus + Grafana
         - Monitoring dati Passeggeri
         - Monitoring dati aerei
+
+PARKINGS
+
+    - Cambiare Spawn point da "Landing Spline" a "Landing Route"
+    - Modificare creazione percorsi
+        - Lan_Route --> (stands available) --> Lan_Approach --> Landing_Spline (Long / Medium / Short)
+        - Lan_Route --> (stands not available) --> Enter_Parking_N --> Loop_Parking_N --> (wait clear) --> Exit_Parking_N --> Landing_Spline (Long / Medium / Short)
+        - Lan_Route --> (no parkings available) --> Delay 15 minutes on arrival time
+    - Parking Manager per controllare DB e assegnare o meno parcheggio
+    - Quando viene liberata una piazzola, controllare prima i parcheggi e fare arrivare loro
+    
