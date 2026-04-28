@@ -148,9 +148,9 @@ ANIMAZIONI
 NEXT TIME:
 
     - Invertire nodi spline girate al contrario -- (DONE)
-    - Iniziare a vedere delle tangenti e rotazioni
+    - Iniziare a vedere delle tangenti e rotazioni -- (DONE)
         - Prima gestire rotazioni lungo la spline -- (DONE)
-        - Poi gestire rotazioni iniziali in modo efficiente e scalabile
+        - Poi gestire rotazioni iniziali in modo efficiente e scalabile -- (DONE)
     - Vedere dei problemi che salteranno
     - Sta usando il deltatime di Unity, dovrebbe usare il clock ricevuto da Python -- (DONE)
     - Sistemare collegamenti di spline -- (DONE)
@@ -158,7 +158,7 @@ NEXT TIME:
 
 NEXT REAL TIME:
     - COSA MANCA
-        - Arc Length Mapping & Starting Rotation Mapping
+        - Arc Length Mapping & Starting Rotation Mapping -- (DONE)
         - Dynamic Speed -- (DONE)
         - Allungare Piste di Atterraggio -- (DONE)
         - Reset Aerei Parcheggiati -- (DONE)
@@ -194,3 +194,29 @@ NEXT REAL TIME:
         - Richieste Viaggi Dinamici
 
 uvicorn src.web.dashboard_app:app --reload --host 0.0.0.0 --port 8000
+
+
+
+LAST SPRINT
+
+    - PARCHEGGI
+        - Implementare la logica di parcheggio e sparcheggio
+        - Capire come rendere i percorsi fluidi in parcheggio e sparcheggio -- (DONE)
+        - Valutare il numero di parcheggi e rendere scalabile l'aggiunta o rimozione di un parcheggio
+    
+    - RADAR
+        - Adattare lunghezza delle piste con range del Radar
+        - Valutare se possibile implementare direzioni di atterraggio diverse
+        - Valutare se interfaccia web o componente AR o entrambi
+    
+    - BUS
+        - Disegnare spline
+        - Decidere percorsi possibili
+        - Gestione logica dei bus di imbarco e disimbarco
+        - Gestione precedenze sia intra-bus che con aerei
+        - Gestione carretto rifornimento
+    
+    - DATI & DASHBOARD
+        - Monitoring risorse con Prometheus + Grafana
+        - Monitoring dati Passeggeri
+        - Monitoring dati aerei
