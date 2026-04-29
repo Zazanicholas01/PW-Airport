@@ -383,7 +383,7 @@ def _status_pill_class(status: str | None) -> str:
         return "status-scheduled"
     if normalized in {"reserved"}:
         return "status-default"
-    if normalized in {"departing", "dep_ongoing", "landing", "lan_ongoing", "disembarking"}:
+    if normalized in {"departing", "dep_ongoing", "landing", "lan_ongoing", "disembarking", "inparking"}:
         return "status-landing"
     if normalized in {"completed"}:
         return "status-completed"

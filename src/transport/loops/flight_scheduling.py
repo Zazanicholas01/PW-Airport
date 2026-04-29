@@ -5,9 +5,8 @@ from datetime import timedelta
 
 from src.domain.status_constants import (
     BUS_COMMANDS,
-    ENSURE_IN_WINDOW,
+    GENERATOR_CONFIG,
     MIN_POLL_REAL_S,
-    RANDOM_FLIGHTS_COUNT,
     WINDOW_TIMEDELTA_HOURS,
     WAIT_FOR_PARKED_TIMEOUT_S
 )
@@ -116,12 +115,16 @@ async def flight_scheduler_loop(
         await asyncio.sleep(0.1)
 
     # Create Random Flight Generator instance
-    ctx.flight_actions.generate_debug_flights(RANDOM_FLIGHTS_COUNT, ensure_in_window=ENSURE_IN_WINDOW, window=scheduler.window)
-    logging.info(f"[flight_scheduler] generated debug flights (n={RANDOM_FLIGHTS_COUNT})")
+    ctx.flight_actions.generate_debug_flights(
+        GENERATOR_CONFIG.RANDOM_FLIGHTS_COUNT,
+        ensure_in_window=GENERATOR_CONFIG.ENSURE_IN_WINDOW,
+        window=scheduler.window
+    )
+    logging.info(f"[flight_scheduler] generated debug flights (n={GENERATOR_CONFIG.RANDOM_FLIGHTS_COUNT})")
     append_event({
         "type": "backend_event",
         "event": "debug_flights_generated",
-        "count": RANDOM_FLIGHTS_COUNT,
+        "count": GENERATOR_CONFIG.RANDOM_FLIGHTS_COUNT,
     })
 
     # Initialize timestamp used to rate-limit scheduling window logging
@@ -211,15 +214,26 @@ async def flight_scheduler_loop(
                 )
                 if assignment is None:
                     logging.info("[flight_scheduler] no compatible parked airplane flight_id=%s", flight_id)
+                    scheduler.handled.discard((flight_id, "dep"))
                     continue
 
                 # Assign a departure path to the airplane from Stand --> Departure spline
                 airplane_id, stand_id = assignment
-                ctx.flight_actions.assign_path_to_airplane(
+                route_id = ctx.flight_actions.assign_path_to_airplane(
                     airplane_id=airplane_id,
                     source=stand_id,
                     destination="Departure",
                 )
+
+                if route_id is None:
+                    logging.warning(
+                        "[flight_scheduler] departure path assignment failed airplane_id=%s stand_id=%s flight_id=%s",
+                        airplane_id,
+                        stand_id,
+                        flight_id,
+                    )
+                    scheduler.handled.discard((flight_id, "dep"))
+                    continue
 
                 logging.info("[flight_scheduler] departure assigned airplane_id=%s stand_id=%s flight_id=%s", airplane_id, stand_id, flight_id)
                 append_event({
@@ -267,29 +281,70 @@ async def flight_scheduler_loop(
             # LANDING RESERVATION - In Window on Arrival Time for Landing 
             if scheduler.should_reserve_landing_stand(flight=flight, now_utc=now):
 
-                # Retrieve stand ID that should be reserbed to a landing flight incoming
-                stand_id = ctx.flight_actions.reserve_stand_and_link_airplane_for_landing_arrival(flight_id=flight_id)
-                if stand_id is None:
-                    logging.warning("[flight_scheduler] landing_arr: no available stands flight_id=%s", flight_id)
+                result = ctx.flight_actions.assign_arrival_route_or_parking(flight_id=flight_id)
+
+                if result is None:
+                    logging.warning("[flight_scheduler] landing_arr: route decision failed flight_id=%s", flight_id)
+                    scheduler.handled.discard((flight_id, "landing_arr"))
                     continue
 
-                # Retrieve airplane ID from flight and assign landing path from Landing spline --> Stand
                 airplane_id = getattr(flight, "airplane_id", None)
-                if isinstance(airplane_id, str):
-                    ctx.flight_actions.assign_landing_path_for_airplane(
-                        airplane_id=airplane_id,
-                        stand_id=stand_id,
+                decision = result.get("decision")
+
+                # STAND AVAILABLE DIRECT LANDING
+                if decision == "land":
+                    logging.info(
+                        "[flight_scheduler] landing_arr: direct landing stand_id=%s route_id=%s flight_id=%s",
+                        result.get("stand_id"),
+                        result.get("route_id"),
+                        flight_id,
                     )
 
-                logging.info("[flight_scheduler] landing_arr: stand_id=%s reserved + plane linked flight_id=%s", stand_id, flight_id)
-                append_event({
-                    "type": "backend_event",
-                    "event": "landing_stand_reserved",
-                    "flight_id": flight_id,
-                    "stand_id": stand_id,
-                    "airplane_id": airplane_id,
-                })
-                continue
+                    append_event({
+                        "type": "backend_event",
+                        "event": "landing_stand_reserved",
+                        "flight_id": flight_id,
+                        "stand_id": result.get("stand_id"),
+                        "airplane_id": airplane_id,
+                        "route_id": result.get("route_id"),
+                    })
+                    continue
+
+                # STAND UNAVAILABLE - PARKING LANDING
+                if decision == "parking":
+                    logging.info(
+                        "[flight_scheduler] landing_arr: routed to parking parking_n=%s route_id=%s flight_id=%s",
+                        result.get("parking_n"),
+                        result.get("route_id"),
+                        flight_id,
+                    )
+
+                    append_event({
+                        "type": "backend_event",
+                        "event": "landing_parking_reserved",
+                        "flight_id": flight_id,
+                        "parking_n": result.get("parking_n"),
+                        "airplane_id": airplane_id,
+                        "route_id": result.get("route_id"),
+                    })
+                    continue
+
+                # PARKING UNAVAILABLE - DELAY 15 MINUTES
+                if decision == "delayed":
+                    logging.info(
+                        "[flight_scheduler] landing_arr: no stand or parking; delayed arrival 15 minutes flight_id=%s",
+                        flight_id,
+                    )
+
+                    append_event({
+                        "type": "backend_event",
+                        "event": "landing_arrival_delayed",
+                        "flight_id": flight_id,
+                        "minutes": 15,
+                    })
+
+                    scheduler.handled.discard((flight_id, "landing_arr"))
+                    continue
 
 
             # START DEPARTURE EMBARKING - 5 minutes before departure time
@@ -325,9 +380,13 @@ async def flight_scheduler_loop(
 
                 # Make start path command for the airplane and send through bus to Unity
                 if isinstance(airplane_id, str):
+
                     cmd = make_start_path_command(airplane_id=airplane_id, Session=ctx.Session)
+
                     if cmd is None:
                         logging.warning("[start_path][SKIP] flight_id=%s airplane_id=%s (no route/segments)", flight_id, airplane_id)
+                        scheduler.handled.discard((flight_id, "dep_start"))
+                        continue
                     else:
                         ctx.flight_actions.mark_departure_started(flight_id=flight_id)
                         logging.info("[start_path][OUT] flight_id=%s airplane_id=%s route_id=%s segments=%d now=%s",
@@ -355,6 +414,7 @@ async def flight_scheduler_loop(
                 # Retrieve airplane ID from flight
                 airplane_id = getattr(flight, "airplane_id", None)
                 if not isinstance(airplane_id, str) or not airplane_id:
+                    scheduler.handled.discard((flight_id, "landing_spawn"))
                     continue
 
                 # Retrieve prefab name from airplane
@@ -363,30 +423,35 @@ async def flight_scheduler_loop(
                 # Sanity checks on prefab and landing spawn position
                 if not isinstance(prefab, str) or not prefab:
                     logging.warning("[flight_scheduler] Landing spawn: missing prefab airplane_id=%s flight_id=%s", airplane_id, flight_id)
-                elif not isinstance(landing_spawn_position, dict):
-                    logging.warning("[flight_scheduler] landing_spawn: landing_spawn_position not set; cannot spawn flight_id=%s", flight_id)
-                else:
-                    logging.info(
-                        "[landing_spawn][OUT] flight_id=%s airplane_id=%s prefab=%s pos=%s",
-                        flight_id, airplane_id, prefab, landing_spawn_position,
-                    )
+                    scheduler.handled.discard((flight_id, "landing_spawn"))
+                    continue
 
-                    # Send Spawn Plane command through bus to Unity
-                    await ctx.bus.send_command(ctx.commands.spawn_plane(
-                        prefab=prefab,
-                        stand_id=f"landing:{flight_id}",
-                        position=landing_spawn_position,
-                        airplane_id=airplane_id,
-                        spawn_context="landing",
-                    ))
-                    logging.info("[flight_scheduler] landing_spawn: spawned airplane_id=%s flight_id=%s", airplane_id, flight_id)
-                    append_event({
-                        "type": "backend_event",
-                        "event": "landing_spawn",
-                        "flight_id": flight_id,
-                        "airplane_id": airplane_id,
-                        "prefab": prefab,
-                    })
+                if not isinstance(landing_spawn_position, dict):
+                    logging.warning("[flight_scheduler] landing_spawn: landing_spawn_position not set; cannot spawn flight_id=%s", flight_id)
+                    scheduler.handled.discard((flight_id, "landing_spawn"))
+                    continue
+
+                logging.info(
+                    "[landing_spawn][OUT] flight_id=%s airplane_id=%s prefab=%s pos=%s",
+                    flight_id, airplane_id, prefab, landing_spawn_position,
+                )
+
+                # Send Spawn Plane command through bus to Unity
+                await ctx.bus.send_command(ctx.commands.spawn_plane(
+                    prefab=prefab,
+                    stand_id=f"landing:{flight_id}",
+                    position=landing_spawn_position,
+                    airplane_id=airplane_id,
+                    spawn_context="landing",
+                ))
+                logging.info("[flight_scheduler] landing_spawn: spawned airplane_id=%s flight_id=%s", airplane_id, flight_id)
+                append_event({
+                    "type": "backend_event",
+                    "event": "landing_spawn",
+                    "flight_id": flight_id,
+                    "airplane_id": airplane_id,
+                    "prefab": prefab,
+                })
 
             # START LANDING MOVEMENT
             if scheduler.should_start_landing_approach(flight=flight, now_utc=now):
@@ -394,18 +459,33 @@ async def flight_scheduler_loop(
                 # Retrieve airplane ID from flight
                 airplane_id = getattr(flight, "airplane_id", None)
 
+                if not isinstance(airplane_id, str):
+                    scheduler.handled.discard((flight_id, "landing_start"))
+                    continue
+
                 # Call Make start path command and send through bus to Unity
-                if isinstance(airplane_id, str):
-                    cmd = make_start_path_command(airplane_id=airplane_id, Session=ctx.Session)
-                    if cmd is not None:
-                        await ctx.bus.send_command(cmd)
-                        append_event({
-                            "type": "backend_event",
-                            "event": "landing_approach_started",
-                            "flight_id": flight_id,
-                            "airplane_id": airplane_id,
-                            "route_id": cmd["route_id"],
-                        })
+                cmd = make_start_path_command(airplane_id=airplane_id, Session=ctx.Session)
+
+                if cmd is None:
+                    logging.warning(
+                        "[start_path][SKIP] landing flight_id=%s airplane_id=%s reason=no route/segments",
+                        flight_id,
+                        airplane_id,
+                    )
+                    scheduler.handled.discard((flight_id, "landing_start"))
+                    continue
+
+                # Send start path command
+                await ctx.bus.send_command(cmd)
+
+                # Log to dashboard web
+                append_event({
+                    "type": "backend_event",
+                    "event": "landing_approach_started",
+                    "flight_id": flight_id,
+                    "airplane_id": airplane_id,
+                    "route_id": cmd["route_id"],
+                })
 
         # Convert simulation polling to real time sleep based on time_scale
         poll_real_s = max(MIN_POLL_REAL_S, poll_seconds / max(time_scale, 1.0))

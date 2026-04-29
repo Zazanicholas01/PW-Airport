@@ -11,7 +11,9 @@ public class SplineFollower : MonoBehaviour {
 
     public event Action<string, int> OnPathCompleted;
     public event Action<string, int> OnPlaneLeftStand;
-
+    public event Action<string, int, string> OnParkingEntered;
+    
+    private bool parkingEnteredReported;
     private bool standLeftReported;
 
     private const string MasterSplineName = "MasterSpline";
@@ -41,6 +43,10 @@ public class SplineFollower : MonoBehaviour {
     private bool running;
     private bool currentSegmentReversed;
     private bool currentSegmentRotationReversed;
+
+    private bool parkingCleared;
+    private bool currentSegmentIsParkingLoop;
+    private float currentParkingExitT;
 
     private double lastSimMs;
     private bool hasLastSim;
@@ -86,6 +92,11 @@ public class SplineFollower : MonoBehaviour {
         holding = false;
         holdRemainingSeconds = 0f;
         advanceAfterHold = false;
+
+        parkingCleared = false;
+        currentSegmentIsParkingLoop = false;
+        currentParkingExitT = 0f;
+        parkingEnteredReported = false;
     }
 
     public void Stop() {
@@ -105,7 +116,12 @@ public class SplineFollower : MonoBehaviour {
 
         holding = false;
         holdRemainingSeconds = 0f;
-        advanceAfterHold = false;    
+        advanceAfterHold = false;  
+
+        parkingCleared = false;
+        currentSegmentIsParkingLoop = false;
+        currentParkingExitT = 0f;
+        parkingEnteredReported = false;
     }
 
     public Func<string, SplineContainer> ResolveSplineByName { get; set; }
@@ -121,6 +137,23 @@ public class SplineFollower : MonoBehaviour {
             targetSpeedMps,
             rate * dt 
         );
+    }
+
+    public void ClearParking()
+    {
+        parkingCleared = true;
+
+        Debug.Log(
+            $"[SplineFollower] ClearParking airplane={airplaneId} route={routeId} " +
+            $"running={running} currentLoop={currentSegmentIsParkingLoop} segIndex={segIndex} " +
+            $"container={(currentContainer != null ? currentContainer.name : "null")}"
+        );
+
+        if (running && currentSegmentIsParkingLoop && currentContainer != null)
+        {
+            if (TryRebuildParkingLoopToExit())
+                hasLastSim = false;
+        }
     }
 
     private void Update() {
@@ -186,11 +219,51 @@ public class SplineFollower : MonoBehaviour {
                 traveled = currentTable.Length;
                 ApplyPose(currentContainer, currentTable.EvaluateT(traveled));
 
+                if (segments[segIndex].loop_until_cleared)
+                {
+                    if (!parkingCleared || !HasNextSegment())
+                    {
+                        float currentT = currentTable.EvaluateT(traveled);
+
+                        if (parkingCleared)
+                        {
+                            Debug.LogWarning(
+                                $"[SplineFollower] Parking cleared but continuation not ready airplane={airplaneId} " +
+                                $"route={routeId} segment={segments[segIndex].name} segIndex={segIndex} currentT={Wrap01(currentT):0.000}"
+                            );
+                        }
+                        else
+                        {
+                            Debug.Log(
+                                $"[SplineFollower] Parking loop continues airplane={airplaneId} route={routeId} " +
+                                $"segment={segments[segIndex].name} currentT={Wrap01(currentT):0.000}"
+                            );
+                        }
+
+                        currentTable = BuildArcLengthTable(
+                            currentContainer,
+                            currentT,
+                            currentT + 1f,
+                            arcSamples
+                        );
+
+                        traveled = 0f;
+                        hasLastSim = false;
+                        return;
+                    }
+
+                    Debug.Log(
+                        $"[SplineFollower] Parking loop cleared airplane={airplaneId} route={routeId} " +
+                        $"segment={segments[segIndex].name} exitT={currentParkingExitT:0.000}"
+                    );
+                    currentSegmentIsParkingLoop = false;
+                }
+
                 prevSplineName = segments[segIndex].name;
                 prevEndT = Mathf.Clamp01(segments[segIndex].t_end);
                 hasPrevEnd = true;
 
-                float holdSeconds = MathF.Max(0f, segments[segIndex].hold_seconds);
+                float holdSeconds = Mathf.Max(0f, segments[segIndex].hold_seconds);
 
                 if (holdSeconds > 0f)
                 {
@@ -278,6 +351,48 @@ public class SplineFollower : MonoBehaviour {
         float t0 = Mathf.Clamp01(seg.t_start);
         float t1 = Mathf.Clamp01(seg.t_end);
 
+        if (seg.auto_start_from_previous_end && hasPrevEnd)
+        {
+            t0 = FindClosestT(container, transform.position);
+        }
+
+        currentSegmentIsParkingLoop = seg.loop_until_cleared;
+
+        if (currentSegmentIsParkingLoop)
+        {
+            currentSegmentReversed = false;
+            currentSegmentRotationReversed = false;
+
+            currentContainer = container;
+            segIndex = index;
+
+            float loopEndT = t0 + 1f;
+            currentTable = BuildArcLengthTable(container, t0, loopEndT, arcSamples);
+            traveled = 0f;
+
+            ApplySpeedProfileForSegment(seg);
+            ApplyPose(container, t0);
+
+            Debug.Log(
+                $"[SplineFollower] Entered parking loop airplane={airplaneId} route={routeId} " +
+                $"segment={seg.name} startT={Wrap01(t0):0.000} cleared={parkingCleared}"
+            );
+
+            if (!parkingEnteredReported)
+            {
+                parkingEnteredReported = true;
+                OnParkingEntered?.Invoke(airplaneId, routeId, seg.name);
+            }
+
+            if (parkingCleared)
+            {
+                if (TryRebuildParkingLoopToExit())
+                    hasLastSim = false;
+            }
+
+            return true;
+        }
+
         currentSegmentReversed = t1 < t0;
         currentSegmentRotationReversed = currentSegmentReversed || (index == 0 && IsDeparturePath(segments));
 
@@ -327,11 +442,12 @@ public class SplineFollower : MonoBehaviour {
 
     private void ApplyPose(SplineContainer container, float t) {
 
-        transform.position = EvalWorld(container, t);
+        float evalT = container.Spline.Closed ? Wrap01(t) : Mathf.Clamp01(t);
+        transform.position = EvalWorld(container, evalT);
 
         if (!orientToSpline) return;
 
-        var tanLocal = SplineUtility.EvaluateTangent(container.Spline, t);
+        var tanLocal = SplineUtility.EvaluateTangent(container.Spline, evalT);
         Vector3 tanWorld = container.transform.TransformDirection((Vector3)tanLocal);
 
         if (currentSegmentRotationReversed)
@@ -341,9 +457,170 @@ public class SplineFollower : MonoBehaviour {
             transform.rotation = Quaternion.LookRotation(tanWorld.normalized, up);
     }
 
+    private float FindClosestT(SplineContainer container, Vector3 worldPoint, int samples = 240)
+    {
+        float bestT = 0f;
+        float bestDist = float.PositiveInfinity;
+
+        for (int i = 0; i <= samples; i++)
+        {
+            float t = i / (float)samples;
+            float d = (EvalWorld(container, t) - worldPoint).sqrMagnitude;
+
+            if (d < bestDist)
+            {
+                bestDist = d;
+                bestT = t;
+            }
+        }
+
+        return bestT;
+    }
+
+    private float ForwardLoopEndT(float startT, float targetT)
+    {
+        float start = Wrap01(startT);
+        float target = Wrap01(targetT);
+        float delta = target - start;
+
+        if (delta <= 0f)
+            delta += 1f;
+
+        if (delta < 0.01f)
+            delta += 1f;
+
+        return startT + delta;
+    }
+
+    private bool HasNextSegment()
+    {
+        return segments != null && segIndex >= 0 && segIndex + 1 < segments.Length;
+    }
+
+    private float ResolveExitTFromNextSegment()
+    {
+        int next = segIndex + 1;
+
+        if (segments == null || next >= segments.Length || ResolveSplineByName == null)
+        {
+            Debug.LogWarning(
+                $"[SplineFollower] Parking exit fallback: no next segment airplane={airplaneId} " +
+                $"route={routeId} segIndex={segIndex}"
+            );
+            return Wrap01(currentTable.EvaluateT(traveled));
+        }
+
+        var nextSegment = segments[next];
+        var nextContainer = ResolveSplineByName(nextSegment.name);
+
+        if (nextContainer == null || nextContainer.Spline == null)
+        {
+            Debug.LogWarning(
+                $"[SplineFollower] Parking exit fallback: next spline missing airplane={airplaneId} " +
+                $"route={routeId} nextSegment={nextSegment.name}"
+            );
+            return Wrap01(currentTable.EvaluateT(traveled));
+        }
+
+        Vector3 nextStartWorld = EvalWorld(nextContainer, nextSegment.t_start);
+        float resolvedT = FindClosestT(currentContainer, nextStartWorld);
+
+        Debug.Log(
+            $"[SplineFollower] Parking exit resolved airplane={airplaneId} route={routeId} " +
+            $"loop={currentContainer.name} next={nextSegment.name} nextStartT={nextSegment.t_start:0.000} " +
+            $"exitT={resolvedT:0.000}"
+        );
+
+        return resolvedT;
+    }
+
+    private void RebuildParkingLoopToExit()
+    {
+        float currentT = currentTable.EvaluateT(traveled);
+        currentParkingExitT = ResolveExitTFromNextSegment();
+
+        float exitEndT = ForwardLoopEndT(currentT, currentParkingExitT);
+
+        currentTable = BuildArcLengthTable(currentContainer, currentT, exitEndT, arcSamples);
+        traveled = 0f;
+
+        Debug.Log(
+            $"[SplineFollower] Parking loop rebuilt to exit airplane={airplaneId} route={routeId} " +
+            $"segment={segments[segIndex].name} currentT={Wrap01(currentT):0.000} " +
+            $"exitT={currentParkingExitT:0.000} length={currentTable.Length:0.0}m"
+        );
+    }
+
+    private bool TryRebuildParkingLoopToExit()
+    {
+        if (!HasNextSegment())
+        {
+            Debug.LogWarning(
+                $"[SplineFollower] Parking exit delayed: continuation missing airplane={airplaneId} " +
+                $"route={routeId} segIndex={segIndex} totalSegments={(segments != null ? segments.Length : 0)}"
+            );
+            return false;
+        }
+
+        RebuildParkingLoopToExit();
+        return true;
+    }
+
+
+    private static float Wrap01(float t)
+    {
+        t %= 1f;
+        return t < 0f ? t + 1f : t;
+    }
+
+    public void SetContinuationPath(MessageDispatcher.PathSegment[] continuationSegments, int newRouteId)
+    {
+        if (continuationSegments == null || continuationSegments.Length == 0)
+        {
+            Debug.LogWarning($"[SplineFollower] Empty continuation ignored airplane={airplaneId} route={routeId}");
+            return;
+        }
+
+        Debug.Log(
+            $"[SplineFollower] SetContinuationPath airplane={airplaneId} oldRoute={routeId} newRoute={newRouteId} " +
+            $"running={running} segIndex={segIndex} currentLoop={currentSegmentIsParkingLoop} cleared={parkingCleared} " +
+            $"continuationSegments={continuationSegments.Length}"
+        );
+
+        if (!running || segments == null || segIndex < 0)
+        {
+            Debug.Log(
+                $"[SplineFollower] Continuation became full path airplane={airplaneId} newRoute={newRouteId}"
+            );
+            SetPath(continuationSegments, airplaneId, newRouteId);
+            return;
+        }
+
+        int prefixCount = segIndex + 1;
+        var merged = new MessageDispatcher.PathSegment[prefixCount + continuationSegments.Length];
+
+        for (int i = 0; i < prefixCount; i++)
+            merged[i] = segments[i];
+
+        for (int i = 0; i < continuationSegments.Length; i++)
+            merged[prefixCount + i] = continuationSegments[i];
+
+        segments = merged;
+        routeId = newRouteId;
+
+        Debug.Log(
+            $"[SplineFollower] Continuation merged airplane={airplaneId} route={routeId} " +
+            $"prefixSegments={prefixCount} totalSegments={segments.Length} nextSegment={(segIndex + 1 < segments.Length ? segments[segIndex + 1].name : "none")}"
+        );
+
+        if (currentSegmentIsParkingLoop && parkingCleared)
+            TryRebuildParkingLoopToExit();
+    }
+
     private static Vector3 EvalWorld(SplineContainer container, float t)
     {
-        var local = SplineUtility.EvaluatePosition(container.Spline, t);
+        float evalT = container.Spline.Closed ? Wrap01(t) : Mathf.Clamp01(t);
+        var local = SplineUtility.EvaluatePosition(container.Spline, evalT);
         return container.transform.TransformPoint((Vector3)local);
     }
 

@@ -44,8 +44,22 @@ AVAILABLE_STANDS = ["O1", "O2", "O3", "O4", "O5", "P1", "P2", "P3", "C1", "C2", 
 DISEMBARK_SIM_SECONDS = 5 * 60
 EMBARK_SIM_SECONDS = 5 * 60
 
-RANDOM_FLIGHTS_COUNT = 20
-ENSURE_IN_WINDOW = True
+@dataclass
+class GENERATOR_CONFIG:
+    # Flight generation knobs
+    TOTAL_N_FLIGHTS = 20
+    DEPARTURE_N_FLIGHTS = 10
+    ARRIVAL_N_FLIGHTS = 20
+
+    # Time windows are deltas from "now", in minutes.
+    DEPARTURE_MIN_DELTA_MINUTES = 60
+    DEPARTURE_MAX_DELTA_MINUTES = 120
+    ARRIVAL_MIN_DELTA_MINUTES = 10
+    ARRIVAL_MAX_DELTA_MINUTES = 60
+
+    # Backwards-compatible alias used by the scheduler loop.
+    RANDOM_FLIGHTS_COUNT = TOTAL_N_FLIGHTS
+    ENSURE_IN_WINDOW = True
 
 MIN_POLL_REAL_S = 0.05
 CLOCK_HERTZ = 10.0
@@ -119,6 +133,7 @@ class AIRPLANE_STATUS:
     DEPARTING = "Departing"
     IN_FLIGHT = "InFlight"
     DISEMBARKING = "Disembarking"
+    IN_PARKING = "InParking"
     AVAILABLE_FOR_DEPARTURE = (PARKED,)
 
     RANGE_SHORT = "Short"
@@ -148,6 +163,7 @@ LIFECYCLE_STATUSES = (
 class RUNTIME_EVENTS:
     PATH_COMPLETED = "path_completed"
     PLANE_LEFT_STAND = "plane_left_stand"
+    PARKING_ENTERED = "parking_entered"
 
 # Bus commands
 @dataclass
@@ -159,6 +175,8 @@ class BUS_COMMANDS:
     WELCOME = "welcome"
     START_PATH = "start_path"
     DESPAWN_PLANE = "despawn_plane"
+    CONTINUE_PATH = "continue_path"
+    CLEAR_PARKING = "clear_parking"
 
 # Websocket configuration
 @dataclass
@@ -177,3 +195,8 @@ MEDIUM_LANDING_SPLINE = "MediumLanding"
 LONG_LANDING_SPLINE = "LongLanding"
 LANDING_SOURCES = (LONG_LANDING_SPLINE, MEDIUM_LANDING_SPLINE, SHORT_LANDING_SPLINE)
 MASTER_SPLINE = "MasterSpline"
+
+LANDING_ROUTE_SPLINE = "Landing_Route"
+LANDING_APPROACH_SPLINE = "Landing_Approach"
+
+PARKING_SPLINES = (1, 2, 3)

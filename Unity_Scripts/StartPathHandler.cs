@@ -21,11 +21,21 @@ public class StartPathHandler : MonoBehaviour {
     }
 
     private void OnEnable() {
-        if (dispatcher != null) dispatcher.OnStartPathCommand += HandleStartPath;
+        if (dispatcher != null)
+        {
+            dispatcher.OnStartPathCommand += HandleStartPath;
+            dispatcher.OnClearParkingCommand += HandleClearParking;
+            dispatcher.OnContinuePathCommand += HandleContinuePath;
+        } 
     }
 
     private void OnDisable() {
-        if (dispatcher != null) dispatcher.OnStartPathCommand -= HandleStartPath;
+        if (dispatcher != null)
+        {
+            dispatcher.OnStartPathCommand -= HandleStartPath;
+            dispatcher.OnClearParkingCommand -= HandleClearParking;
+            dispatcher.OnContinuePathCommand -= HandleContinuePath;
+        } 
     }
 
     public void RebuildSplineCache()
@@ -85,6 +95,45 @@ public class StartPathHandler : MonoBehaviour {
             cmd.airplane_id, 
             cmd.route_id
         );
+    }
+
+    private void HandleContinuePath(MessageDispatcher.ContinuePathCommand cmd)
+    {
+        if (registry == null || !registry.TryGet(cmd.airplane_id, out var plane) || plane == null)
+        {
+            Debug.LogWarning($"[StartPathHandler] Plane not found for continue_path airplane_id={cmd.airplane_id}");
+            return;
+        }
+
+        var follower = plane.GetComponent<SplineFollower>();
+        if (follower == null)
+        {
+            Debug.LogWarning($"[StartPathHandler] Plane has no SplineFollower for continue_path airplane_id={cmd.airplane_id}");
+            return;
+        }
+
+        Debug.Log($"[StartPathHandler] continue_path airplane_id={cmd.airplane_id} route_id={cmd.route_id} segments={cmd.segments.Length}");
+        follower.SetContinuationPath(cmd.segments, cmd.route_id);
+    }
+
+    private void HandleClearParking(MessageDispatcher.ClearParkingCommand cmd)
+    {
+        if (registry == null || !registry.TryGet(cmd.airplane_id, out var plane) || plane == null)
+        {
+            Debug.LogWarning($"[StartPathHandler] Plane not found for clear_parking airplane_id={cmd.airplane_id}");
+            return;
+        }
+
+        var follower = plane.GetComponent<SplineFollower>();
+
+        if (follower == null)
+        {
+            Debug.LogWarning($"[StartPathHandler] Plane has no SplineFollower airplane_id={cmd.airplane_id}");
+            return;
+        }
+
+        Debug.Log($"[StartPathHandler] clear_parking airplane_id={cmd.airplane_id}");
+        follower.ClearParking();
     }
 
     private SplineContainer FindSpline(string name) {

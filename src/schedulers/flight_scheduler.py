@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 from src.utils.datetimes import as_utc
 
 SLIDING_WINDOW = timedelta(hours=1)
-LANDING_NEAR_DELTA = timedelta(minutes=1)
+LANDING_NEAR_DELTA = timedelta(minutes=3)
 EMBARK_NEAR_DELTA = timedelta(minutes=5)
 
 @dataclass
@@ -143,7 +143,7 @@ class FlightSlidingWindowScheduler:
             expected_side="destination",
             expected_status="Lan_Ongoing",
             event_field="arrival_time",
-            max_delta=self.window,
+            max_delta=LANDING_NEAR_DELTA,
             requires_airplane=True,
         ):
             return False

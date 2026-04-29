@@ -517,3 +517,156 @@ def assign_landing_path_for_airplane(*, airplane_id: str, stand_id: str) -> int 
         # Logging and return
         logging.info("[db] landing path assigned airplane_id=%s route_id=%s (%s -> %s)", airplane_id, path_id, source, stand_id)
         return path_id
+
+def landing_route_source_for_airplane(session, airplane_id: str) -> str | None:
+    
+    # Retrieve airplane from DB
+    airplane = session.get(models.Airplane, airplane_id)
+    if airplane is None:
+        return None
+    
+    # Assign Long / Medium / Short based on airplane range
+    landing_id = landing_source_for_range(getattr(airplane, "range", None))
+    return f"{LANDING_ROUTE_SPLINE}_{landing_id}"
+
+
+def parking_exit_source_for_airplane(session, airplane_id: str, parking_n: int) -> str | None:
+
+    # Retrieve airplane from DB
+    airplane = session.get(models.Airplane, airplane_id)
+    if airplane is None:
+        return None
+    
+    # Assign Long / Medium / Short based on airplane range
+    landing_id = landing_source_for_range(getattr(airplane, "range", None))
+    return f"Parking{parking_n}_{landing_id}"
+
+
+def assign_arrival_route_or_parking(*, flight_id: str) -> dict | None:
+    """
+    Decide what an arriving plane should do:
+    - direct land if stand is available
+    - enter parking if no stand is available
+    - delay flight if no parking is available
+
+    Returns:
+        {"decisions": "land", "stand_id": "...", "route_id": 1}
+        {"decision": "parking", "parking_n": 1, "route_id": 2}
+        {"decision": "delayed"}
+        None on invalid flight
+    """
+
+    with _get_session_factory()() as session:
+
+        # Retrieve flight from DB
+        flight = session.get(models.Flight, flight_id)
+        if flight is None:
+            return None
+        
+        # Retrieve airplane linked to that flight
+        airplane_id = getattr(flight, "airplane_id", None)
+        if not isinstance(airplane_id, str) or not airplane_id:
+            return None
+
+        # Sanity check on status to be LAN_ONGOING
+        if getattr(flight, "status", None) != FLIGHT_STATUS.LAN_ONGOING:
+            return None
+
+        # Normalize flight type (Cargo / Passeggeri)
+        flight_type = normalize_flight_type(getattr(flight, "tipo", None))
+        preferred = (
+            STAND_STATUS.CARGO_CATEGORY
+            if flight_type == FLIGHT_STATUS.CARGO_TYPE
+            else STAND_STATUS.PASSENGERS_CATEGORY
+        )
+
+        # Helper function to return the stand category
+        def cat(s) -> str | None:
+            return stand_category(getattr(s, "type", None))
+        
+        # Stand decision logic
+        stands = list(session.scalars(select(models.Stand)))
+        candidates = [s for s in stands if getattr(s, "status", None) not in STAND_STATUS.UNAVAILABLE]
+
+        preferred_stands = [s for s in candidates if cat(s) == preferred]
+        chosen_stand = preferred_stands[0] if preferred_stands else None
+
+        if chosen_stand is None:
+            o_stands = [s for s in candidates if cat(s) == "O"]
+            chosen_stand = o_stands[0] if o_stands else None
+        
+        # 1. STAND AVAILABLE CASE
+        if chosen_stand is not None:
+            source = landing_route_source_for_airplane(session, airplane_id)
+            if source is None:
+                return
+            
+            path_id = session.execute(
+                select(models.Path.id)
+                .where(models.Path.source == source)
+                .where(models.Path.destination == chosen_stand.id)
+            ).scalar_one_or_none()
+
+            if path_id is None:
+                logging.warning("[db] direct landing path not found source=%s destination=%s", source, chosen_stand.id)
+                return None
+
+            chosen_stand.status = STAND_STATUS.RESERVED
+            chosen_stand.airplane_id = airplane_id
+
+            airplane = session.get(models.Airplane, airplane_id)
+            if airplane is not None:
+                airplane.status = AIRPLANE_STATUS.RESERVED
+                airplane.route_id = path_id
+            
+            flight.status = FLIGHT_STATUS.LANDING
+
+            session.commit()
+            return {
+                "decision": "land",
+                "stand_id": chosen_stand.id,
+                "route_id": path_id,
+            }
+        
+        # Find available parkings in DB
+        parking = session.execute(
+            select(models.ParkingSpot)
+            .where(models.ParkingSpot.status == STAND_STATUS.AVAILABLE)
+            .where(models.ParkingSpot.airplane_id.is_(None))
+            .order_by(models.ParkingSpot.id)
+        ).scalars().first()
+
+        # 2. PARKING CASE
+        if parking is not None:
+            parking.status = STAND_STATUS.RESERVED
+            parking.airplane_id = airplane_id
+
+            path_id = session.execute(
+                select(models.Path.id)
+                .where(models.Path.source == LANDING_ROUTE_SPLINE)
+                .where(models.Path.destination == f"Parking{parking.spline}")
+            ).scalar_one_or_none()
+
+            if path_id is None:
+                logging.warning("[db] parking entry path not found parking=%s", parking.spline)
+                return None
+
+            airplane = session.get(models.Airplane, airplane_id)
+            if airplane is not None:
+                airplane.status = AIRPLANE_STATUS.RESERVED
+                airplane.route_id = path_id
+            
+            flight.status = FLIGHT_STATUS.LANDING
+
+            session.commit()
+            return {
+                "decision": "parking",
+                "parking_n": parking.spline,
+                "route_id": path_id,
+            }
+        
+        # 3. DELAY 15 MINUTES ON ARRIVAL
+        flight.arrival_time = flight.arrival_time + timedelta(minutes=15)
+        session.commit()
+
+        return {"decision": "delayed"}

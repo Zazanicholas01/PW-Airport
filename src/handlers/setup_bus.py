@@ -334,7 +334,7 @@ class SetupBusHandler:
             # Get and save landing spawn position from Spline_LongLanding (same position for every landing spline)
             if (
                 self.state.landing_spawn_position is None
-                and name == f"Spline_{LONG_LANDING_SPLINE}"
+                and name == f"Spline_{LANDING_ROUTE_SPLINE}"
                 and self._is_vec3(first)
             ):
                 self.state.landing_spawn_position = self._vec3(first)

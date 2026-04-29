@@ -1,7 +1,7 @@
 from sqlalchemy import select
 from src.db import models
 
-from src.transport.command_builders import build_start_path_command
+from src.transport.command_builders import build_start_path_command, build_continue_path_command
 from src.domain.status_constants import DEFAULT_PLANE_SPEED
 
 # Now constant speed CHANGE WITH DYNAMIC SPEED
@@ -30,6 +30,10 @@ def detect_route_kind(segments: list[dict]) -> str:
     # Check for departure spline
     if any("Departure" in name for name in names):
         return "departure"
+
+    # Check for parking spline
+    if any("Parking" in name for name in names):
+        return "parking"
 
     # Check for landing spline
     if any("Landing" in name or "LongLanding" in name for name in names):
@@ -96,11 +100,43 @@ def speed_profile_for_segment(*, route_kind: str, segment: dict, index: int, tot
                 "acceleration_mps2": 0.03,
                 "deceleration_mps2": 0.08,
             }
+        
+    if route_kind == "parking":
+
+        # PARKING ENTRY SPEED PROFILE
+        if "Entry_Parking" in name:
+            return {
+                "purpose": "parking_entry",
+                "initial_speed_kmh": 2.0,
+                "target_speed_kmh": 2.0,
+                "acceleration_mps2": 0.25,
+                "deceleration_mps2": 0.30,
+            }
+        
+        # PARKING LOOP SPEED PROFILE
+        if "Parking" in name and "Entry" not in name and "Exit" not in name:
+            return {
+                "purpose": "parking_loop",
+                "initial_speed_kmh": 2.0,
+                "target_speed_kmh": 2.0,
+                "acceleration_mps2": 0.15,
+                "deceleration_mps2": 0.15,
+            }
+        
+        # PARKING EXIT SPEED PROFILE
+        if "Exit_Parking" in name:
+            return {
+                "purpose": "parking_exit",
+                "initial_speed_kmh": 2.0,
+                "target_speed_kmh": 1.0,
+                "acceleration_mps2": 0.25,
+                "deceleration_mps2": 0.25,
+            }
 
     return {
         "purpose": "taxi",
-        "initial_speed_kmh": 5.0,
-        "target_speed_kmh": 5.0,
+        "initial_speed_kmh": 2.0,
+        "target_speed_kmh": 2.0,
         "acceleration_mps2": 0.15,
         "deceleration_mps2": 0.20,
     }
@@ -214,4 +250,38 @@ def make_start_path_command(*, airplane_id: str, speed: float = DEFAULT_PLANE_SP
             airplane_id=airplane_id,
             route_id=route_id,
             segments=segments
+        )
+
+def _make_continue_path_command_from_session(*, session, airplane_id: str) -> dict | None:
+    route_id = get_route_id_for_airplane(session=session, airplane_id=airplane_id)
+    if route_id is None:
+        return None
+    
+    segments = get_segments_for_route(session=session, route_id=route_id)
+    if not segments:
+        return None
+    
+    segments = attach_speed_profiles(segments)
+
+    return build_continue_path_command(
+        airplane_id=airplane_id,
+        route_id=route_id,
+        segments=segments,
+    )
+
+
+def make_continue_path_command(*, airplane_id: str, Session=None, session=None) -> dict | None:
+    if session is not None:
+        return _make_continue_path_command_from_session(
+            session=session,
+            airplane_id=airplane_id,
+        )
+
+    if Session is None:
+        return None
+
+    with Session() as local_session:
+        return _make_continue_path_command_from_session(
+            session=local_session,
+            airplane_id=airplane_id,
         )

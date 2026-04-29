@@ -69,6 +69,18 @@ class RandomFlightGenerator:
         return start + timedelta(seconds=self._random_seconds_between(start, end))
 
 
+    def _random_delta_minutes(self, min_minutes: int, max_minutes: int) -> timedelta:
+        """Return a random delta from now, bounded in minutes."""
+
+        lower = max(0, int(min_minutes))
+        upper = max(lower, int(max_minutes))
+
+        if upper == lower:
+            return timedelta(minutes=lower)
+
+        return timedelta(minutes=self.rng.randint(lower, upper))
+
+
     def _utc_now(self) -> datetime:
         """Ritorna il momento attuale Timezone aware"""
 
@@ -148,6 +160,40 @@ class RandomFlightGenerator:
         # Departure time --> Arrival time - random duration
         dep_time = arr_time - duration
         return dep_time, arr_time
+
+
+    def _times_departure_from_delta(self) -> tuple[datetime, datetime]:
+        """Generate a departure flight with departure time controlled by constants."""
+
+        departure_time = self._utc_now() + self._random_delta_minutes(
+            GENERATOR_CONFIG.DEPARTURE_MIN_DELTA_MINUTES,
+            GENERATOR_CONFIG.DEPARTURE_MAX_DELTA_MINUTES,
+        )
+        arrival_time = departure_time + timedelta(seconds=self.rng.randint(30 * 60, 240 * 60))
+        return departure_time, arrival_time
+
+
+    def _times_arrival_from_delta(self) -> tuple[datetime, datetime]:
+        """Generate an arrival flight with arrival time controlled by constants."""
+
+        arrival_time = self._utc_now() + self._random_delta_minutes(
+            GENERATOR_CONFIG.ARRIVAL_MIN_DELTA_MINUTES,
+            GENERATOR_CONFIG.ARRIVAL_MAX_DELTA_MINUTES,
+        )
+
+        max_duration = min(timedelta(minutes=240), arrival_time - self._utc_now())
+        min_duration = timedelta(minutes=10)
+
+        if max_duration < min_duration:
+            duration = max_duration
+        else:
+            duration = timedelta(seconds=self.rng.randint(
+                int(min_duration.total_seconds()),
+                int(max_duration.total_seconds()),
+            ))
+
+        departure_time = arrival_time - duration
+        return departure_time, arrival_time
 
 
     def _init_flight_counters(self, session, airlines) -> dict[str, int]:
@@ -344,16 +390,9 @@ class RandomFlightGenerator:
         parked_pairs: list[tuple[str, str]],
         counters: dict[str, int],
         ensure_in_window: bool,
-        window: timedelta
+        window: timedelta,
+        is_departure_from_personal: bool,
     ) -> models.Flight:
-        
-        # Forza il primo ad essere un decollo e il secondo un atterraggio
-        # Forza entrambi dentro la window per DEBUG
-        is_departure_from_personal = (
-            True if (ensure_in_window and idx == 0)
-            else False if (ensure_in_window and idx == 1)
-            else self.rng.choice([True, False])
-        )
 
         # Random tipo e aeroporto remoto
         flight_type = self.rng.choice(FLIGHT_STATUS.AVAILABLE_TYPES)
@@ -383,12 +422,11 @@ class RandomFlightGenerator:
         route_category = self._route_category(remote_airport)
         airline = self._pick_airline(airlines, flight_type, route_category)
 
-        # DEBUG - Primo decollo sempre a 1 minuto da adesso
-        if ensure_in_window and idx == 0:
-            departure_time = self._utc_now() + timedelta(minutes=10)
-            arrival_time = departure_time + timedelta(seconds=self.rng.randint(30*60, 240*60))
-        elif ensure_in_window and idx == 1:
-            departure_time, arrival_time = self._times_arrival_within_window(window=window)
+        if ensure_in_window:
+            if is_departure_from_personal:
+                departure_time, arrival_time = self._times_departure_from_delta()
+            else:
+                departure_time, arrival_time = self._times_arrival_from_delta()
         else:
             departure_time, arrival_time = self._times_departure_within_window(window=window)
 
@@ -417,8 +455,18 @@ class RandomFlightGenerator:
     def generate_flights(self, n: int, *, ensure_in_window: bool = True, window: timedelta = timedelta(hours=1)) -> list[models.Flight]:
         """Generazione effettiva dei viaggi random"""
 
+        total = max(0, int(GENERATOR_CONFIG.TOTAL_N_FLIGHTS if GENERATOR_CONFIG.TOTAL_N_FLIGHTS is not None else n))
+        departure_count = max(0, int(GENERATOR_CONFIG.DEPARTURE_N_FLIGHTS))
+        arrival_count = max(0, int(GENERATOR_CONFIG.ARRIVAL_N_FLIGHTS))
+
+        if departure_count + arrival_count == 0:
+            departure_count = total // 2
+            arrival_count = total - departure_count
+        elif departure_count + arrival_count != total:
+            total = departure_count + arrival_count
+
         # Sanity check su viaggi richiesti negativi o uguali a 0
-        if n <= 0:
+        if total <= 0:
             return []
 
         # Inizializza lista di voli
@@ -460,8 +508,11 @@ class RandomFlightGenerator:
             # Inizializza Sequence Numbers
             counters = self._init_flight_counters(session, airlines)
             
-            # Genera n flights (Parametro input)
-            for idx in range(n):
+            # Generate exact departure/arrival counts, then shuffle their order.
+            directions = ([True] * departure_count) + ([False] * arrival_count)
+            self.rng.shuffle(directions)
+
+            for idx, is_departure_from_personal in enumerate(directions):
 
                 flight = self._build_flight(
                     idx=idx,
@@ -471,7 +522,8 @@ class RandomFlightGenerator:
                     parked_pairs=parked_pairs,
                     counters=counters,
                     ensure_in_window=ensure_in_window,
-                    window=window
+                    window=window,
+                    is_departure_from_personal=is_departure_from_personal,
                 )
                 session.add(flight)
                 flights.append(flight)

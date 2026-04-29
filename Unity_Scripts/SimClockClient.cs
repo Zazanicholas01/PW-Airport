@@ -4,13 +4,12 @@ using UnityEngine;
 public class SimClockClient : MonoBehaviour {
 
     [SerializeField] private MessageDispatcher dispatcher;
-    [SerializeField] private bool logDebug = true;
+    [SerializeField] private bool logDebug = false;
 
     private long lastSimUnixMs;
     private float lastSyncRealtime;
     private float timeScale = 1f;
     private int lastSyncId;
-    private float nextTickLogRealtime;
     private bool hasReceivedSync;
 
     public double SimNowUnixMs {
@@ -54,17 +53,4 @@ public class SimClockClient : MonoBehaviour {
         }
     }
 
-    private void Update()
-    {
-        if (!logDebug || !hasReceivedSync)
-            return;
-
-        if (Time.realtimeSinceStartup < nextTickLogRealtime)
-            return;
-
-        nextTickLogRealtime = Time.realtimeSinceStartup + 1f;
-        Debug.Log(
-            $"[SimClockClient] tick sim_now_unix_ms={SimNowUnixMs:0} time_scale={timeScale:0.###} last_sync_id={lastSyncId}"
-        );
-    }
 }

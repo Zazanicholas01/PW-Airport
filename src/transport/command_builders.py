@@ -57,6 +57,19 @@ def build_start_path_command(*, airplane_id: str, route_id: str, segments: list)
         "segments": segments
     }
 
+def build_continue_path_command(*, airplane_id: str, route_id: str, segments: list) -> dict[str, Any]:
+    return {
+        "command": BUS_COMMANDS.CONTINUE_PATH,
+        "airplane_id": airplane_id,
+        "route_id": route_id,
+        "segments": segments,
+    }
+
+def build_clear_parking_command(*, airplane_id: str) -> dict[str, Any]:
+    return {
+        "command": BUS_COMMANDS.CLEAR_PARKING,
+        "airplane_id": airplane_id,
+    }
 
 @dataclass
 class CommandBuilders:
@@ -65,6 +78,8 @@ class CommandBuilders:
     spawn_plane: callable
     start_path: callable
     despawn_plane: callable
+    continue_path: callable
+    clear_parking: callable
 
 
 def default_command_builders() -> CommandBuilders:
@@ -74,4 +89,6 @@ def default_command_builders() -> CommandBuilders:
         spawn_plane=build_spawn_plane,
         start_path=build_start_path_command,
         despawn_plane=build_despawn_plane,
+        continue_path=build_continue_path_command,
+        clear_parking=build_clear_parking_command,
     )

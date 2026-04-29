@@ -202,16 +202,112 @@ class InitGraph:
             
             return self.master_edges[start_link:end_link]
 
+        def master_to_stand_tail(start_link: int, end_link: int, stand_spline: str) -> list[dict]:
+            """Build MasterSpline --> StandSpline tail for landing paths"""
+
+            # Compute the master spline slice between the landing index and the stand index.
+            # !!! EDGE CASE !!! - Spline C3 needs to be reversed
+            if stand_spline == "Spline_C3":
+                master_edges = find_master_edges(start_link=end_link, end_link=start_link)
+            else:
+                master_edges = find_master_edges(start_link=start_link, end_link=end_link)
+
+            segments = []
+
+            if master_edges:
+                if start_link > end_link:
+                    segments.append({
+                        "name": MASTER_SPLINE,
+                        "t_start": master_edges[-1]["t_end"],
+                        "t_end": master_edges[0]["t_start"],
+                    })
+                else:
+                    segments.append({
+                        "name": MASTER_SPLINE,
+                        "t_start": master_edges[0]["t_start"],
+                        "t_end": master_edges[-1]["t_end"],
+                    })
+
+            segments.append({
+                "name": stand_spline,
+                "t_start": 1.0,
+                "t_end": 0.0,
+            })
+
+            return segments
+
+        def direct_landing_prefix(landing_spline: str) -> list[dict]:
+            return [
+                {
+                    "name": f"Spline_{LANDING_ROUTE_SPLINE}",
+                    "t_start": 0.0,
+                    "t_end": 1.0,
+                },
+                {
+                    "name": f"Spline_{LANDING_APPROACH_SPLINE}",
+                    "t_start": 0.0,
+                    "t_end": 1.0,
+                },
+                {
+                    "name": landing_spline,
+                    "t_start": 0.0,
+                    "t_end": 1.0,
+                },
+            ]
+
+        def parking_entry_segments(parking_n: int) -> list[dict]:
+            return [
+                {
+                    "name": f"Spline_{LANDING_ROUTE_SPLINE}",
+                    "t_start": 0.0,
+                    "t_end": 1.0,
+                },
+                {
+                    "name": f"Spline_Entry_Parking{parking_n}",
+                    "t_start": 0.0,
+                    "t_end": 1.0,
+                },
+                {
+                    "name": f"Spline_Parking{parking_n}",
+                    "t_start": 0.0,
+                    "t_end": 1.0,
+                    "auto_start_from_previous_end": True,
+                    "loop_until_cleared": True,
+                    "auto_exit_to_next_start": True,
+                },
+            ]
+        
+        def parking_exit_prefix(parking_n: int, landing_spline: str) -> list[dict]:
+            return [
+                {
+                    "name": f"Spline_Exit_Parking{parking_n}",
+                    "t_start": 0.0,
+                    "t_end": 1.0,
+                },
+                {
+                    "name": landing_spline,
+                    "t_start": 0.0,
+                    "t_end": 1.0,
+                },
+            ]
+
+
         # Retrieve stands and spline names and add Spline_ for Unity naming convention
         available_stands = [f"Spline_{x}" for x in AVAILABLE_STANDS]
         available_landings = [f"Spline_{x}" for x in LANDING_SOURCES]
-        available_departing = [f"Spline_{DEPARTURE_SPLINE}"]
+
+        # Data structures for different landing routing
+        landing_paths = []
+        parking_entry_paths = []
+        parking_exit_paths = []
 
         # Build all landing paths:
         # LandingSpline -> MasterSpline slice -> StandSpline (reversed)
-        paths = []
-        start_link = 0
+        landing_start_link = 0
+
         for landing_spline in available_landings:
+
+            landing_id = landing_spline.replace("Spline_", "")
 
             # For each landing spline, create a path to every available stand.
             for stand_spline in available_stands:
@@ -226,61 +322,53 @@ class InitGraph:
                 if end_link is None:
                     continue
                 
-                # Compute the master spline slice between the landing index and the stand index.
-                # !!! EDGE CASE !!! - Spline C3 needs to be reversed
-                if stand_spline == "Spline_C3":
-                    master_edges = find_master_edges(start_link=end_link, end_link=start_link)
-                else:
-                    master_edges = find_master_edges(start_link=start_link, end_link=end_link)
-
-                # Build final path
-                # - Landing Spline Full (0 --> 1)
-                # - Master Spline Edges
-                # - Stand Spline Reversed (1 --> 0)
-                segments = []
-                segments.append({
-                    "name": landing_spline,
-                    "t_start": 0.0,
-                    "t_end": 1.0,
-                })
-
-                if master_edges:
-                    if start_link > end_link:
-                        segments.append({
-                            "name": MASTER_SPLINE,
-                            "t_start": master_edges[-1]["t_end"],
-                            "t_end": master_edges[0]["t_start"],
-                        })
-                    else:
-                        segments.append({
-                            "name": MASTER_SPLINE,
-                            "t_start": master_edges[0]["t_start"],
-                            "t_end": master_edges[-1]["t_end"],
-                        })
-                
-                segments.append({
-                    "name": stand_spline,
-                    "t_start": 1.0,
-                    "t_end": 0.0,
-                })
-
-                # Remove prefixes to build path naming convention
-                landing_id = landing_spline.replace("Spline_", "")
                 stand_id = stand_spline.replace("Spline_", "")
-                path_name = f"Path_{landing_id}_{stand_id}"
-                
-                # Append to paths list
-                paths.append({
-                    "name": path_name,
-                    "source": landing_id,
-                    "destination": stand_id,
-                    "segments": segments,
-                })
-            
-            # Advance the next landing spline index
-            start_link += 1
 
-        self.landing_paths = paths
+                tail = master_to_stand_tail(
+                    start_link=landing_start_link,
+                    end_link=end_link,
+                    stand_spline=stand_spline,
+                )
+
+                # 1. Direct Route
+                # LandingRoute --> LandingApproach --> Long/Medium/Short Landing --> MasterSpline --> Stand Spline
+                direct_segments = direct_landing_prefix(landing_spline=landing_spline) + tail
+
+                landing_paths.append({
+                    "name": f"Path_LandingRoute_{landing_id}_{stand_id}",
+                    "source": f"{LANDING_ROUTE_SPLINE}_{landing_id}",
+                    "destination": stand_id,
+                    "segments": direct_segments,
+                })
+
+                # 3. Parking exit routes
+                # ParkingN --> Exit_ParkingN --> Long/Medium/Short Landing --> MasterSpline --> Stand
+                for parking_n in PARKING_SPLINES:
+                    exit_segments = parking_exit_prefix(parking_n, landing_spline) + tail
+
+                    parking_exit_paths.append({
+                        "name": f"Path_Parking{parking_n}_{landing_id}_{stand_id}",
+                        "source": f"Parking{parking_n}_{landing_id}",
+                        "destination": stand_id,
+                        "segments": exit_segments,
+                    })
+
+            landing_start_link += 1
+
+        # 2. Parking entry routes
+        # LandingRoute --> Entry_ParkingN --> Loop ParkingN
+        for parking_n in PARKING_SPLINES:
+                parking_entry_paths.append({
+                    "name": f"Path_LandingRoute_Parking{parking_n}",
+                    "source": LANDING_ROUTE_SPLINE,
+                    "destination": f"Parking{parking_n}",
+                    "segments": parking_entry_segments(parking_n),
+                })
+        
+        self.landing_paths = landing_paths
+        self.parking_entry_paths = parking_entry_paths
+        self.parking_exit_paths = parking_exit_paths
+
         paths = []
 
         # Build all departing paths:
@@ -340,4 +428,10 @@ class InitGraph:
 
         # Expose the final combined path list
         self.departing_paths = paths
-        self.paths = self.landing_paths + self.departing_paths
+
+        self.paths = (
+            self.landing_paths
+            + self.parking_entry_paths
+            + self.parking_exit_paths
+            + self.departing_paths
+        )

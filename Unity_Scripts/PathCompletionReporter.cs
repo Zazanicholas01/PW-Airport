@@ -15,6 +15,16 @@ public class PathCompletionReporter : MonoBehaviour {
     }
 
     [Serializable]
+    private class ParkingEnteredEvent
+    {
+        public string type = "event";
+        public string @event = "parking_entered";
+        public string airplane_id;
+        public int route_id;
+        public string parking_spline;
+    }
+
+    [Serializable]
     private class PlaneLeftStandEvent {
         public string type = "event";
         public string @event = "plane_left_stand";
@@ -32,6 +42,7 @@ public class PathCompletionReporter : MonoBehaviour {
         if (follower != null) {
             follower.OnPathCompleted -= OnCompleted;
             follower.OnPlaneLeftStand -= OnPlaneLeftStand;
+            follower.OnParkingEntered -= OnParkingEntered;
         }
         
         follower = f;
@@ -39,6 +50,7 @@ public class PathCompletionReporter : MonoBehaviour {
         if (follower != null) {
             follower.OnPathCompleted += OnCompleted;
             follower.OnPlaneLeftStand += OnPlaneLeftStand;
+            follower.OnParkingEntered += OnParkingEntered;
         }
     }
 
@@ -72,11 +84,43 @@ public class PathCompletionReporter : MonoBehaviour {
         }
     }
 
+    private async void OnParkingEntered(string airplaneId, int routeId, string parkingSpline)
+    {
+        if (ws == null || !ws.IsConnected || string.IsNullOrWhiteSpace(airplaneId))
+        {
+            Debug.LogWarning(
+                $"[PathCompletionReporter] parking_entered skipped airplane_id={airplaneId} " +
+                $"route_id={routeId} connected={(ws != null && ws.IsConnected)}"
+            );
+            return;
+        }
+
+        var payload = new ParkingEnteredEvent
+        {
+            airplane_id = airplaneId,
+            route_id = routeId,
+            parking_spline = parkingSpline,
+        };
+
+        try
+        {
+            await ws.Send(JsonUtility.ToJson(payload));
+            Debug.Log(
+                $"[PathCompletionReporter] parking_entered sent airplane_id={airplaneId} " +
+                $"route_id={routeId} parking_spline={parkingSpline}"
+            );
+        } catch (Exception ex)
+        {
+            Debug.LogWarning($"[PathCompletionReporter] parking_entered send failed: {ex.Message}");
+        }
+    }
+
     private void OnDisable() {
 
         if (follower != null) {
             follower.OnPathCompleted -= OnCompleted;
             follower.OnPlaneLeftStand -= OnPlaneLeftStand;
+            follower.OnParkingEntered -= OnParkingEntered;
         }
     }
 }

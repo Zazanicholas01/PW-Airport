@@ -21,6 +21,7 @@ class FlightActions:
 
     reserve_stand_and_link_airplane_for_landing_arrival: Callable[..., str | None]
     assign_landing_path_for_airplane: Callable[..., None]
+    assign_arrival_route_or_parking: Callable[..., dict | None]
 
     get_airplane_prefab: Callable[..., str | None]
 

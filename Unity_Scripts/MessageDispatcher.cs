@@ -14,6 +14,7 @@ public class MessageDispatcher : MonoBehaviour
     public event Action<StartPathCommand> OnStartPathCommand;
     public event Action<DespawnPlaneCommand> OnDespawnPlaneCommand;
     public event Action<ClearParkingCommand> OnClearParkingCommand;
+    public event Action<ContinuePathCommand> OnContinuePathCommand;
 
     [Serializable]
     private class CommandEnvelope
@@ -43,6 +44,15 @@ public class MessageDispatcher : MonoBehaviour
         public long sim_unix_ms;
         public float time_scale;
         public int sync_id;
+    }
+
+    [Serializable]
+    public class ContinuePathCommand
+    {
+        public string command;
+        public string airplane_id;
+        public int route_id;
+        public PathSegment[] segments;
     }
 
     [Serializable]
@@ -183,6 +193,9 @@ public class MessageDispatcher : MonoBehaviour
             case "despawn_plane":
                 HandleDespawnPlane(json);
                 break;
+            case "continue_path":
+                HandleContinuePath(json);
+                break;
             case "clear_parking":
                 HandleClearParking(json);
                 break;
@@ -268,7 +281,7 @@ public class MessageDispatcher : MonoBehaviour
 
         try
         {
-            JsonUtility.FromJson<ClearParkingCommand>(json);
+            cmd = JsonUtility.FromJson<ClearParkingCommand>(json);
         }
         catch (Exception ex)
         {
@@ -278,7 +291,32 @@ public class MessageDispatcher : MonoBehaviour
 
         if (cmd == null || string.IsNullOrWhiteSpace(cmd.airplane_id))
         {
-            
+            Debug.LogWarning("[MessageDispatcher] clear_parking payload missing airplane_id.");
+            return;
         }
+
+        OnClearParkingCommand?.Invoke(cmd);
+        Debug.Log($"[MessageDispatcher] ClearParking dispatched airplane_id={cmd.airplane_id}");
+    }
+
+    private void HandleContinuePath(string json)
+    {
+        ContinuePathCommand cmd = null;
+
+        try
+        {
+            cmd = JsonUtility.FromJson<ContinuePathCommand>(json);
+        } catch (Exception ex) {
+            Debug.LogWarning($"[MessageDispatcher] Invalid continue_path payload: {ex.Message}");
+            return;
+        }
+
+        if (cmd == null || string.IsNullOrWhiteSpace(cmd.airplane_id) || cmd.segments == null || cmd.segments.Length == 0) {
+            Debug.LogWarning("[MessageDispatcher] continue_path payload missing airplane_id/segments.");
+            return;
+        }
+
+        OnContinuePathCommand?.Invoke(cmd);
+        Debug.Log($"[MessageDispatcher] ContinuePath dispatched airplane_id={cmd.airplane_id} route_id={cmd.route_id} segments={cmd.segments.Length}");
     }
 }
