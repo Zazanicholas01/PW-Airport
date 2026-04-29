@@ -256,8 +256,13 @@ class InitGraph:
                 },
             ]
 
-        def parking_entry_segments(parking_n: int) -> list[dict]:
+        def parking_entry_segments(parking_n: int, direction: str) -> list[dict]:
             return [
+                {
+                    "name": f"Spline_Landing_{direction}",
+                    "t_start": 0.0,
+                    "t_end": 1.0,
+                },
                 {
                     "name": f"Spline_{LANDING_ROUTE_SPLINE}",
                     "t_start": 0.0,
@@ -369,11 +374,12 @@ class InitGraph:
         # 2. Parking entry routes
         # LandingRoute --> Entry_ParkingN --> Loop ParkingN
         for parking_n in PARKING_SPLINES:
+            for direction in available_directions:
                 parking_entry_paths.append({
-                    "name": f"Path_LandingRoute_Parking{parking_n}",
-                    "source": LANDING_ROUTE_SPLINE,
+                    "name": f"Path_LandingRoute_{direction}_Parking{parking_n}",
+                    "source": f"{LANDING_ROUTE_SPLINE}_{direction}",
                     "destination": f"Parking{parking_n}",
-                    "segments": parking_entry_segments(parking_n),
+                    "segments": parking_entry_segments(parking_n, direction),
                 })
         
         self.landing_paths = landing_paths

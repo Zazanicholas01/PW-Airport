@@ -647,14 +647,26 @@ def assign_arrival_route_or_parking(*, flight_id: str) -> dict | None:
             parking.status = STAND_STATUS.RESERVED
             parking.airplane_id = airplane_id
 
+            direction = direction_for_airport_icao(getattr(flight, "origin", None))
+
+            if direction is None:
+                source = LANDING_ROUTE_SPLINE
+            else:
+                source = f"{LANDING_ROUTE_SPLINE}_{direction.value}"
+
             path_id = session.execute(
                 select(models.Path.id)
-                .where(models.Path.source == LANDING_ROUTE_SPLINE)
+                .where(models.Path.source == source)
                 .where(models.Path.destination == f"Parking{parking.spline}")
             ).scalar_one_or_none()
 
             if path_id is None:
-                logging.warning("[db] parking entry path not found parking=%s", parking.spline)
+                logging.warning(
+                    "[db] parking entry path not found source=%s parking=%s flight_id=%s",
+                    source,
+                    parking.spline,
+                    flight_id,
+                )
                 return None
 
             airplane = session.get(models.Airplane, airplane_id)
