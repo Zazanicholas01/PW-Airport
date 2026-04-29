@@ -50,7 +50,7 @@ def speed_profile_for_segment(*, route_kind: str, segment: dict, index: int, tot
             return {
                 "purpose": "stand_exit",
                 "initial_speed_kmh": 0.0,
-                "target_speed_kmh": 4.0,
+                "target_speed_kmh": 1.0,
                 "acceleration_mps2": 0.15,
                 "deceleration_mps2": 0.25,
             }
@@ -58,8 +58,8 @@ def speed_profile_for_segment(*, route_kind: str, segment: dict, index: int, tot
         if name == "MasterSpline":
             return {
                 "purpose": "taxi",
-                "initial_speed_kmh": 4.0,
-                "target_speed_kmh": 7.0,
+                "initial_speed_kmh": 1.0,
+                "target_speed_kmh": 1.5,
                 "acceleration_mps2": 0.20,
                 "deceleration_mps2": 0.25,
             }
@@ -128,15 +128,15 @@ def speed_profile_for_segment(*, route_kind: str, segment: dict, index: int, tot
             return {
                 "purpose": "parking_exit",
                 "initial_speed_kmh": 2.0,
-                "target_speed_kmh": 1.0,
+                "target_speed_kmh": 0.5,
                 "acceleration_mps2": 0.25,
-                "deceleration_mps2": 0.25,
+                "deceleration_mps2": 0.45,
             }
 
     return {
         "purpose": "taxi",
-        "initial_speed_kmh": 2.0,
-        "target_speed_kmh": 2.0,
+        "initial_speed_kmh": 1.0,
+        "target_speed_kmh": 1.0,
         "acceleration_mps2": 0.15,
         "deceleration_mps2": 0.20,
     }

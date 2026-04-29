@@ -19,6 +19,7 @@ import json
 from pathlib import Path
 
 from src.domain.status_constants import *
+from src.utils.geo_direction import CardinalDirection
 
 logger = logging.getLogger(__name__)
 
@@ -295,6 +296,7 @@ class InitGraph:
         # Retrieve stands and spline names and add Spline_ for Unity naming convention
         available_stands = [f"Spline_{x}" for x in AVAILABLE_STANDS]
         available_landings = [f"Spline_{x}" for x in LANDING_SOURCES]
+        available_directions = [direction.value for direction in CardinalDirection]
 
         # Data structures for different landing routing
         landing_paths = []
@@ -330,16 +332,25 @@ class InitGraph:
                     stand_spline=stand_spline,
                 )
 
-                # 1. Direct Route
-                # LandingRoute --> LandingApproach --> Long/Medium/Short Landing --> MasterSpline --> Stand Spline
-                direct_segments = direct_landing_prefix(landing_spline=landing_spline) + tail
+                # 1. Direct Directional Route
+                # Landing_{direction} --> LandingRoute --> LandingApproach --> Long/Medium/Short Landing --> MasterSpline --> Stand Spline
+                base_direct_segments = direct_landing_prefix(landing_spline=landing_spline) + tail
 
-                landing_paths.append({
-                    "name": f"Path_LandingRoute_{landing_id}_{stand_id}",
-                    "source": f"{LANDING_ROUTE_SPLINE}_{landing_id}",
-                    "destination": stand_id,
-                    "segments": direct_segments,
-                })
+                for direction in available_directions:
+                    direct_segments = [
+                        {
+                            "name": f"Spline_Landing_{direction}",
+                            "t_start": 0.0,
+                            "t_end": 1.0,
+                        },
+                    ] + base_direct_segments
+
+                    landing_paths.append({
+                        "name": f"Path_LandingRoute_{direction}_{landing_id}_{stand_id}",
+                        "source": f"{LANDING_ROUTE_SPLINE}_{direction}_{landing_id}",
+                        "destination": stand_id,
+                        "segments": direct_segments,
+                    })
 
                 # 3. Parking exit routes
                 # ParkingN --> Exit_ParkingN --> Long/Medium/Short Landing --> MasterSpline --> Stand
@@ -371,9 +382,11 @@ class InitGraph:
 
         paths = []
 
-        # Build all departing paths:
-        #   StandSpline -> MasterSpline slice -> DepartureSpline
+        # DEPARTURE PATHS BUILD LOGIC
+
+        # StandSpline -> MasterSpline slice -> DepartureSpline --> Departure_{direction}
         for stand_spline in available_stands:
+
             start_link = None
             end_link = len(self.master_edges)
 
@@ -381,50 +394,61 @@ class InitGraph:
             for n, link in self.master_links.items():
                 if stand_spline in link:
                     start_link = int(n)
+                    break
                 
-                if start_link is None:
-                    continue
+            if start_link is None:
+                continue
                     
             # Slice the master spline from the stand index to the end (towards Departure).
             master_edges = find_master_edges(start_link=start_link, end_link=end_link)
-            segments = []
 
-            # Stand spline (0 --> 1)
-            segments.append({
+            base_segments = []
+
+            # 1. Stand Spline
+            base_segments.append({
                 "name": stand_spline,
                 "t_start": 0.0,
                 "t_end": 1.0
             })
 
-            # Append the master spline slice
+            # 2. Master Spline slice
             if master_edges:
-                segments.append({
+                base_segments.append({
                     "name": MASTER_SPLINE,
                     "t_start": master_edges[0]["t_start"],
                     "t_end": master_edges[-1]["t_end"]
                 })
 
+            # 3. Generic departure spline, used as hold timer before departing
             departure_hold_t = self._departure_hold_t()
             
-            # Departure Spline (0 --> 1)
-            segments.append({
+            base_segments.append({
                 "name": "Spline_Departure",
                 "t_start": 0.0,
                 "t_end": 1.0,
                 "departure_hold_t": departure_hold_t,
             })
 
-            # Remove prefixes for path naming convention
-            departing_id = "Departure"
             stand_id = stand_spline.replace("Spline_", "")
-            path_name = f"Path_{stand_id}_{departing_id}"
 
-            paths.append({
-                "name": path_name,
-                "source": stand_id,
-                "destination": departing_id,
-                "segments": segments
-            })
+            # 4. Directional departure route
+            for direction in available_directions:
+                directional_segments = list(base_segments)
+
+                directional_segments.append({
+                    "name": f"Spline_Departure_{direction}",
+                    "t_start": 0.0,
+                    "t_end": 1.0,
+                })
+
+                departing_id = f"Departure_{direction}"
+
+                paths.append({
+                    "name": f"Path_{stand_id}_{departing_id}",
+                    "source": stand_id,
+                    "destination": departing_id,
+                    "segments": directional_segments,
+                })
 
         # Expose the final combined path list
         self.departing_paths = paths

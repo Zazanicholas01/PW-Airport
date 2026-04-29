@@ -3,6 +3,12 @@ from src.db import models
 from src.utils.mapping import range_for_airplane_model, type_for_airplane_model, landing_source_for_range
 from src.utils.datetimes import as_utc
 from src.utils.standard import normalize_distance, normalize_flight_type, stand_category
+from src.utils.geo_direction import (
+    direction_for_airport_icao, 
+    landing_route_source,
+    departure_route_destination
+)
+
 from src.domain.status_constants import *
 
 from collections.abc import Callable
@@ -597,7 +603,7 @@ def assign_arrival_route_or_parking(*, flight_id: str) -> dict | None:
         
         # 1. STAND AVAILABLE CASE
         if chosen_stand is not None:
-            source = landing_route_source_for_airplane(session, airplane_id)
+            source = landing_route_source_for_flight(session, flight, airplane_id)
             if source is None:
                 return
             
@@ -670,3 +676,82 @@ def assign_arrival_route_or_parking(*, flight_id: str) -> dict | None:
         session.commit()
 
         return {"decision": "delayed"}
+
+
+def landing_route_source_for_flight(session, flight, airplane_id: str) -> str | None:
+
+    # Retrieve airplane from DB
+    airplane = session.get(models.Airplane, airplane_id)
+    if airplane is None:
+        return None
+    
+    # Get airplane range and direction based on remote airport
+    landing_id = landing_source_for_range(getattr(airplane, "range", None))
+    direction = direction_for_airport_icao(getattr(flight, "origin", None))
+
+    if direction is None:
+        return f"{LANDING_ROUTE_SPLINE}_{landing_id}"
+    
+    return landing_route_source(direction, landing_id)
+
+
+def departure_route_destination_for_flight(flight) -> str:
+
+    direction = direction_for_airport_icao(getattr(flight, "destination", None))
+
+    if direction is None:
+        return DEPARTURE_SPLINE
+    
+    return departure_route_destination(direction)
+
+
+def assign_departure_path_for_flight(
+    *,
+    flight_id: str,
+    airplane_id: str,
+    stand_id: str,
+) -> int | None:
+    
+    with _get_session_factory()() as session:
+
+        # Retrieve flight from DB
+        flight = session.get(models.Flight, flight_id)
+        if flight is None:
+            return None
+        
+        # Find departure route for the destination
+        destination = departure_route_destination_for_flight(flight)
+
+        # Retrieve path from DB
+        path_id = session.execute(
+            select(models.Path.id)
+            .where(models.Path.source == stand_id)
+            .where(models.Path.destination == destination)
+        ).scalar_one_or_none()
+
+        if path_id is None:
+            logging.warning(
+                "[db] departure path not found source=%s destination=%s flight_id=%s",
+                stand_id,
+                destination,
+                flight_id,
+            )
+            return None
+        
+        # Update Airplane's Route
+        session.execute(
+            update(models.Airplane)
+            .where(models.Airplane.id == airplane_id)
+            .values(route_id=path_id)
+        )
+        session.commit()
+
+        logging.info(
+            "[db] directional departure path assigned airplane_id=%s route_id=%s (%s -> %s)",
+            airplane_id,
+            path_id,
+            stand_id,
+            destination,
+        )
+
+        return path_id

@@ -12,6 +12,7 @@ class FlightActions:
 
     assign_airplane_to_departure_flight: Callable[..., tuple[str, str] | None]
     assign_path_to_airplane: Callable[..., None]
+    assign_departure_path_for_flight: Callable[..., int | None]
 
     create_and_assign_airplane_for_landing_departure: Callable[..., str | None]
 

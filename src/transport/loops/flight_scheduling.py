@@ -219,10 +219,10 @@ async def flight_scheduler_loop(
 
                 # Assign a departure path to the airplane from Stand --> Departure spline
                 airplane_id, stand_id = assignment
-                route_id = ctx.flight_actions.assign_path_to_airplane(
+                route_id = ctx.flight_actions.assign_departure_path_for_flight(
+                    flight_id=flight_id,
                     airplane_id=airplane_id,
-                    source=stand_id,
-                    destination="Departure",
+                    stand_id=stand_id,
                 )
 
                 if route_id is None:
