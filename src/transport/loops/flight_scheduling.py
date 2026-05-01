@@ -14,6 +14,8 @@ from src.domain.status_constants import (
 from src.schedulers.flight_scheduler import FlightSlidingWindowScheduler
 from src.utils.datetimes import as_utc
 from src.utils.event_log import append_event
+from src.utils.geo_direction import direction_for_airport_icao
+from src.utils.landing_timing import landing_spawn_lead_seconds
 from src.path_commands import make_start_path_command
 
 from src.transport.session import SessionContext
@@ -75,6 +77,28 @@ def _scheduler_window_row(flight, *, airport_icao: str) -> dict:
         "status_class": _status_pill_class(status),
         "airplane": str(getattr(flight, "airplane_id", None) or "--"),
     }
+
+
+def _dynamic_landing_spawn_context(ctx: SessionContext, flight) -> tuple[object, dict, float] | None:
+    direction = direction_for_airport_icao(getattr(flight, "origin", None))
+    spawn_position = ctx.setup_bus.state.landing_spawn_position
+
+    if direction is not None:
+        spawn_position = ctx.setup_bus.state.landing_spawn_positions_by_direction.get(
+            direction.value,
+            spawn_position,
+        )
+
+    airport_position = ctx.setup_bus.state.airport_position
+    if not isinstance(spawn_position, dict) or not isinstance(airport_position, dict):
+        return None
+
+    lead_seconds = landing_spawn_lead_seconds(
+        spawn_position=spawn_position,
+        airport_position=airport_position,
+    )
+
+    return direction, spawn_position, lead_seconds
 
 
 
@@ -278,8 +302,26 @@ async def flight_scheduler_loop(
                 })
                 continue
 
-            # LANDING RESERVATION - In Window on Arrival Time for Landing 
-            if scheduler.should_reserve_landing_stand(flight=flight, now_utc=now):
+            landing_spawn_context = None
+            if getattr(flight, "destination", None) == ctx.airport_icao:
+                landing_spawn_context = _dynamic_landing_spawn_context(ctx, flight)
+
+            # LANDING RESERVATION - dynamically timed from landing route distance/speed
+            should_reserve_landing = False
+            if landing_spawn_context is not None:
+                _, _, lead_seconds = landing_spawn_context
+                should_reserve_landing = scheduler.should_reserve_landing_stand_dynamic(
+                    flight=flight,
+                    now_utc=now,
+                    lead_seconds=lead_seconds,
+                )
+            else:
+                should_reserve_landing = scheduler.should_reserve_landing_stand(
+                    flight=flight,
+                    now_utc=now,
+                )
+
+            if should_reserve_landing:
 
                 result = ctx.flight_actions.assign_arrival_route_or_parking(flight_id=flight_id)
 
@@ -408,8 +450,18 @@ async def flight_scheduler_loop(
                         })
                 continue
 
-            # SPAWN LANDING PLANE - 1 Minute Before Arrival Time
-            if scheduler.should_spawn_landing_plane(flight=flight, now_utc=now):
+            # SPAWN LANDING PLANE - dynamically timed from landing route distance/speed
+            if landing_spawn_context is None:
+                if getattr(flight, "destination", None) == ctx.airport_icao:
+                    logging.warning(
+                        "[flight_scheduler] landing_spawn: dynamic spawn context unavailable flight_id=%s",
+                        flight_id,
+                    )
+                continue
+
+            direction, spawn_position, lead_seconds = landing_spawn_context
+
+            if scheduler.should_spawn_landing_plane_dynamic(flight=flight, now_utc=now, lead_seconds=lead_seconds):
 
                 # Retrieve airplane ID from flight
                 airplane_id = getattr(flight, "airplane_id", None)
@@ -426,21 +478,21 @@ async def flight_scheduler_loop(
                     scheduler.handled.discard((flight_id, "landing_spawn"))
                     continue
 
-                if not isinstance(landing_spawn_position, dict):
-                    logging.warning("[flight_scheduler] landing_spawn: landing_spawn_position not set; cannot spawn flight_id=%s", flight_id)
+                if not isinstance(spawn_position, dict):
+                    logging.warning("[flight_scheduler] landing_spawn: spawn_position not set; cannot spawn flight_id=%s", flight_id)
                     scheduler.handled.discard((flight_id, "landing_spawn"))
                     continue
 
                 logging.info(
-                    "[landing_spawn][OUT] flight_id=%s airplane_id=%s prefab=%s pos=%s",
-                    flight_id, airplane_id, prefab, landing_spawn_position,
+                    "[landing_spawn][OUT] flight_id=%s airplane_id=%s prefab=%s direction=%s lead_seconds=%.1f pos=%s",
+                    flight_id, airplane_id, prefab, getattr(direction, "value", None), lead_seconds, spawn_position,
                 )
 
                 # Send Spawn Plane command through bus to Unity
                 await ctx.bus.send_command(ctx.commands.spawn_plane(
                     prefab=prefab,
                     stand_id=f"landing:{flight_id}",
-                    position=landing_spawn_position,
+                    position=spawn_position,
                     airplane_id=airplane_id,
                     spawn_context="landing",
                 ))

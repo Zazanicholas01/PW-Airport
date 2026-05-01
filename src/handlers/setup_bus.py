@@ -10,6 +10,8 @@ from src.db.engine import get_engine
 from src.db import models
 from src.domain.status_constants import *
 
+from src.utils.geo_direction import CARDINAL_DIRECTIONS
+
 
 class SetupPhase:
     IDLE = "IDLE"
@@ -27,14 +29,17 @@ class SetupState:
 
     phase: SetupPhase = SetupPhase.IDLE
 
-    pending_splines = []
-    pending_prefabs = []
+    pending_splines: list = field(default_factory=list)
+    pending_prefabs: list = field(default_factory=list)
 
     splines_done = False
     prefabs_done = False
     paths_done = False
 
     landing_spawn_position: dict[str, Any] | None = None
+    landing_spawn_positions_by_direction: dict[str, dict[str, Any]] = field(default_factory=dict)
+    airport_position: dict[str, Any] | None = None
+
     last_error: str | None = None
 
     @property
@@ -46,10 +51,14 @@ class SetupState:
         self.phase = SetupPhase.IDLE
         self.pending_splines.clear()
         self.pending_prefabs.clear()
+
         self.splines_done = False
         self.prefabs_done = False
         self.paths_done = False
+
         self.landing_spawn_position = None
+        self.landing_spawn_positions_by_direction.clear()
+        self.airport_position = None
         self.last_error = None
 
 
@@ -320,33 +329,45 @@ class SetupBusHandler:
 
         for spline in splines:
             name = spline.get("name", "<unnamed>")
+            first = spline.get("firstKnotPos")
 
             # Route to specific handler for Master Spline only
             if name == MASTER_SPLINE:
                 self.init_graph.add_master_spline(spline)
+
+                # Get airport position (First knot of master spline)
+                if self._is_vec3(first):
+                    self.state.airport_position = self._vec3(first)
+
                 logging.info("[setup bus] Committed Master Spline")
                 continue
 
             # For non-master splines route to add_spline method and get first knot position from Unity payload
             self.init_graph.add_spline(spline)
-            first = spline.get("firstKnotPos")
 
-            # Get and save landing spawn position from Spline_LongLanding (same position for every landing spline)
-            if (
-                self.state.landing_spawn_position is None
-                and name == f"Spline_{LANDING_ROUTE_SPLINE}"
-                and self._is_vec3(first)
-            ):
-                self.state.landing_spawn_position = self._vec3(first)
-                logging.info(
-                    "[setup bus] captured landing_spawn_position=%s",
-                    self.state.landing_spawn_position,
-                )
+            # Save landing spawn positions by direction
+            if name.startswith("Spline_Landing_") and self._is_vec3(first):
+                direction = name.removeprefix("Spline_Landing_")
 
-            # Save stand position from spline's first knot position
+                if direction in CARDINAL_DIRECTIONS:
+                    pos = self._vec3(first)
+                    self.state.landing_spawn_positions_by_direction[direction] = pos
+
+                    if self.state.landing_spawn_position is None:
+                        self.state.landing_spawn_position = pos
+                    
+                    logging.info(
+                        "[setup bus] captured directional landing spawn direction=%s pos=%s",
+                        direction,
+                        pos,
+                    )
+
+            # Save stand positions
             if name.startswith("Spline_") and self._is_vec3(first):
                 stand_id = name.removeprefix("Spline_")
-                stand_positions[stand_id] = self._vec3(first)
+
+                if stand_id in AVAILABLE_STANDS:
+                    stand_positions[stand_id] = self._vec3(first)
         
         return stand_positions
 

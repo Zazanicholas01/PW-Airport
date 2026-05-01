@@ -149,6 +149,35 @@ class FlightSlidingWindowScheduler:
             return False
 
         return self._once(flight, "landing_arr")
+
+
+    def should_reserve_landing_stand_dynamic(
+            self,
+            *,
+            flight,
+            now_utc: datetime,
+            lead_seconds: float,
+    ) -> bool:
+        """Reserve the landing route early enough for dynamic spawn timing."""
+
+        arrival_utc = as_utc(getattr(flight, "arrival_time", None))
+        if arrival_utc is None:
+            return False
+
+        if getattr(flight, "destination", None) != self.airport_icao:
+            return False
+
+        if getattr(flight, "status", None) != "Lan_Ongoing":
+            return False
+
+        if getattr(flight, "airplane_id", None) is None:
+            return False
+
+        reservation_time = arrival_utc - timedelta(seconds=lead_seconds)
+        if now_utc < reservation_time:
+            return False
+
+        return self._once(flight, "landing_arr")
     
 
     def should_mark_landing_departed(self, *, flight, now_utc: datetime) -> bool:
@@ -226,3 +255,35 @@ class FlightSlidingWindowScheduler:
             return False
         
         return self._once(flight, "dep_embarking")
+
+
+    def should_spawn_landing_plane_dynamic(
+            self,
+            *,
+            flight,
+            now_utc: datetime,
+            lead_seconds: float
+    ) -> bool:
+        
+        # Retrieve arrival time from the flight
+        arrival_utc = as_utc(getattr(flight, "arrival_time", None))
+        if arrival_utc is None:
+            return False
+        
+        # Sanity checks
+        if getattr(flight, "destination", None) != self.airport_icao:
+            return False
+
+        if getattr(flight, "status", None) != "Landing":
+            return False
+
+        if getattr(flight, "airplane_id", None) is None:
+            return False
+        
+        # Calculate spawn time
+        spawn_time = arrival_utc - timedelta(seconds=lead_seconds)
+
+        if now_utc < spawn_time:
+            return False
+        
+        return self._once(flight, "landing_spawn")

@@ -76,6 +76,14 @@ DEFAULT_PLANE_SPEED = 0.2
 # File constants
 NODE_SCHEMA_JSON_PATH = "schema_nodi.json"
 
+@dataclass
+class LANDING_PARAMETERS:
+    LANDING_AVG_SPEED_KMH = 180.0
+    METERS_PER_UNITY_UNIT = 867.08
+
+    MIN_LANDING_SPAWN_LEAD_SECONDS = 20
+    MAX_LANDING_SPAWN_LEAD_SECONDS = 8 * 60
+
 # Airline categories
 @dataclass
 class AIRLINE_CATEGORIES:
