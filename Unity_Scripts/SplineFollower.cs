@@ -97,6 +97,17 @@ public class SplineFollower : MonoBehaviour {
         currentSegmentIsParkingLoop = false;
         currentParkingExitT = 0f;
         parkingEnteredReported = false;
+
+        if (running)
+        {
+            if (!BeginSegment(0))
+            {
+                Stop();
+                return;
+            }
+
+            hasLastSim = false;
+        }
     }
 
     public void Stop() {

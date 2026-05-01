@@ -264,7 +264,7 @@ class RuntimeBusHandler:
 
                     return
                 
-                if destination == "Departure":
+                if self._is_departure_destination(destination):
                     
                     # Update status of airplane from Departing --> InFlight with idempotency check
                     if airplane.status == AIRPLANE_STATUS.DEPARTING:
@@ -585,3 +585,11 @@ class RuntimeBusHandler:
 
         airplane.route_id = path_id
         return path_id
+    
+
+    def _is_departure_destination(self, destination: str | None) -> bool:
+
+        if not isinstance(destination, str):
+            return False
+        
+        return destination == "Departure" or destination.startswith("Departure_")

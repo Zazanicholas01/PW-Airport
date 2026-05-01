@@ -70,6 +70,13 @@ public class SpawnHandler : MonoBehaviour
         Quaternion rotation = RotationForStand(command.stand_id);
         var instance = Instantiate(prefab, position, rotation, spawnParent);
 
+        var radarTarget = instance.GetComponentInChildren<RadarTarget>();
+        if (radarTarget != null)
+        {
+            radarTarget.airplaneId = command.airplane_id;
+            radarTarget.isVisibleOnRadar = true;
+        }
+
         if (registry != null && !string.IsNullOrWhiteSpace(command.airplane_id))
             registry.Register(command.airplane_id, instance);
             

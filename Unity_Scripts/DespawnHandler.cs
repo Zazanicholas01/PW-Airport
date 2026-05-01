@@ -5,10 +5,12 @@ public class DespawnHandler : MonoBehaviour {
 
     [SerializeField] private MessageDispatcher dispatcher;
     [SerializeField] private GameObjectRegistry registry;
+    [SerializeField] private RadarController radarController;
 
     private void Awake() {
         dispatcher = dispatcher ?? GetComponent<MessageDispatcher>();
         if (registry == null) registry = FindObjectOfType<GameObjectRegistry>();
+        if (radarController == null) radarController = FindObjectOfType<RadarController>();
     }
 
     private void OnEnable() {
@@ -34,6 +36,16 @@ public class DespawnHandler : MonoBehaviour {
         }
 
         registry.Unregister(cmd.airplane_id);
+
+        var radarTarget = plane.GetComponentInChildren<RadarTarget>();
+        if (radarTarget != null) {
+            radarTarget.isVisibleOnRadar = false;
+        }
+
+        if (radarController != null) {
+            radarController.RemoveAirplane(cmd.airplane_id);
+        }
+
         Destroy(plane);
 
         Debug.Log($"[DespawnHandler] Despawned airplane_id={cmd.airplane_id}");

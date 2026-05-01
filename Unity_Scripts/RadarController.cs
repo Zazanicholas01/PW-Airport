@@ -87,10 +87,11 @@ public class RadarController : MonoBehaviour
                 continue;
             }
 
-            RadarBlip blip = GetOrCreateBlip(target);
+            Vector2 radarPosition = flatOffset / radarRangeUnityUnits * radarRadiusPixels;
+
+            RadarBlip blip = GetOrCreateBlip(target, radarPosition);
             seenTargets.Add(target);
 
-            Vector2 radarPosition = flatOffset / radarRangeUnityUnits * radarRadiusPixels;
             blip.RectTransform.anchoredPosition = Vector2.Lerp(
                 blip.RectTransform.anchoredPosition,
                 radarPosition,
@@ -110,7 +111,7 @@ public class RadarController : MonoBehaviour
         previousSweepAngle = currentSweepAngle;
     }
 
-    private RadarBlip GetOrCreateBlip(RadarTarget target)
+    private RadarBlip GetOrCreateBlip(RadarTarget target, Vector2 initialRadarPosition)
     {
         if (blips.TryGetValue(target, out RadarBlip existingBlip))
         {
@@ -118,6 +119,7 @@ public class RadarController : MonoBehaviour
         }
 
         RadarBlip blip = Instantiate(blipPrefab, blipContainer);
+        blip.RectTransform.anchoredPosition = initialRadarPosition;
         blips[target] = blip;
         return blip;
     }
@@ -138,6 +140,44 @@ public class RadarController : MonoBehaviour
         blips.Remove(target);
     }
 
+    private void RemoveBlipEntry(RadarTarget target)
+    {
+        if (!blips.TryGetValue(target, out RadarBlip blip))
+        {
+            return;
+        }
+
+        if (blip != null)
+        {
+            Destroy(blip.gameObject);
+        }
+
+        blips.Remove(target);
+    }
+
+    public void RemoveAirplane(string airplaneId)
+    {
+        if (string.IsNullOrWhiteSpace(airplaneId))
+        {
+            return;
+        }
+
+        List<RadarTarget> matchingTargets = new();
+
+        foreach (RadarTarget target in blips.Keys)
+        {
+            if (target != null && target.airplaneId == airplaneId)
+            {
+                matchingTargets.Add(target);
+            }
+        }
+
+        foreach (RadarTarget target in matchingTargets)
+        {
+            RemoveBlipEntry(target);
+        }
+    }
+
     private void RemoveStaleBlips(HashSet<RadarTarget> seenTargets)
     {
         List<RadarTarget> staleTargets = new();
@@ -152,7 +192,7 @@ public class RadarController : MonoBehaviour
 
         foreach (RadarTarget target in staleTargets)
         {
-            RemoveBlip(target);
+            RemoveBlipEntry(target);
         }
     }
 
