@@ -13,13 +13,25 @@ public class RadarController : MonoBehaviour
     [SerializeField] private float metersPerUnityUnit = 867.08f;
     [SerializeField] private float radarRadiusPixels = 95f;
     [SerializeField] private float updateIntervalSeconds = 0.1f;
+    [SerializeField] private float innerExclusionRangeMeters = 3000f;
 
     [Header("Orientation")]
     [SerializeField] private bool rotateWithAirport = false;
 
+    [Header("Smoothing")]
+    [SerializeField] private float blipMoveLerp = 0.35f;
+
+    [Header("Sweep Highlight")]
+    [SerializeField] private RectTransform sweepPivot;
+
+    private float previousSweepAngle;
+    private bool hasPreviousSweepAngle;
+
+
     private readonly Dictionary<RadarTarget, RadarBlip> blips = new();
     private float nextUpdateTime;
     private float RadarRangeUnityUnits => radarRangeMeters / metersPerUnityUnit;
+    private float InnerExclusionRangeUnityUnits => innerExclusionRangeMeters / metersPerUnityUnit;
 
     private void Update()
     {
@@ -35,6 +47,14 @@ public class RadarController : MonoBehaviour
         if (airportCenter == null || blipContainer == null || blipPrefab == null)
         {
             return;
+        }
+
+        float currentSweepAngle = GetSweepAngleDegrees();
+
+        if (!hasPreviousSweepAngle)
+        {
+            previousSweepAngle = currentSweepAngle;
+            hasPreviousSweepAngle = true;
         }
 
         RadarTarget[] targets = FindObjectsByType<RadarTarget>(FindObjectsSortMode.None);
@@ -59,8 +79,9 @@ public class RadarController : MonoBehaviour
 
             float distanceUnityUnits = flatOffset.magnitude;
             float radarRangeUnityUnits = RadarRangeUnityUnits;
+            float innerExclusionRangeUnityUnits = InnerExclusionRangeUnityUnits;
 
-            if (distanceUnityUnits > radarRangeUnityUnits)
+            if (distanceUnityUnits > radarRangeUnityUnits || distanceUnityUnits < innerExclusionRangeUnityUnits)
             {
                 RemoveBlip(target);
                 continue;
@@ -70,15 +91,23 @@ public class RadarController : MonoBehaviour
             seenTargets.Add(target);
 
             Vector2 radarPosition = flatOffset / radarRangeUnityUnits * radarRadiusPixels;
-            blip.RectTransform.anchoredPosition = radarPosition;
+            blip.RectTransform.anchoredPosition = Vector2.Lerp(
+                blip.RectTransform.anchoredPosition,
+                radarPosition,
+                blipMoveLerp
+            );
 
             float headingDegrees = GetTargetHeadingDegrees(target.transform);
-            blip.SetRotation(headingDegrees);
+            blip.SetRotationSmooth(headingDegrees);
             blip.SetColor(target.blipColor);
+
+            TryPingBlipFromSweep(blip, radarPosition, previousSweepAngle, currentSweepAngle);
+
             blip.gameObject.SetActive(true);
         }
 
         RemoveStaleBlips(seenTargets);
+        previousSweepAngle = currentSweepAngle;
     }
 
     private RadarBlip GetOrCreateBlip(RadarTarget target)
@@ -146,4 +175,62 @@ public class RadarController : MonoBehaviour
         float angle = Mathf.Atan2(flatForward.x, flatForward.y) * Mathf.Rad2Deg;
         return -angle;
     }
+
+    private void TryPingBlipFromSweep(
+        RadarBlip blip,
+        Vector2 radarPosition,
+        float previousAngle,
+        float currentAngle
+    )
+    {
+        if (sweepPivot == null || radarPosition.sqrMagnitude < 0.001f)
+        {
+            return;
+        }
+
+        float blipAngle = Mathf.Atan2(radarPosition.x, radarPosition.y) * Mathf.Rad2Deg;
+        blipAngle = NormalizeAngle(blipAngle);
+
+        if (WasAngleSwept(previousAngle, currentAngle, blipAngle))
+        {
+            blip.Ping();
+        }
+    }
+
+    private float GetSweepAngleDegrees()
+    {
+        if (sweepPivot == null)
+        {
+            return 0f;
+        }
+
+        return NormalizeAngle(-sweepPivot.localEulerAngles.z);
+    }
+
+    private bool WasAngleSwept(float previousAngle, float currentAngle, float targetAngle)
+    {
+        previousAngle = NormalizeAngle(previousAngle);
+        currentAngle = NormalizeAngle(currentAngle);
+        targetAngle = NormalizeAngle(targetAngle);
+
+        if (currentAngle >= previousAngle)
+        {
+            return targetAngle >= previousAngle && targetAngle <= currentAngle;
+        }
+
+        return targetAngle >= previousAngle || targetAngle <= currentAngle;
+    }
+
+    private float NormalizeAngle(float angle)
+    {
+        angle %= 360f;
+
+        if (angle < 0f)
+        {
+            angle += 360f;
+        }
+
+        return angle;
+    }
+
 }
