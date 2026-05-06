@@ -10,7 +10,9 @@ from src.domain.status_constants import (
     WINDOW_TIMEDELTA_HOURS,
     WAIT_FOR_PARKED_TIMEOUT_S
 )
+from sqlalchemy import select
 
+from src.db import models
 from src.schedulers.flight_scheduler import FlightSlidingWindowScheduler
 from src.utils.datetimes import as_utc
 from src.utils.event_log import append_event
@@ -51,7 +53,84 @@ def _flight_reference_time(flight, airport_icao: str):
     return getattr(flight, "departure_time", None)
 
 
-def _scheduler_window_row(flight, *, airport_icao: str) -> dict:
+CITY_LABEL_OVERRIDES = {
+    "LIAG": "Amaro",
+    "LIML": "Milano Linate",
+    "LIMC": "Milano Malpensa",
+    "LIPZ": "Venezia Marco Polo",
+    "LIMJ": "Genova",
+    "LIRF": "Roma Fiumicino",
+    "LIRN": "Napoli",
+    "ZSPD": "Shanghai Pudong",
+    "OMDB": "Dubai",
+    "KORD": "Chicago O'Hare",
+    "KJFK": "New York",
+    "KLAX": "Los Angeles",
+    "EGLL": "London Heathrow",
+    "LFPG": "Paris Charles de Gaulle",
+    "EDDF": "Frankfurt",
+    "EHAM": "Amsterdam Schiphol",
+    "LEMD": "Madrid Barajas",
+    "LTFM": "Istanbul",
+}
+
+
+def _airport_label(icao: str, airport_names: dict[str, str]) -> str:
+    if not icao:
+        return "--"
+    return CITY_LABEL_OVERRIDES.get(icao) or airport_names.get(icao) or icao
+
+
+def _remote_airport_label(
+    *,
+    origin: str,
+    destination: str,
+    local_airport_icao: str,
+    airport_names: dict[str, str],
+) -> str:
+    if origin == local_airport_icao:
+        return _airport_label(destination, airport_names)
+    if destination == local_airport_icao:
+        return _airport_label(origin, airport_names)
+
+    origin_label = _airport_label(origin, airport_names)
+    destination_label = _airport_label(destination, airport_names)
+    return f"{origin_label} -> {destination_label}"
+
+
+def _airline_label(airline_code: str | None, airline_names: dict[str, str]) -> str:
+    if not airline_code:
+        return "--"
+
+    airline_name = airline_names.get(airline_code)
+    if airline_name:
+        return f"{airline_name} ({airline_code})"
+
+    return airline_code
+
+
+def _duration_label(departure_time, arrival_time) -> str:
+    if departure_time is None or arrival_time is None:
+        return "--"
+
+    departure_utc = as_utc(departure_time)
+    arrival_utc = as_utc(arrival_time)
+
+    minutes = max(0, round((arrival_utc - departure_utc).total_seconds() / 60))
+    if minutes < 60:
+        return f"{minutes} min"
+
+    hours, remaining_minutes = divmod(minutes, 60)
+    return f"{hours}h {remaining_minutes:02d}m"
+
+
+def _scheduler_window_row(
+    flight,
+    *,
+    airport_icao: str,
+    airport_names: dict[str, str],
+    airline_names: dict[str, str],
+) -> dict:
     reference_time = _flight_reference_time(flight, airport_icao)
 
     departure_time = getattr(flight, "departure_time", None)
@@ -59,6 +138,7 @@ def _scheduler_window_row(flight, *, airport_icao: str) -> dict:
 
     origin = str(getattr(flight, "origin", "") or "")
     destination = str(getattr(flight, "destination", "") or "")
+    airline_code = str(getattr(flight, "airline_code", "") or "")
     status = str(getattr(flight, "status", "") or "")
     flight_code = str(getattr(flight, "icao", None) or getattr(flight, "id", "") or "")
 
@@ -67,11 +147,18 @@ def _scheduler_window_row(flight, *, airport_icao: str) -> dict:
     return {
         "id": str(getattr(flight, "id", "") or ""),
         "direction": direction,
-        "dep_time": departure_time.astimezone().strftime("%H:%M") if departure_time else "--:--",
-        "arr_time": arrival_time.astimezone().strftime("%H:%M") if arrival_time else "--:--",
+        "departure_time": departure_time.astimezone().strftime("%H:%M") if departure_time else "--:--",
+        "arrival_time": arrival_time.astimezone().strftime("%H:%M") if arrival_time else "--:--",
+        "delta_time": _duration_label(departure_time, arrival_time),
         "reference_unix_ms": int(reference_time.timestamp() * 1000) if reference_time else None,
-        "flight": flight_code,
-        "route": f"{origin} -> {destination}",
+        "flight_number": flight_code,
+        "airline": _airline_label(airline_code, airline_names),
+        "route": _remote_airport_label(
+            origin=origin,
+            destination=destination,
+            local_airport_icao=airport_icao,
+            airport_names=airport_names,
+        ),
         "type": str(getattr(flight, "tipo", "") or ""),
         "status": status,
         "status_class": _status_pill_class(status),
@@ -168,16 +255,50 @@ async def flight_scheduler_loop(
             window=scheduler.window,
         )
 
+        airport_codes = {
+            code
+            for flight in flights
+            for code in (getattr(flight, "origin", None), getattr(flight, "destination", None))
+            if code
+        }
+        airline_codes = {
+            code
+            for flight in flights
+            for code in (getattr(flight, "airline_code", None),)
+            if code
+        }
+
+        with ctx.Session() as session:
+            airport_names = {
+                icao: name
+                for icao, name in session.execute(
+                    select(models.Airport.icao, models.Airport.name)
+                    .where(models.Airport.icao.in_(airport_codes))
+                ).all()
+            } if airport_codes else {}
+            airline_names = {
+                icao: name
+                for icao, name in session.execute(
+                    select(models.Airline.icao, models.Airline.name)
+                    .where(models.Airline.icao.in_(airline_codes))
+                ).all()
+            } if airline_codes else {}
+
         # Generate cached window rows
         window_rows = [
-            _scheduler_window_row(flight, airport_icao=ctx.airport_icao)
+            _scheduler_window_row(
+                flight,
+                airport_icao=ctx.airport_icao,
+                airport_names=airport_names,
+                airline_names=airline_names,
+            )
             for flight in flights
         ]
 
         window_rows.sort(
             key=lambda row: (
                 999999999999 if row["reference_unix_ms"] is None else abs(int(row["reference_unix_ms"]) - int(now.timestamp() * 1000)),
-                str(row["flight"]),
+                str(row["flight_number"]),
             )
         )
 
@@ -280,9 +401,10 @@ async def flight_scheduler_loop(
                 )
                 if airplane_id is None:
                     logging.info("[flight_scheduler] landing_dep: could not create/link airplane flight_id=%s", flight_id)
+                    scheduler.handled.discard((flight_id, "landing_dep"))
                     continue
 
-                logging.info("[flight_scheduler] landing_dep: linked airplane_id=%s to flight_id=%s (Lan_Ongoing)", airplane_id, flight_id)
+                logging.info("[flight_scheduler] landing_dep: linked airplane_id=%s to flight_id=%s (Scheduled)", airplane_id, flight_id)
                 append_event({
                     "type": "backend_event",
                     "event": "landing_plane_assigned",

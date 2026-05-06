@@ -5,11 +5,8 @@ from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
 from src.web.dashboard_data import (
-    EVENTS_LOG_FILE,
     get_flight_detail_snapshot_cached,
     get_plane_detail_snapshot_cached,
-    read_latest_clock_sync,
-    read_planes_on_ground_snapshot,
     read_window_flights_snapshot,
 )
 from src.web.dashboard_live import (
@@ -53,21 +50,6 @@ app.get("/flight/{flight_id}")(flight_detail)
 app.get("/plane/{airplane_id}")(plane_detail)
 
 
-@app.websocket("/ws/events")
-async def events_ws(websocket: WebSocket) -> None:
-    await websocket.accept()
-    dashboard_state.events_clients.add(websocket)
-
-    try:
-        await websocket.send_json({"kind": "snapshot", "events": dashboard_state.latest_events})
-        while True:
-            await websocket.receive_text()
-    except WebSocketDisconnect:
-        pass
-    finally:
-        dashboard_state.events_clients.discard(websocket)
-
-
 @app.websocket("/ws/clock")
 async def clock_ws(websocket: WebSocket) -> None:
     await websocket.accept()
@@ -98,30 +80,11 @@ async def window_flights_ws(websocket: WebSocket) -> None:
     finally:
         dashboard_state.window_clients.discard(websocket)
 
-
-@app.websocket("/ws/planes-ground")
-async def planes_ground_ws(websocket: WebSocket) -> None:
-    await websocket.accept()
-    dashboard_state.planes_clients.add(websocket)
-
-    try:
-        await websocket.send_json({"kind": "snapshot", "planes": dashboard_state.latest_planes})
-        while True:
-            await websocket.receive_text()
-    except WebSocketDisconnect:
-        pass
-    finally:
-        dashboard_state.planes_clients.discard(websocket)
-
 @app.get("/api/status")
 def status() -> dict[str, object]:
     return {
         "database_ok": True,
-        "events_log_exists": EVENTS_LOG_FILE.exists(),
-        "events_log_path": str(EVENTS_LOG_FILE),
-        "latest_clock": read_latest_clock_sync(),
         "window_rows": len(read_window_flights_snapshot()["rows"]),
-        "plane_rows": len(read_planes_on_ground_snapshot()["rows"]),
     }
 
 @app.on_event("startup")

@@ -48,6 +48,17 @@ def _render_fields(fields: list[tuple[str, str] | tuple[str, str, str]]) -> str:
     return "".join(rendered)
 
 
+def _detail_field_value(
+    fields: list[tuple[str, str] | tuple[str, str, str]],
+    field_key: str,
+    default: str = "--",
+) -> str:
+    for field in fields:
+        if len(field) == 3 and field[2] == field_key:
+            return str(field[1] or default)
+    return default
+
+
 def render_detail_page(
     title: str,
     subtitle: str,
@@ -65,6 +76,9 @@ def render_detail_page(
 ) -> HTMLResponse:
     template = DETAIL_TEMPLATE_FILE.read_text(encoding="utf-8")
     fields_markup = _render_fields(fields)
+    plane_model = _detail_field_value(fields, "plane_model")
+    airline = _detail_field_value(fields, "airline")
+    visual_title = f"{plane_model} - {airline}"
 
     html_out = (
         template
@@ -73,6 +87,7 @@ def render_detail_page(
         .replace("{{FIELDS}}", fields_markup)
         .replace("{{IMAGE_URL}}", html.escape(image_url))
         .replace("{{IMAGE_ALT}}", html.escape(image_alt))
+        .replace("{{VISUAL_TITLE}}", html.escape(visual_title))
         .replace("{{DETAIL_API_PATH}}", html.escape(detail_api_path or ""))
         .replace("{{PROGRESS_LABEL}}", html.escape(progress_label))
         .replace("{{PROGRESS_PERCENT}}", str(max(0, min(100, progress_percent))))

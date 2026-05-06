@@ -29,6 +29,68 @@ JSONL_STARTUP_TAIL_LINES = 50
 FLIGHT_DETAIL_CACHE = {}
 PLANE_DETAIL_CACHE = {}
 
+CITY_LABEL_OVERRIDES = {
+    "LIAG": "Amaro",
+    "LIML": "Milano Linate",
+    "LIMC": "Milano Malpensa",
+    "LIPZ": "Venezia Marco Polo",
+    "LIMJ": "Genova",
+    "LIRF": "Roma Fiumicino",
+    "LIRN": "Napoli",
+    "ZSPD": "Shanghai Pudong",
+    "OMDB": "Dubai",
+    "KORD": "Chicago O'Hare",
+    "KJFK": "New York",
+    "KLAX": "Los Angeles",
+    "EGLL": "London Heathrow",
+    "LFPG": "Paris Charles de Gaulle",
+    "EDDF": "Frankfurt",
+    "EHAM": "Amsterdam Schiphol",
+    "LEMD": "Madrid Barajas",
+    "LTFM": "Istanbul",
+}
+
+
+def _city_label(value: str | None) -> str:
+    if not value:
+        return "--"
+    return CITY_LABEL_OVERRIDES.get(str(value).strip(), str(value).strip())
+
+
+def _remote_route_label(origin: str | None, destination: str | None) -> str:
+    origin_label = _city_label(origin)
+    destination_label = _city_label(destination)
+    local_labels = {WINDOW_AIRPORT_ICAO, _city_label(WINDOW_AIRPORT_ICAO)}
+
+    if str(origin or "").strip() in local_labels or origin_label in local_labels:
+        return destination_label
+    if str(destination or "").strip() in local_labels or destination_label in local_labels:
+        return origin_label
+
+    return f"{origin_label} -> {destination_label}"
+
+
+def _friendly_route_label(route: str | None) -> str:
+    if not route:
+        return "--"
+
+    route_value = str(route).strip()
+    separator = " -> " if " -> " in route_value else " TO " if " TO " in route_value else None
+    if separator is None:
+        return _city_label(route_value)
+
+    origin, destination = route_value.split(separator, 1)
+    return _remote_route_label(origin, destination)
+
+
+def _normalize_scheduler_window_row(row) -> dict[str, object]:
+    if not isinstance(row, dict):
+        return {}
+
+    normalized = dict(row)
+    normalized["route"] = _friendly_route_label(str(normalized.get("route") or ""))
+    return normalized
+
 
 def _cache_get(cache, key) -> dict[str, object] | None:
 
@@ -64,24 +126,27 @@ def _read_flight_detail_snapshot(flight_id: str) -> dict[str, object]:
         arr_label = arr.astimezone().strftime("%Y-%m-%d %H:%M:%S") if arr else "--"
 
         model = getattr(airplane, "model", None) if airplane else None
+        origin = str(getattr(flight, "origin", "") or "")
+        destination = str(getattr(flight, "destination", "") or "")
         progress_percent, progress_label = _flight_progress(
             now_utc=_current_sim_now_utc(),
             departure_time=dep,
             arrival_time=arr,
         )
 
+        flight_code = str(getattr(flight, "icao", None) or flight_id)
+        route_label = f"{_city_label(origin)} -> {_city_label(destination)}"
+
         return {
-            "title": str(getattr(flight, "icao", None) or flight_id),
-            "subtitle": f"{getattr(flight, 'origin', '--')} -> {getattr(flight, 'destination', '--')}",
+            "title": route_label,
+            "subtitle": flight_code,
             "fields": [
-                ("Flight ID", str(flight_id), "flight_id"),
                 ("Status", str(getattr(flight, "status", "--") or "--"), "status"),
                 ("Type", str(getattr(flight, "tipo", "--") or "--"), "type"),
-                ("Origin", str(getattr(flight, "origin", "--") or "--"), "origin"),
-                ("Destination", str(getattr(flight, "destination", "--") or "--"), "destination"),
+                ("Origin", _city_label(origin), "origin"),
+                ("Destination", _city_label(destination), "destination"),
                 ("Departure", dep_label, "departure"),
                 ("Arrival", arr_label, "arrival"),
-                ("Airplane", str(airplane_id or "--"), "airplane"),
                 ("Plane Model", str(model or "--"), "plane_model"),
                 ("Airline", str(getattr(flight, "airline_code", "--") or "--"), "airline"),
             ],
@@ -261,7 +326,10 @@ def _parse_scheduler_window_event(line: str) -> dict[str, object] | None:
         "airport_icao": str(event.get("airport_icao") or WINDOW_AIRPORT_ICAO),
         "window_minutes": int(event.get("window_minutes") or WINDOW_DURATION.total_seconds() // 60),
         "generated_at": str(event.get("generated_at") or event.get("ts") or ""),
-        "rows": list(event.get("rows") or []),
+        "rows": [
+            _normalize_scheduler_window_row(row)
+            for row in list(event.get("rows") or [])
+        ],
     }
 
 
@@ -438,7 +506,7 @@ def _serialize_window_flight(*, flight, airport_icao: str, now_utc: datetime) ->
         "arr_time": arr_label,
         "reference_unix_ms": reference_unix_ms,
         "flight": flight_code,
-        "route": f"{origin} -> {destination}",
+        "route": _remote_route_label(origin, destination),
         "type": str(getattr(flight, "tipo", "") or ""),
         "status": status,
         "status_class": _status_pill_class(status),

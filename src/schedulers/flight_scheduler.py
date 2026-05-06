@@ -192,6 +192,7 @@ class FlightSlidingWindowScheduler:
             expected_status="Scheduled",
             event_field="departure_time",
             max_delta=None,
+            requires_airplane=True,
             must_be_started=True,
         ):
             return False

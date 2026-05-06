@@ -1,0 +1,42 @@
+<div class="board-block section-gap">
+                <div class="board-title">Planes On Ground</div>
+                <table class="board-table planes-board">
+                  <thead>
+                    <tr>
+                      <th>Airplane</th>
+                      <th>Status</th>
+                      <th>Model</th>
+                      <th>Type</th>
+                      <th>Range</th>
+                      <th>Speed</th>
+                      <th>Stand</th>
+                      <th>Route</th>
+                    </tr>
+                  </thead>
+                  <tbody id="plane_rows">
+                    <tr>
+                      <td>A320-01</td>
+                      <td><span class="pill status-parked">Parked</span></td>
+                      <td class="muted">A320</td>
+                      <td>NARROWBODY</td>
+                      <td>6100</td>
+                      <td class="muted">828.00</td>
+                      <td class="muted">S12</td>
+                      <td class="muted">LIAG TO LIMC</td>
+                    </tr>
+                    <tr>
+                      <td>E190-02</td>
+                      <td><span class="pill status-default">Ready</span></td>
+                      <td class="muted">E190</td>
+                      <td>REGIONAL</td>
+                      <td>4500</td>
+                      <td class="muted">829.00</td>
+                      <td class="muted">S08</td>
+                      <td class="muted">LIAG TO EDDF</td>
+                    </tr>
+                    <tr>
+                      <td colspan="8" class="muted">This table is preserved as static markup only.</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>

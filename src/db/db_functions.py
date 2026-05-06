@@ -117,9 +117,9 @@ def list_flights_in_sliding_window(*, airport_icao: str, now_utc: datetime, wind
                     and_(
                         models.Flight.status == FLIGHT_STATUS.UNSCHEDULED,
                         models.Flight.destination == airport_icao,
-                        models.Flight.departure_time.is_not(None),
-                        models.Flight.departure_time >= now_db,
-                        models.Flight.departure_time <= upper,
+                        models.Flight.arrival_time.is_not(None),
+                        models.Flight.arrival_time >= now_db,
+                        models.Flight.arrival_time <= upper,
                     ),
 
                     # Any active lifecycle flight stays visible regardless of time.
@@ -379,6 +379,10 @@ def mark_landing_departed(*, flight_id: str) -> None:
 
         # Get airplane_id from flight and update flight status to Lan_Ongoing
         airplane_id = getattr(flight, "airplane_id", None)
+        if not isinstance(airplane_id, str) or not airplane_id:
+            logging.warning("[db] landing_departed skipped flight_id=%s because no airplane is linked", flight_id)
+            return
+
         session.execute(
             update(models.Flight)
             .where(models.Flight.id == flight_id)
@@ -386,12 +390,11 @@ def mark_landing_departed(*, flight_id: str) -> None:
         )
 
         # If airplane exists, update status to InFlight
-        if isinstance(airplane_id, str):
-            session.execute(
-                update(models.Airplane)
-                .where(models.Airplane.id == airplane_id)
-                .values(status=AIRPLANE_STATUS.IN_FLIGHT)
-            )
+        session.execute(
+            update(models.Airplane)
+            .where(models.Airplane.id == airplane_id)
+            .values(status=AIRPLANE_STATUS.IN_FLIGHT)
+        )
         session.commit()
 
 

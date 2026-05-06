@@ -7,6 +7,7 @@
 
   const titleEl = document.querySelector(".detail-title");
   const subtitleEl = document.querySelector(".detail-subtitle");
+  const visualTitleEl = document.querySelector(".js-visual-title");
   const imageEl = document.querySelector(".detail-image");
   const labelEl = progressRoot ? progressRoot.querySelector(".js-progress-label") : null;
   const percentEl = progressRoot ? progressRoot.querySelector(".js-progress-percent") : null;
@@ -24,6 +25,13 @@
   }
 
   const fields = buildFieldMap();
+
+  function renderVisualTitle() {
+    if (!visualTitleEl) return;
+    const planeModel = fields.get("plane_model")?.textContent?.trim() || "--";
+    const airline = fields.get("airline")?.textContent?.trim() || "--";
+    visualTitleEl.textContent = planeModel + " - " + airline;
+  }
 
   function computeProgress(nowMs, startMs, endMs) {
     const total = Math.max(1, endMs - startMs);
@@ -74,6 +82,8 @@
       const node = fields.get(key);
       if (node) node.textContent = value ?? "";
     });
+
+    renderVisualTitle();
   }
 
   async function refreshDetail() {
@@ -118,6 +128,7 @@
   }
 
   connectClock();
+  renderVisualTitle();
   renderProgress();
   window.setInterval(renderProgress, 250);
   window.setInterval(refreshDetail, 3000);

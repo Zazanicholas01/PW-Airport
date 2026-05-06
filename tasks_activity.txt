@@ -231,3 +231,44 @@ PARKINGS
     - Parking Manager per controllare DB e assegnare o meno parcheggio
     - Quando viene liberata una piazzola, controllare prima i parcheggi e fare arrivare loro
     
+
+DASHBOARD EMBEDDING
+
+    WORKFLOW
+        - Docker compose --> Containers
+        - Python backend --> Simulation Server with Websocket and write runtime events on logs file
+        - Unity --> AR Simulation connects websocket and embeds dashboard page in a WebView
+        - Dashboard --> Loads dashboard through Nginx, receives live updates
+
+    TARGET ARCHITECTURE
+        - Unity AR Simulation
+            --> ws://localhost:8765
+            --> Simulation commands
+        
+        - Unity Dashboard Canvas
+            --> http://localhost:8001/api/status
+            --> ws://localhost:8001/ws/clock
+            --> ws://localhost:8001/ws/window-Flights
+
+    IMPLEMENTATION STEPS
+        - Add a WebView plugin in Unity, Vuplex 3D WebView
+        - Create a dashboard panel in Unity scene
+        - Configure WebView URL to http://localhost:8001
+        - Load the dashboard after placement
+        - Keep dashboard data unchanged
+            - DB snapshots from Postgres
+            - Event / Clock window updates from log events
+            - Live browser updates through /ws/events, /ws/clock ...
+        
+    BRIDGE
+        - Examples of interaction between dashboard and AR scene
+            - Click plane in dashboard --> Highlight plane in Unity and show data
+            - Click plane in Unity --> Open /plane/{airplane_id} in dashboard
+            - Click flight in dashboard --> Focus related route in Unity and plane
+            - Dashboard pause/play button --> Call Unity time control
+    
+    MILESTONES
+        - 1. Display only with Unity WebView
+        - 2. Live state with Python Simulation
+        - 3. AR Layout, resize dashboard for world space readability
+        - 4. Bridge interaction through live clicks

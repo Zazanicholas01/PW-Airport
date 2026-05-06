@@ -67,9 +67,9 @@ def speed_profile_for_segment(*, route_kind: str, segment: dict, index: int, tot
         if name == "Spline_Departure":
             return {
                 "purpose": "departure_accel",
-                "initial_speed_kmh": 7.0,
-                "target_speed_kmh": 12.0,
-                "acceleration_mps2": 0.35,
+                "initial_speed_kmh": 1.5,
+                "target_speed_kmh": 5.0,
+                "acceleration_mps2": 0.65,
                 "deceleration_mps2": 0.30,
             }
 
