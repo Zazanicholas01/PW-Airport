@@ -29,6 +29,24 @@ MODEL_INFO: dict[str, tuple[str, str]] = {
     "beluga": ("Cargo", "Long"),
 }
 
+MODEL_CAPACITY: dict[str, int] = {
+    "turboelica": 30,
+    "jet": 20,
+    "b2_stealth": 10,
+    "aeroplanoleggendario": 12,
+
+    "turboelica_cargo": 80,
+
+    "e190": 100,
+    "a320": 180,
+    "b737": 160,
+
+    "b737_cargo": 140,
+
+    "b787": 280,
+    "beluga": 320,
+}
+
 EXCLUDED_STAND_IDS: set[str] = {
     "LongLanding",
     "MediumLanding",
@@ -41,8 +59,29 @@ EXCLUDED_STAND_IDS: set[str] = {
 
 AVAILABLE_STANDS = ["O1", "O2", "O3", "O4", "O5", "P1", "P2", "P3", "C1", "C2", "C3"]
 
+PASSENGER_STANDS = ["P1", "P2", "P3"]
+CARGO_STANDS = ["C1", "C2", "C3"]
+OPEN_STANDS = ["O1", "O2", "O3", "O4", "O5"]
+
+BUS_HOME_P = "BusHome_P"
+BUS_HOME_O = "BusHome_O"
+
+CARGO_HOME_P = "CargoHome_P"
+CARGO_HOME_C = "CargoHome_C"
+CARGO_HOME_O = "CargoHome_O"
+
+BUS_MASTER_O_SPLINE = "Bus_Spline_Master_O"
+CARGO_MASTER_O_SPLINE = "Cargo_Spline_Master_O"
+
 DISEMBARK_SIM_SECONDS = 5 * 60
 EMBARK_SIM_SECONDS = 5 * 60
+
+
+@dataclass
+class BUS_SERVICE_CONFIG:
+    PASSENGER_TRANSFER_TIME = 30
+    LUGGAGE_TRANSFER_TIME = 20
+    CARGO_TRANSFER_TIME = 40
 
 @dataclass
 class GENERATOR_CONFIG:
@@ -172,6 +211,8 @@ class RUNTIME_EVENTS:
     PATH_COMPLETED = "path_completed"
     PLANE_LEFT_STAND = "plane_left_stand"
     PARKING_ENTERED = "parking_entered"
+    VEHICLE_ARRIVED = "vehicle_arrived"
+    VEHICLE_RETURNED_HOME = "vehicle_returned_home"
 
 # Bus commands
 @dataclass
@@ -185,6 +226,7 @@ class BUS_COMMANDS:
     DESPAWN_PLANE = "despawn_plane"
     CONTINUE_PATH = "continue_path"
     CLEAR_PARKING = "clear_parking"
+    START_VEHICLE_PATH = "start_vehicle_path"
 
 # Websocket configuration
 @dataclass

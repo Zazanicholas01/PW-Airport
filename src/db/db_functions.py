@@ -1,6 +1,11 @@
 import logging
 from src.db import models
-from src.utils.mapping import range_for_airplane_model, type_for_airplane_model, landing_source_for_range
+from src.utils.mapping import (
+    range_for_airplane_model, 
+    type_for_airplane_model, 
+    landing_source_for_range,
+    capacity_for_airplane_model,
+)
 from src.utils.datetimes import as_utc
 from src.utils.standard import normalize_distance, normalize_flight_type, stand_category
 from src.utils.geo_direction import (
@@ -264,13 +269,17 @@ def create_and_assign_airplane_for_landing_departure(
         # Call Prefab Picker function to retrieve a prefab name
         prefab_name = prefab_picker(flight_type, required_range) if prefab_picker else None
 
+        capacity = 120 # Default
+
         # If a prefab is chosen, use mapping helpers to find type & range of the model
         if prefab_name:
             try:
                 flight_type = type_for_airplane_model(prefab_name)
                 required_range = range_for_airplane_model(prefab_name)
+                capacity = capacity_for_airplane_model(prefab_name)
             except ValueError:
                 prefab_name = None
+
 
         # Generate random UUID string and create record of the Airplane following models.Airplane
         airplane_id = str(uuid4())
@@ -279,7 +288,7 @@ def create_and_assign_airplane_for_landing_departure(
             type=flight_type or AIRPLANE_STATUS.PASSEGNERS_TYPE,
             range=required_range or AIRPLANE_STATUS.RANGE_MEDIUM,
             model=prefab_name,
-            capacity=100,
+            capacity=capacity,
             status=AIRPLANE_STATUS.SCHEDULED,
             speed=0.0,
             fuel_level=1.0,

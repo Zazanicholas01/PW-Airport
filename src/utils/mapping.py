@@ -36,3 +36,12 @@ def landing_source_for_range(range_value: str | None) -> str:
         return MEDIUM_LANDING_SPLINE
     
     return SHORT_LANDING_SPLINE
+
+
+def capacity_for_airplane_model(model: str | None) -> int:
+
+    model = _norm(model)
+    try:
+        return int(MODEL_CAPACITY[model])
+    except KeyError:
+        raise ValueError(f"Unknown airplane model: {model!r}") from None

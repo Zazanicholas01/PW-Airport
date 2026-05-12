@@ -12,6 +12,7 @@ class SessionContext:
     bus: Any
     setup_bus: Any
     runtime_bus: Any
+    ground_ops: Any
 
     clock: Any
     clock_lock: asyncio.Lock

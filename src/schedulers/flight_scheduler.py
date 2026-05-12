@@ -2,12 +2,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
+import time
 
 from src.utils.datetimes import as_utc
 
 SLIDING_WINDOW = timedelta(hours=1)
 LANDING_NEAR_DELTA = timedelta(minutes=3)
-EMBARK_NEAR_DELTA = timedelta(minutes=5)
+EMBARK_NEAR_DELTA = timedelta(minutes=10)
 
 @dataclass
 class FlightSlidingWindowScheduler:
@@ -15,6 +16,7 @@ class FlightSlidingWindowScheduler:
     window: timedelta = SLIDING_WINDOW
     scheduled_flight_ids: set[str] = field(default_factory=set)
     handled: set[tuple[str, str]] = field(default_factory=set)
+    retry_not_before: dict[tuple[str, str], float] = field(default_factory=dict)
 
     def _once(self, flight, stage: str) -> bool:
         """Idempotency enforcing function"""
@@ -26,11 +28,27 @@ class FlightSlidingWindowScheduler:
         
         # If key already exists it blocks duplicates, otherwise records it and allows execution
         key = (flight_id, stage)
+        retry_deadline = self.retry_not_before.get(key)
+        if retry_deadline is not None:
+            if time.monotonic() < retry_deadline:
+                return False
+            self.retry_not_before.pop(key, None)
         if key in self.handled:
             return False
         
         self.handled.add(key)
         return True
+
+
+    def defer_retry(self, *, flight_id: str, stage: str, delay_seconds: float) -> None:
+        """Allow a handled stage to be retried after a short real-time cooldown."""
+
+        if not flight_id:
+            return
+
+        key = (flight_id, stage)
+        self.handled.discard(key)
+        self.retry_not_before[key] = time.monotonic() + max(0.0, delay_seconds)
     
 
     def _is_stage_eligible(
@@ -241,7 +259,7 @@ class FlightSlidingWindowScheduler:
 
 
     def should_start_departure_embarking(self, *, flight, now_utc: datetime) -> bool:
-        """Start outbound embarking 5 minutes before departig"""
+        """Start outbound embarking 10 minutes before departig"""
 
         if not self._is_stage_eligible(
             flight=flight,

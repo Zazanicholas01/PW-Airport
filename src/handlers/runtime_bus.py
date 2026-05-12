@@ -35,6 +35,7 @@ class RuntimeBusHandler:
         clock_lock: asyncio.Lock | None = None,
         clock_changed: asyncio.Event | None = None,
         disembark_sim_seconds: float = float(DISEMBARK_SIM_SECONDS),
+        ground_ops,
     ):
         self.prefab_store = prefab_store
         self.queue = asyncio.Queue()
@@ -52,6 +53,8 @@ class RuntimeBusHandler:
 
         self._bus = bus
         self._commands = commands
+
+        self._ground_ops = ground_ops
 
     
     def _start_disembark_timer(self, airplane_id: str) -> None:
@@ -202,6 +205,23 @@ class RuntimeBusHandler:
 
         # Get event type and airplane ID
         evt = payload.get("event")
+
+        # Route vehicle events
+        if evt in {RUNTIME_EVENTS.VEHICLE_ARRIVED, RUNTIME_EVENTS.VEHICLE_RETURNED_HOME}:
+            vehicle_id = payload.get("vehicle_id")
+            if not isinstance(vehicle_id, str) or not vehicle_id:
+                return
+
+            if evt == RUNTIME_EVENTS.VEHICLE_ARRIVED:
+                if self._ground_ops is not None:
+                    await self._ground_ops.handle_vehicle_arrived(vehicle_id)
+                return
+
+            if evt == RUNTIME_EVENTS.VEHICLE_RETURNED_HOME:
+                if self._ground_ops is not None:
+                    await self._ground_ops.handle_vehicle_returned_home(vehicle_id)
+                return
+
         airplane_id = payload.get("airplane_id")
         if not isinstance(airplane_id, str) or not airplane_id:
             return
@@ -323,6 +343,10 @@ class RuntimeBusHandler:
                     
                     # Commit session, Logging and Start disembarking timer
                     session.commit()
+
+                    # Start disembarking vehicle jobs
+                    if self._ground_ops is not None:
+                        await self._ground_ops.maybe_start_for_airplane(airplane_id)
                     
                     logging.info("[runtime] path_completed (landing) airplane_id=%s -> Disembarking (timer started)", airplane_id)
                     append_event({

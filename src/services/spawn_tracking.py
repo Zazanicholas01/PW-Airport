@@ -7,7 +7,8 @@ from src.db.engine import get_engine
 
 from src.utils.mapping import (
     range_for_airplane_model,
-    type_for_airplane_model
+    type_for_airplane_model,
+    capacity_for_airplane_model,
 )
 
 def ensure_airplane_row(*, Session=None, airplane_id: str | None, prefab: str) -> str:
@@ -32,8 +33,10 @@ def ensure_airplane_row(*, Session=None, airplane_id: str | None, prefab: str) -
         try:
             range_value = range_for_airplane_model(prefab)
             airplane_type = type_for_airplane_model(prefab)
+            airplane_capacity = capacity_for_airplane_model(prefab)
         except ValueError:
             logging.warning("Unknown prefab=%r; using defaults", prefab)
+            range_value, airplane_type, airplane_capacity = "Medium", "Passengers", 120
 
             # FALLBACK
             range_value, airplane_type = "Medium", "Passengers"
@@ -49,7 +52,7 @@ def ensure_airplane_row(*, Session=None, airplane_id: str | None, prefab: str) -
             type=airplane_type,
             range=range_value,
             model=prefab,
-            capacity=100,
+            capacity=airplane_capacity,
             status="Parked",
             speed=0.0,
             fuel_level=1.0,

@@ -459,9 +459,187 @@ class InitGraph:
         # Expose the final combined path list
         self.departing_paths = paths
 
+        vehicle_paths = self.build_ground_vehicle_paths()
+
         self.paths = (
             self.landing_paths
             + self.parking_entry_paths
             + self.parking_exit_paths
             + self.departing_paths
+            + vehicle_paths
         )
+
+
+    @staticmethod
+    def single_vehicle_spline(*, spline_name: str, forward: bool) -> list[dict]:
+
+        return [{
+            "name": spline_name,
+            "t_start": 0.0 if forward else 1.0,
+            "t_end": 1.0 if forward else 0.0,
+        }]
+    
+
+    @staticmethod
+    def master_plus_branch(*, master_name: str, branch_name: str, forward: bool) -> list[dict]:
+
+        if forward:
+            return [
+                {"name": master_name, "t_start": 0.0, "t_end": 1.0},
+                {"name": branch_name, "t_start": 0.0, "t_end": 1.0},
+            ]
+        
+        return [
+            {"name": branch_name, "t_start": 1.0, "t_end": 0.0},
+            {"name": master_name, "t_start": 1.0, "t_end": 0.0},
+        ]
+    
+
+    def has_spline(self, spline_name: str) -> bool:
+        return any(
+            isinstance(spline, dict) and spline.get("name") == spline_name
+            for spline in self.splines
+        )
+    
+
+    def build_ground_vehicle_paths(self) -> None:
+        paths: list[dict] = []
+
+        # Bus + Cargo routes for passengers stands (P*)
+        for stand_id in PASSENGER_STANDS:
+            bus_spline = f"Bus_Spline_{stand_id}"
+            cargo_spline = f"Cargo_Spline_{stand_id}"
+
+            if self.has_spline(bus_spline):
+                paths.append({
+                    "name": f"Path_{BUS_HOME_P}_{stand_id}",
+                    "source": BUS_HOME_P,
+                    "destination": stand_id,
+                    "segments": self.single_vehicle_spline(
+                        spline_name=bus_spline,
+                        forward=True,
+                    ),
+                })
+                paths.append({
+                    "name": f"Path_{stand_id}_{BUS_HOME_P}",
+                    "source": stand_id,
+                    "destination": BUS_HOME_P,
+                    "segments": self.single_vehicle_spline(
+                        spline_name=bus_spline,
+                        forward=False,
+                    ),
+                })
+            else:
+                logging.warning("[init_graph] missing spline %s", bus_spline)
+
+            if self.has_spline(cargo_spline):
+                paths.append({
+                    "name": f"Path_{CARGO_HOME_P}_{stand_id}",
+                    "source": CARGO_HOME_P,
+                    "destination": stand_id,
+                    "segments": self.single_vehicle_spline(
+                        spline_name=cargo_spline,
+                        forward=True,
+                    ),
+                })
+                paths.append({
+                    "name": f"Path_{stand_id}_{CARGO_HOME_P}",
+                    "source": stand_id,
+                    "destination": CARGO_HOME_P,
+                    "segments": self.single_vehicle_spline(
+                        spline_name=cargo_spline,
+                        forward=False,
+                    ),
+                })
+            else:
+                logging.warning("[init_graph] missing spline %s", cargo_spline)
+
+        # Cargo-only routes for cargo stands (C*)
+        for stand_id in CARGO_STANDS:
+            cargo_spline = f"Cargo_Spline_{stand_id}"
+
+            if self.has_spline(cargo_spline):
+                paths.append({
+                    "name": f"Path_{CARGO_HOME_C}_{stand_id}",
+                    "source": CARGO_HOME_C,
+                    "destination": stand_id,
+                    "segments": self.single_vehicle_spline(
+                        spline_name=cargo_spline,
+                        forward=True,
+                    ),
+                })
+                paths.append({
+                    "name": f"Path_{stand_id}_{CARGO_HOME_C}",
+                    "source": stand_id,
+                    "destination": CARGO_HOME_C,
+                    "segments": self.single_vehicle_spline(
+                        spline_name=cargo_spline,
+                        forward=False,
+                    ),
+                })
+            else:
+                logging.warning("[init_graph] missing spline %s", cargo_spline)
+
+        has_bus_master = self.has_spline(BUS_MASTER_O_SPLINE)
+        has_cargo_master = self.has_spline(CARGO_MASTER_O_SPLINE)
+
+        if not has_bus_master:
+            logging.warning("[init_graph] missing spline %s", BUS_MASTER_O_SPLINE)
+        
+        if not has_cargo_master:
+            logging.warning("[init_graph] missing spline %s", CARGO_MASTER_O_SPLINE)
+
+        # Bus + Cargo routes for open stands (O*)
+        for stand_id in OPEN_STANDS:
+            bus_branch = f"Bus_Spline_{stand_id}"
+            cargo_branch = f"Cargo_Spline_{stand_id}"
+
+            if has_bus_master and self.has_spline(bus_branch):
+                paths.append({
+                    "name": f"Path_{BUS_HOME_O}_{stand_id}",
+                    "source": BUS_HOME_O,
+                    "destination": stand_id,
+                    "segments": self.master_plus_branch(
+                        master_name=BUS_MASTER_O_SPLINE,
+                        branch_name=bus_branch,
+                        forward=True,
+                    ),
+                })
+                paths.append({
+                    "name": f"Path_{stand_id}_{BUS_HOME_O}",
+                    "source": stand_id,
+                    "destination": BUS_HOME_O,
+                    "segments": self.master_plus_branch(
+                        master_name=BUS_MASTER_O_SPLINE,
+                        branch_name=bus_branch,
+                        forward=False,
+                    ),
+                })
+            elif has_bus_master:
+                logging.warning("[init_graph] missing spline %s", bus_branch)
+
+            if has_cargo_master and self.has_spline(cargo_branch):
+                paths.append({
+                    "name": f"Path_{CARGO_HOME_O}_{stand_id}",
+                    "source": CARGO_HOME_O,
+                    "destination": stand_id,
+                    "segments": self.master_plus_branch(
+                        master_name=CARGO_MASTER_O_SPLINE,
+                        branch_name=cargo_branch,
+                        forward=True,
+                    ),
+                })
+                paths.append({
+                    "name": f"Path_{stand_id}_{CARGO_HOME_O}",
+                    "source": stand_id,
+                    "destination": CARGO_HOME_O,
+                    "segments": self.master_plus_branch(
+                        master_name=CARGO_MASTER_O_SPLINE,
+                        branch_name=cargo_branch,
+                        forward=False,
+                    ),
+                })
+            elif has_cargo_master:
+                logging.warning("[init_graph] missing spline %s", cargo_branch)
+        
+        return paths

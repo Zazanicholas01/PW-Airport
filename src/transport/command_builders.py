@@ -71,6 +71,27 @@ def build_clear_parking_command(*, airplane_id: str) -> dict[str, Any]:
         "airplane_id": airplane_id,
     }
 
+def build_start_vehicle_path_command(
+    *,
+    vehicle_id: str,
+    flight_id: str,
+    airplane_id: str,
+    service_type: str,
+    route_id: int | None,
+    segments: list[dict],
+    direction: str,
+) -> dict[str, Any]:
+    return {
+        "command": BUS_COMMANDS.START_VEHICLE_PATH,
+        "vehicle_id": vehicle_id,
+        "flight_id": flight_id,
+        "airplane_id": airplane_id,
+        "service_type": service_type,
+        "route_id": route_id,
+        "direction": direction,  # "to_stand" | "to_home"
+        "segments": segments,
+    }
+
 @dataclass
 class CommandBuilders:
     welcome: callable
@@ -80,6 +101,7 @@ class CommandBuilders:
     despawn_plane: callable
     continue_path: callable
     clear_parking: callable
+    start_vehicle_path: callable
 
 
 def default_command_builders() -> CommandBuilders:
@@ -91,4 +113,5 @@ def default_command_builders() -> CommandBuilders:
         despawn_plane=build_despawn_plane,
         continue_path=build_continue_path_command,
         clear_parking=build_clear_parking_command,
+        start_vehicle_path=build_start_vehicle_path_command,
     )

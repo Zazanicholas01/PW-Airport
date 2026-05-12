@@ -4,7 +4,7 @@ import random
 from datetime import datetime, date, timedelta, timezone
 
 from sqlalchemy.orm import sessionmaker
-from sqlalchemy import delete
+from sqlalchemy import update
 
 from src.db.engine import get_engine
 from src.db.db_functions import normalize_distance
@@ -476,7 +476,12 @@ class RandomFlightGenerator:
 
             # TRUNCATE tabella voli prima di popolare di nuovo
             session.execute(
-                delete(models.Flight)
+                update(models.Vehicle).values(
+                    flight_id=None,
+                    destination=None,
+                    route_id=None,
+                    status="Available",
+                )
             )
             session.commit()
 

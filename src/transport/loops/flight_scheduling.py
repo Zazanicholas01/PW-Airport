@@ -22,6 +22,8 @@ from src.path_commands import make_start_path_command
 
 from src.transport.session import SessionContext
 
+DEPARTURE_ASSIGNMENT_RETRY_DELAY_S = 120.0
+
 
 def _status_pill_class(status: str | None) -> str:
     normalized = str(status or "").lower()
@@ -358,8 +360,16 @@ async def flight_scheduler_loop(
                     required_type=required_type
                 )
                 if assignment is None:
-                    logging.info("[flight_scheduler] no compatible parked airplane flight_id=%s", flight_id)
-                    scheduler.handled.discard((flight_id, "dep"))
+                    logging.info(
+                        "[flight_scheduler] no compatible parked airplane flight_id=%s retry_in=%.0fs",
+                        flight_id,
+                        DEPARTURE_ASSIGNMENT_RETRY_DELAY_S,
+                    )
+                    scheduler.defer_retry(
+                        flight_id=flight_id,
+                        stage="dep",
+                        delay_seconds=DEPARTURE_ASSIGNMENT_RETRY_DELAY_S,
+                    )
                     continue
 
                 # Assign a departure path to the airplane from Stand --> Departure spline
@@ -525,6 +535,9 @@ async def flight_scheduler_loop(
                     flight_id,
                     airplane_id,
                 )
+
+                if ctx.ground_ops is not None and isinstance(airplane_id, str) and airplane_id:
+                    await ctx.ground_ops.maybe_start_for_airplane(airplane_id)
 
                 # Stream event to dashboard
                 append_event({

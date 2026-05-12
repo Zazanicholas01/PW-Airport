@@ -11,6 +11,10 @@ public class StartPathHandler : MonoBehaviour {
     [SerializeField] private GameObjectRegistry registry;
     [SerializeField] private Transform splineRoot;
     [SerializeField] private bool includeInactive = true;
+    [SerializeField] private Transform splineRoot;
+    [SerializeField] private List<Transform> additionalSplineRoots = new();
+    [SerializeField] private bool includeInactive = true;
+
 
     private Dictionary<string, SplineContainer> splineByName;
 
@@ -43,35 +47,52 @@ public class StartPathHandler : MonoBehaviour {
         BuildSplineCache();
     }
 
-    private void BuildSplineCache() {
+    private void BuildSplineCache()
+    {
         splineByName = new Dictionary<string, SplineContainer>(StringComparer.OrdinalIgnoreCase);
-        IEnumerable<SplineContainer> containers;
+        var seen = new HashSet<SplineContainer>();
+
+        void AddContainers(IEnumerable<SplineContainer> containers)
+        {
+            foreach (var container in containers)
+            {
+                if (container == null || container.gameObject == null || container.Spline == null)
+                    continue;
+
+                if (!seen.Add(container))
+                    continue;
+
+                string splineName = container.gameObject.name;
+                if (string.IsNullOrWhiteSpace(splineName))
+                    continue;
+
+                splineByName[splineName] = container;
+            }
+        }
 
         if (splineRoot != null)
+            AddContainers(splineRoot.GetComponentsInChildren<SplineContainer>(includeInactive));
+
+        if (additionalSplineRoots != null)
         {
-            containers = splineRoot.GetComponentsInChildren<SplineContainer>(includeInactive);
+            foreach (var root in additionalSplineRoots)
+            {
+                if (root == null)
+                    continue;
+
+                AddContainers(root.GetComponentsInChildren<SplineContainer>(includeInactive));
+            }
         }
-        else
+
+        if (splineByName.Count == 0)
         {
-            containers = FindObjectsOfType<SplineContainer>(includeInactive);
-            Debug.LogWarning("[StartPathHandler] splineRoot not assigned. Falling back to scene-wide spline search.");
-        }
-
-        foreach (var container in containers)
-        {
-            if (container == null || container.gameObject == null)
-                continue;
-
-            string splineName = container.gameObject.name;
-
-            if (string.IsNullOrWhiteSpace(splineName))
-                continue;
-
-            splineByName[splineName] = container;
+            AddContainers(FindObjectsOfType<SplineContainer>(includeInactive));
+            Debug.LogWarning("[StartPathHandler] No spline roots assigned. Falling back to scene-wide spline search.");
         }
 
         Debug.Log($"[StartPathHandler] Cached {splineByName.Count} splines.");
     }
+
 
     private void HandleStartPath(MessageDispatcher.StartPathCommand cmd) {
 

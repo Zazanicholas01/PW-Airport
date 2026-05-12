@@ -15,6 +15,10 @@ public class MessageDispatcher : MonoBehaviour
     public event Action<DespawnPlaneCommand> OnDespawnPlaneCommand;
     public event Action<ClearParkingCommand> OnClearParkingCommand;
     public event Action<ContinuePathCommand> OnContinuePathCommand;
+    public event Action<StartVehiclePathCommand> OnStartVehiclePathCommand;
+    public event Action<StartServiceProgressCommand> OnStartServiceProgressCommand;
+    public event Action<StopServiceProgressCommand> OnStopServiceProgressCommand;
+
 
     [Serializable]
     private class CommandEnvelope
@@ -87,6 +91,39 @@ public class MessageDispatcher : MonoBehaviour
         public string airplane_id;
         public int route_id;
         public PathSegment[] segments;
+    }
+
+    [Serializable]
+    public class StartVehiclePathCommand
+    {
+        public string command;
+        public string vehicle_id;
+        public string flight_id;
+        public string airplane_id;
+        public string service_type;
+        public int route_id;
+        public string direction;
+        public PathSegment[] segments;
+    }
+
+    [Serializable]
+    public class StartServiceProgressCommand
+    {
+        public string command;
+        public string flight_id;
+        public string airplane_id;
+        public string vehicle_id;
+        public string stand_id;
+        public string service_type;
+        public float duration_seconds;
+        public string label;
+    }
+
+    [Serializable]
+    public class StopServiceProgressCommand
+    {
+        public string command;
+        public string stand_id;
     }
 
     [Serializable]
@@ -198,6 +235,15 @@ public class MessageDispatcher : MonoBehaviour
                 break;
             case "clear_parking":
                 HandleClearParking(json);
+                break;
+            case "start_vehicle_path":
+                HandleStartVehiclePath(json);
+                break;
+            case "start_service_progress":
+                HandleStartServiceProgress(json);
+                break;
+            case "stop_service_progress":
+                HandleStopServiceProgress(json);
                 break;
             default:
                 Debug.LogWarning($"[MessageDispatcher] Unsupported command '{envelope.command}'.");
@@ -319,4 +365,73 @@ public class MessageDispatcher : MonoBehaviour
         OnContinuePathCommand?.Invoke(cmd);
         Debug.Log($"[MessageDispatcher] ContinuePath dispatched airplane_id={cmd.airplane_id} route_id={cmd.route_id} segments={cmd.segments.Length}");
     }
+
+    private void HandleStartVehiclePath(string json)
+    {
+        StartVehiclePathCommand cmd = null;
+
+        try
+        {
+            cmd = JsonUtility.FromJson<StartVehiclePathCommand>(json);
+        }
+        catch (Exception ex)
+        {
+            Debug.LogWarning($"[MessageDispatcher] Invalid start_vehicle_path payload: {ex.Message}");
+            return;
+        }
+
+        if (cmd == null || string.IsNullOrWhiteSpace(cmd.vehicle_id) || cmd.segments == null || cmd.segments.Length == 0)
+        {
+            Debug.LogWarning("[MessageDispatcher] start_vehicle_path payload missing vehicle_id/segments.");
+            return;
+        }
+
+        OnStartVehiclePathCommand?.Invoke(cmd);
+    }
+
+    private void HandleStartServiceProgress(string json)
+    {
+        StartServiceProgressCommand cmd = null;
+        try
+        {
+            cmd = JsonUtility.FromJson<StartServiceProgressCommand>(json);
+        }
+        catch (Exception ex)
+        {
+            Debug.LogWarning($"[MessageDispatcher] Invalid start_service_progress payload: {ex.Message}");
+            return;
+        }
+
+        if (cmd == null || string.IsNullOrWhiteSpace(cmd.stand_id) || cmd.duration_seconds <= 0f)
+        {
+            Debug.LogWarning("[MessageDispatcher] start_service_progress missing stand_id/duration_seconds.");
+            return;
+        }
+
+        OnStartServiceProgressCommand?.Invoke(cmd);
+    }
+
+    private void HandleStopServiceProgress(string json)
+    {
+        StopServiceProgressCommand cmd = null;
+        try
+        {
+            cmd = JsonUtility.FromJson<StopServiceProgressCommand>(json);
+        }
+        catch (Exception ex)
+        {
+            Debug.LogWarning($"[MessageDispatcher] Invalid stop_service_progress payload: {ex.Message}");
+            return;
+        }
+
+        if (cmd == null || string.IsNullOrWhiteSpace(cmd.stand_id))
+        {
+            Debug.LogWarning("[MessageDispatcher] stop_service_progress missing stand_id.");
+            return;
+        }
+
+        OnStopServiceProgressCommand?.Invoke(cmd);
+    }
+
+
 }

@@ -9,6 +9,8 @@ public class AirportSimulationBootstrap : MonoBehaviour {
     [SerializeField] private SplineRegistry splineRegistry;
     [SerializeField] private PrefabRegistry prefabRegistry;
     [SerializeField] private StartPathHandler startPathHandler;
+    [SerializeField] private StartVehiclePathHandler startVehiclePathHandler;
+
 
     [Header("Optional")]
     [SerializeField] private bool startSimulationAfterPlacement = true;
@@ -34,6 +36,10 @@ public class AirportSimulationBootstrap : MonoBehaviour {
 
         if (startPathHandler == null)
             startPathHandler = FindObjectOfType<StartPathHandler>();
+
+        if (startVehiclePathHandler == null)
+            startVehiclePathHandler = FindObjectOfType<StartVehiclePathHandler>();
+
     }
 
     private void OnEnable()
@@ -142,6 +148,14 @@ public class AirportSimulationBootstrap : MonoBehaviour {
 
                 if (logDebug)
                     Debug.Log("[Bootstrap] Rebuilt spline cache after AR placement.");
+            }
+
+            if (startVehiclePathHandler != null)
+            {
+                startVehiclePathHandler.RebuildSplineCache();
+
+                if (logDebug)
+                    Debug.Log("[Bootstrap] Rebuilt vehicle spline cache after AR placement.");
             }
             Debug.Log("[Bootstrap] About to call ConnectAsync()");
 

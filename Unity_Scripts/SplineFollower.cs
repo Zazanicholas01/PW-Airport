@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics;
 using UnityEngine;
 using UnityEngine.Splines;
 
@@ -154,7 +155,7 @@ public class SplineFollower : MonoBehaviour {
     {
         parkingCleared = true;
 
-        Debug.Log(
+        UnityEngine.Debug.Log(
             $"[SplineFollower] ClearParking airplane={airplaneId} route={routeId} " +
             $"running={running} currentLoop={currentSegmentIsParkingLoop} segIndex={segIndex} " +
             $"container={(currentContainer != null ? currentContainer.name : "null")}"
@@ -206,6 +207,11 @@ public class SplineFollower : MonoBehaviour {
         }
 
         float dt = GetSimDeltaSeconds();
+        UnityEngine.Debug.Log(
+            $"[SplineFollower] id={airplaneId} dt={dt:0.000} running={running} " +
+            $"speed={currentSpeedMps:0.000} target={targetSpeedMps:0.000} segIndex={segIndex}"
+        );
+
         if (dt <= 0f) return;
 
         if (segIndex < 0 || currentContainer == null || currentTable.Equals(default(ArcLengthTable))) {
@@ -224,10 +230,21 @@ public class SplineFollower : MonoBehaviour {
 
             if (stepDistMeters < remainingDistMeters) {
                 traveled += stepDistMeters;
+
+                UnityEngine.Debug.Log(
+                    $"[SplineFollower] move id={airplaneId} traveled={traveled:0.000}/{currentTable.Length:0.000} " +
+                    $"step={stepDistMeters:0.000}"
+                );
+
                 ApplyPose(currentContainer, currentTable.EvaluateT(traveled));
                 remainingDt = 0f;
             } else {
                 traveled = currentTable.Length;
+
+                UnityEngine.Debug.Log(
+                     $"[SplineFollower] segment end id={airplaneId} traveled={traveled:0.000}/{currentTable.Length:0.000}"
+                 );
+
                 ApplyPose(currentContainer, currentTable.EvaluateT(traveled));
 
                 if (segments[segIndex].loop_until_cleared)
@@ -238,14 +255,14 @@ public class SplineFollower : MonoBehaviour {
 
                         if (parkingCleared)
                         {
-                            Debug.LogWarning(
+                            UnityEngine.Debug.LogWarning(
                                 $"[SplineFollower] Parking cleared but continuation not ready airplane={airplaneId} " +
                                 $"route={routeId} segment={segments[segIndex].name} segIndex={segIndex} currentT={Wrap01(currentT):0.000}"
                             );
                         }
                         else
                         {
-                            Debug.Log(
+                            UnityEngine.Debug.Log(
                                 $"[SplineFollower] Parking loop continues airplane={airplaneId} route={routeId} " +
                                 $"segment={segments[segIndex].name} currentT={Wrap01(currentT):0.000}"
                             );
@@ -263,7 +280,7 @@ public class SplineFollower : MonoBehaviour {
                         return;
                     }
 
-                    Debug.Log(
+                    UnityEngine.Debug.Log(
                         $"[SplineFollower] Parking loop cleared airplane={airplaneId} route={routeId} " +
                         $"segment={segments[segIndex].name} exitT={currentParkingExitT:0.000}"
                     );
@@ -379,12 +396,18 @@ public class SplineFollower : MonoBehaviour {
 
             float loopEndT = t0 + 1f;
             currentTable = BuildArcLengthTable(container, t0, loopEndT, arcSamples);
+
+            UnityEngine.Debug.Log(
+                $"[SplineFollower] begin parking segment={seg.name} t0={t0:0.000} loopEndT={loopEndT:0.000} " +
+                $"length={currentTable.Length:0.000} id={airplaneId}"
+            );
+
             traveled = 0f;
 
             ApplySpeedProfileForSegment(seg);
             ApplyPose(container, t0);
 
-            Debug.Log(
+            UnityEngine.Debug.Log(
                 $"[SplineFollower] Entered parking loop airplane={airplaneId} route={routeId} " +
                 $"segment={seg.name} startT={Wrap01(t0):0.000} cleared={parkingCleared}"
             );
@@ -416,6 +439,12 @@ public class SplineFollower : MonoBehaviour {
 
         currentContainer = container;
         currentTable = BuildArcLengthTable(container, t0, t1, arcSamples);
+
+        UnityEngine.Debug.Log(
+            $"[SplineFollower] begin segment={seg.name} t0={t0:0.000} t1={t1:0.000} " +
+            $"length={currentTable.Length:0.000} id={airplaneId}"
+        );
+
         traveled = 0f;
         segIndex = index;
 
@@ -514,7 +543,7 @@ public class SplineFollower : MonoBehaviour {
 
         if (segments == null || next >= segments.Length || ResolveSplineByName == null)
         {
-            Debug.LogWarning(
+            UnityEngine.Debug.LogWarning(
                 $"[SplineFollower] Parking exit fallback: no next segment airplane={airplaneId} " +
                 $"route={routeId} segIndex={segIndex}"
             );
@@ -526,7 +555,7 @@ public class SplineFollower : MonoBehaviour {
 
         if (nextContainer == null || nextContainer.Spline == null)
         {
-            Debug.LogWarning(
+            UnityEngine.Debug.LogWarning(
                 $"[SplineFollower] Parking exit fallback: next spline missing airplane={airplaneId} " +
                 $"route={routeId} nextSegment={nextSegment.name}"
             );
@@ -536,7 +565,7 @@ public class SplineFollower : MonoBehaviour {
         Vector3 nextStartWorld = EvalWorld(nextContainer, nextSegment.t_start);
         float resolvedT = FindClosestT(currentContainer, nextStartWorld);
 
-        Debug.Log(
+        UnityEngine.Debug.Log(
             $"[SplineFollower] Parking exit resolved airplane={airplaneId} route={routeId} " +
             $"loop={currentContainer.name} next={nextSegment.name} nextStartT={nextSegment.t_start:0.000} " +
             $"exitT={resolvedT:0.000}"
@@ -555,7 +584,7 @@ public class SplineFollower : MonoBehaviour {
         currentTable = BuildArcLengthTable(currentContainer, currentT, exitEndT, arcSamples);
         traveled = 0f;
 
-        Debug.Log(
+        UnityEngine.Debug.Log(
             $"[SplineFollower] Parking loop rebuilt to exit airplane={airplaneId} route={routeId} " +
             $"segment={segments[segIndex].name} currentT={Wrap01(currentT):0.000} " +
             $"exitT={currentParkingExitT:0.000} length={currentTable.Length:0.0}m"
@@ -566,7 +595,7 @@ public class SplineFollower : MonoBehaviour {
     {
         if (!HasNextSegment())
         {
-            Debug.LogWarning(
+            UnityEngine.Debug.LogWarning(
                 $"[SplineFollower] Parking exit delayed: continuation missing airplane={airplaneId} " +
                 $"route={routeId} segIndex={segIndex} totalSegments={(segments != null ? segments.Length : 0)}"
             );
@@ -588,11 +617,11 @@ public class SplineFollower : MonoBehaviour {
     {
         if (continuationSegments == null || continuationSegments.Length == 0)
         {
-            Debug.LogWarning($"[SplineFollower] Empty continuation ignored airplane={airplaneId} route={routeId}");
+            UnityEngine.Debug.LogWarning($"[SplineFollower] Empty continuation ignored airplane={airplaneId} route={routeId}");
             return;
         }
 
-        Debug.Log(
+        UnityEngine.Debug.Log(
             $"[SplineFollower] SetContinuationPath airplane={airplaneId} oldRoute={routeId} newRoute={newRouteId} " +
             $"running={running} segIndex={segIndex} currentLoop={currentSegmentIsParkingLoop} cleared={parkingCleared} " +
             $"continuationSegments={continuationSegments.Length}"
@@ -600,7 +629,7 @@ public class SplineFollower : MonoBehaviour {
 
         if (!running || segments == null || segIndex < 0)
         {
-            Debug.Log(
+            UnityEngine.Debug.Log(
                 $"[SplineFollower] Continuation became full path airplane={airplaneId} newRoute={newRouteId}"
             );
             SetPath(continuationSegments, airplaneId, newRouteId);
@@ -619,7 +648,7 @@ public class SplineFollower : MonoBehaviour {
         segments = merged;
         routeId = newRouteId;
 
-        Debug.Log(
+        UnityEngine.Debug.Log(
             $"[SplineFollower] Continuation merged airplane={airplaneId} route={routeId} " +
             $"prefixSegments={prefixCount} totalSegments={segments.Length} nextSegment={(segIndex + 1 < segments.Length ? segments[segIndex + 1].name : "none")}"
         );

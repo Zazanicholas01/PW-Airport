@@ -8,6 +8,7 @@ from src.handlers.runtime_bus import RuntimeBusHandler
 from src.handlers.setup_bus import SetupBusHandler
 from src.transport.message_bus import WsMessageBus
 from src.domain.sim_clock import SimulationClock
+from src.services.ground_vehicle_coordinator import GroundVehicleCoordinator
 from src.domain.status_constants import BUS_COMMANDS, WEBSOCKET_CONFIG
 
 from src.transport.session import SessionContext
@@ -167,6 +168,7 @@ async def echo_handler(
         bus=server_runtime.bus,
         setup_bus=server_runtime.setup_bus,
         runtime_bus=server_runtime.runtime_bus,
+        ground_ops=None,
         clock=server_runtime.clock,
         clock_lock=server_runtime.clock_lock,
         clock_changed=server_runtime.clock_changed,
@@ -250,6 +252,16 @@ async def main(host, port, *, container=None) -> None:
     # Create Active Unity Bus obejct
     active_unity_bus = ActiveUnityBus()
 
+    # Create Ground Vehicle Coordinator
+    ground_ops = GroundVehicleCoordinator(
+        container.Session,
+        bus=active_unity_bus,
+        commands=container.commands,
+        clock=clock,
+        clock_lock=clock_lock,
+        clock_changed=clock_changed,
+    )
+
     # Create and start Runtime bus handler
     runtime_bus = RuntimeBusHandler(
         container.prefab_store,
@@ -259,6 +271,7 @@ async def main(host, port, *, container=None) -> None:
         clock=clock,
         clock_lock=clock_lock,
         clock_changed=clock_changed,
+        ground_ops=ground_ops,
     )
     await runtime_bus.start()
 
@@ -274,6 +287,7 @@ async def main(host, port, *, container=None) -> None:
         bus=active_unity_bus,
         setup_bus=setup_bus,
         runtime_bus=runtime_bus,
+        ground_ops=ground_ops,
         clock=clock,
         clock_lock=clock_lock,
         clock_changed=clock_changed,

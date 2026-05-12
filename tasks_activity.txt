@@ -272,3 +272,25 @@ DASHBOARD EMBEDDING
         - 2. Live state with Python Simulation
         - 3. AR Layout, resize dashboard for world space readability
         - 4. Bridge interaction through live clicks
+
+
+GROUND_VEHICLES IMPLEMENTATION
+
+    3D Scene
+        - Vehicles_Splines prefab with inside all the splines for bus and cargo truck
+        - Bus for P1 / P2 / P3 / O_Stands
+        - Cargo Truck can go anywhere
+        - Cargo trucks are 2 but share the same splines
+        - Zones are P / C / O
+        - It would be preferrable if just one vehicle goes to a zone
+        - When going to the stand, run the spline from t 0 to t 1.
+        - When returning, run the spline from t 1 to t 0
+        - Paths will be a single spline for P / C Stands
+        - Paths will be a combination of (Bus_Spline_Master_O / Cargo_Spline_Master_O) + Single spline to the stand
+    
+    Logic
+        - A Plane before departing goes to state "Embarking" so there it will start to embark. I would like to start with a time 10 minutes before departure.
+        - A Plane after landing goes to state "Disembarking" so there it will start to disembark. It's not time managed but as soon as it goes to state "Disembarking".
+        - If the Plane is Cargo, just need to unload with the cargo truck.
+        - If Plane is Passengers, first unload the passengers and then the luggages.
+        

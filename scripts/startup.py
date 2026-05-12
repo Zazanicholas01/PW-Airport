@@ -146,12 +146,12 @@ def add_parkings(session) -> None:
 
 
 def add_vehicles(session) -> None:
-    vehicle_specifics = [("Bus", 50), ("Bus", 50), ("Cargo", 100), ("Cargo", 100), ("Cargo", 100), ("Fuel", 5000)]
+    vehicle_specifics = [("Bus", 45, "BUS_01"), ("Cargo", 60, "CARGO_01"), ("Cargo", 60, "CARGO_02")]
     vehicles = []
     for vehicle in vehicle_specifics:
         vehicles.append(
             models.Vehicle(
-                id=uuid4().hex[:4], 
+                id=vehicle[2], 
                 type=vehicle[0],
                 capacity=vehicle[1],
                 position={"x": 0, "y": 0, "z": 0}, # Ragionamento 

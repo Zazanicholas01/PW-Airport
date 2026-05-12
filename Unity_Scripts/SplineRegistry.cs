@@ -12,6 +12,8 @@ public class SplineRegistry : MonoBehaviour
     [SerializeField] private string departureSplineName = "Spline_Departure";
     [SerializeField] private bool includeInactive = true;
     [SerializeField] private Transform splineRoot;
+    [SerializeField] private List<Transform> additionalSplineRoots = new();
+
 
     private LocalWebSocketClient ws;
     private TaskCompletionSource<bool> sendCompletedTcs = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -91,6 +93,56 @@ public class SplineRegistry : MonoBehaviour
         sendCompletedTcs.TrySetResult(true);
     }
 
+    private IEnumerable<SplineContainer> EnumerateSplineContainers()
+    {
+        var seen = new HashSet<SplineContainer>();
+
+        if (registeredSplines != null && registeredSplines.Count > 0)
+        {
+            foreach (var container in registeredSplines)
+            {
+                if (container == null || container.Spline == null) continue;
+                if (seen.Add(container)) yield return container;
+            }
+            yield break;
+        }
+
+        if (splineRoot != null)
+        {
+            foreach (var container in splineRoot.GetComponentsInChildren<SplineContainer>(includeInactive))
+            {
+                if (container == null || container.Spline == null) continue;
+                if (seen.Add(container)) yield return container;
+            }
+        }
+
+        if (additionalSplineRoots != null)
+        {
+            foreach (var root in additionalSplineRoots)
+            {
+                if (root == null) continue;
+
+                foreach (var container in root.GetComponentsInChildren<SplineContainer>(includeInactive))
+                {
+                    if (container == null || container.Spline == null) continue;
+                    if (seen.Add(container)) yield return container;
+                }
+            }
+        }
+
+        if (seen.Count == 0)
+        {
+            foreach (var container in FindObjectsOfType<SplineContainer>(includeInactive))
+            {
+                if (container == null || container.Spline == null) continue;
+                if (seen.Add(container)) yield return container;
+            }
+
+            Debug.LogWarning("[SplineRegistry] No spline roots configured. Falling back to scene-wide spline search.");
+        }
+    }
+
+
     private IEnumerable<SplineRecord> EnumerateSplines()
     {
         IEnumerable<SplineContainer> containers =
@@ -100,7 +152,7 @@ public class SplineRegistry : MonoBehaviour
 
         var seen = new HashSet<SplineContainer>();
 
-        foreach (var container in containers)
+        foreach (var container in EnumerateSplineContainers())
         {
             if (container == null || container.Spline == null) continue;
             if (!seen.Add(container)) continue;
