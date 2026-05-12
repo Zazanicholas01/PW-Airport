@@ -4,7 +4,7 @@ import random
 from datetime import datetime, date, timedelta, timezone
 
 from sqlalchemy.orm import sessionmaker
-from sqlalchemy import update
+from sqlalchemy import delete, update
 
 from src.db.engine import get_engine
 from src.db.db_functions import normalize_distance
@@ -53,6 +53,23 @@ class RandomFlightGenerator:
             .all()
         )
         return airports, terminals, airlines
+
+
+    def _reset_existing_flights(self, session) -> None:
+        """Clear previous simulation flight state before generating a new batch."""
+
+        session.execute(
+            update(models.Vehicle).values(
+                flight_id=None,
+                destination=None,
+                route_id=None,
+                status="Available",
+            )
+        )
+        session.execute(delete(models.Operation))
+        session.execute(delete(models.Passenger))
+        session.execute(delete(models.Cargo))
+        session.execute(delete(models.Flight))
     
 
     def _random_seconds_between(self, start: datetime, end: datetime) -> int:
@@ -162,18 +179,27 @@ class RandomFlightGenerator:
         return dep_time, arr_time
 
 
-    def _times_departure_from_delta(self) -> tuple[datetime, datetime]:
+    def _times_departure_from_delta(self, *, remote_airport: models.Airport) -> tuple[datetime, datetime]:
         """Generate a departure flight with departure time controlled by constants."""
 
         departure_time = self._utc_now() + self._random_delta_minutes(
             GENERATOR_CONFIG.DEPARTURE_MIN_DELTA_MINUTES,
             GENERATOR_CONFIG.DEPARTURE_MAX_DELTA_MINUTES,
         )
-        arrival_time = departure_time + timedelta(seconds=self.rng.randint(30 * 60, 240 * 60))
+
+        min_duration, max_duration = self._duration_bounds_for_airport(remote_airport=remote_airport)
+
+        # Adapted arrival and departure based on remote airport
+        arrival_time = departure_time + timedelta(
+            seconds = self.rng.randint(
+                int(min_duration.total_seconds()),
+                int(max_duration.total_seconds()),
+            )
+        )
         return departure_time, arrival_time
 
 
-    def _times_arrival_from_delta(self) -> tuple[datetime, datetime]:
+    def _times_arrival_from_delta(self, *, remote_airport: models.Airport) -> tuple[datetime, datetime]:
         """Generate an arrival flight with arrival time controlled by constants."""
 
         arrival_time = self._utc_now() + self._random_delta_minutes(
@@ -181,16 +207,18 @@ class RandomFlightGenerator:
             GENERATOR_CONFIG.ARRIVAL_MAX_DELTA_MINUTES,
         )
 
-        max_duration = min(timedelta(minutes=240), arrival_time - self._utc_now())
-        min_duration = timedelta(minutes=10)
+        min_duration, max_duration = self._duration_bounds_for_airport(remote_airport)
+        max_allowed_duration = min(max_duration, arrival_time - self._utc_now())
 
-        if max_duration < min_duration:
-            duration = max_duration
+        if max_allowed_duration < min_duration:
+            duration = max_allowed_duration
         else:
-            duration = timedelta(seconds=self.rng.randint(
-                int(min_duration.total_seconds()),
-                int(max_duration.total_seconds()),
-            ))
+            duration = timedelta(
+                seconds=self.rng.randint(
+                    int(min_duration.total_seconds()),
+                    int(max_allowed_duration.total_seconds()),
+            )
+        )
 
         departure_time = arrival_time - duration
         return departure_time, arrival_time
@@ -392,6 +420,7 @@ class RandomFlightGenerator:
         ensure_in_window: bool,
         window: timedelta,
         is_departure_from_personal: bool,
+        force_bootstrap_compatibility: bool,
     ) -> models.Flight:
 
         # Random tipo e aeroporto remoto
@@ -401,7 +430,7 @@ class RandomFlightGenerator:
         # DEBUG - Forza decollo compatibile con aerei spawnati
         remote_airport, flight_type = self._maybe_force_compatible_first_departure(
             idx=idx,
-            ensure_in_window=ensure_in_window,
+            ensure_in_window=ensure_in_window and force_bootstrap_compatibility,
             is_departure_from_personal=is_departure_from_personal,
             airports=airports,
             parked_pairs=parked_pairs,
@@ -424,9 +453,9 @@ class RandomFlightGenerator:
 
         if ensure_in_window:
             if is_departure_from_personal:
-                departure_time, arrival_time = self._times_departure_from_delta()
+                departure_time, arrival_time = self._times_departure_from_delta(remote_airport=remote_airport)
             else:
-                departure_time, arrival_time = self._times_arrival_from_delta()
+                departure_time, arrival_time = self._times_arrival_from_delta(remote_airport=remote_airport)
         else:
             departure_time, arrival_time = self._times_departure_within_window(window=window)
 
@@ -474,15 +503,8 @@ class RandomFlightGenerator:
 
         with self.Session() as session:
 
-            # TRUNCATE tabella voli prima di popolare di nuovo
-            session.execute(
-                update(models.Vehicle).values(
-                    flight_id=None,
-                    destination=None,
-                    route_id=None,
-                    status="Available",
-                )
-            )
+            # Reset old simulation state before repopulating flights.
+            self._reset_existing_flights(session)
             session.commit()
 
             # Query DB per aeroporti / airlines e terminal
@@ -535,4 +557,79 @@ class RandomFlightGenerator:
             
             session.commit()
         
+        return flights
+
+
+    def _duration_bounds_for_airport(self, remote_airport: models.Airport) -> tuple[timedelta, timedelta]:
+        distance = normalize_distance(getattr(remote_airport, "distance", None))
+
+        if distance == "Short":
+            return timedelta(minutes=50), timedelta(minutes=70)
+
+        if distance == "Medium":
+            return timedelta(minutes=100), timedelta(minutes=150)
+
+        if distance == "Long":
+            return timedelta(minutes=200), timedelta(minutes=480)
+
+        return timedelta(minutes=45), timedelta(minutes=120)
+
+
+    def generate_flights(
+        self,
+        n: int,
+        *,
+        ensure_in_window: bool = True,
+        window: timedelta = timedelta(hours=1),
+        reset_existing: bool = True,
+        force_bootstrap_compatibility: bool = True,
+    ) -> list[models.Flight]:
+        total = max(0, int(n))
+        if total <= 0:
+            return []
+
+        flights: list[models.Flight] = []
+
+        with self.Session() as session:
+            if reset_existing:
+                self._reset_existing_flights(session)
+                session.commit()
+
+            airports, terminals, airlines = self.load_metadata(session)
+
+            parked_pairs = list(
+                {
+                    (t, r)
+                    for (t, r) in session.query(models.Airplane.type, models.Airplane.range)
+                    .filter(models.Airplane.status == AIRPLANE_STATUS.PARKED)
+                    .all()
+                    if isinstance(t, str) and isinstance(r, str)
+                }
+            )
+
+            counters = self._init_flight_counters(session, airlines)
+
+            departure_count = total // 2
+            arrival_count = total - departure_count
+            directions = ([True] * departure_count) + ([False] * arrival_count)
+            self.rng.shuffle(directions)
+
+            for idx, is_departure_from_personal in enumerate(directions):
+                flight = self._build_flight(
+                    idx=idx,
+                    airports=airports,
+                    terminals=terminals,
+                    airlines=airlines,
+                    parked_pairs=parked_pairs,
+                    counters=counters,
+                    ensure_in_window=ensure_in_window,
+                    window=window,
+                    is_departure_from_personal=is_departure_from_personal,
+                    force_bootstrap_compatibility=force_bootstrap_compatibility,
+                )
+                session.add(flight)
+                flights.append(flight)
+
+            session.commit()
+
         return flights

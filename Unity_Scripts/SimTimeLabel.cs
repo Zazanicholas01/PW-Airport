@@ -9,13 +9,15 @@ public class SimTimeLabel : MonoBehaviour {
     [SerializeField] private SimClockClient clockClient;
     [SerializeField] private float refreshIntervalSeconds = 0.25f;
 
-    private static readonly TimeSpan DisplayOffset = TimeSpan.FromHours(1);
     private float nextRefreshRealtime;
+    private TimeZoneInfo displayTimeZone;
 
-    private void Awake(){
+    private void Awake() {
         if (dispatcher == null) dispatcher = FindObjectOfType<MessageDispatcher>();
         if (label == null) label = GetComponent<TMP_Text>();
         if (clockClient == null) clockClient = FindObjectOfType<SimClockClient>();
+
+        displayTimeZone = ResolveRomeTimeZone();
 
         if (label != null && string.IsNullOrWhiteSpace(label.text))
             label.text = "Sim time: syncing";
@@ -34,6 +36,14 @@ public class SimTimeLabel : MonoBehaviour {
         UpdateLabel(cmd.sim_unix_ms, cmd.time_scale);
     }
 
+    private static TimeZoneInfo ResolveRomeTimeZone() {
+        try { return TimeZoneInfo.FindSystemTimeZoneById("Europe/Rome"); }
+        catch {
+            try { return TimeZoneInfo.FindSystemTimeZoneById("W. Europe Standard Time"); }
+            catch { return TimeZoneInfo.Utc; }
+        }
+    }
+
     private void Update() {
 
         if (label == null || clockClient == null || !clockClient.HasReceivedSync) return;
@@ -44,12 +54,11 @@ public class SimTimeLabel : MonoBehaviour {
     }
 
     private void UpdateLabel(long simUnixMs, float timeScale) {
-
         if (label == null) return;
 
         var utc = DateTimeOffset.FromUnixTimeMilliseconds(simUnixMs);
-        var utcPlus1 = utc.ToOffset(DisplayOffset);
+        var localTime = TimeZoneInfo.ConvertTime(utc, displayTimeZone);
 
-        label.text = $"Sim time: {utcPlus1:yyyy-MM-dd HH:mm:ss} (x{timeScale:0.##})";
+        label.text = $"Sim time: {localTime:yyyy-MM-dd HH:mm:ss} (x{timeScale:0.##})";
     }
 }

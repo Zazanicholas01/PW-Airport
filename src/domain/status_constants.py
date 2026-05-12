@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from datetime import timedelta
 
 # Global constants
 PERSONAL_AIRPORT = "LIAG"
@@ -86,9 +87,9 @@ class BUS_SERVICE_CONFIG:
 @dataclass
 class GENERATOR_CONFIG:
     # Flight generation knobs
-    TOTAL_N_FLIGHTS = 20
-    DEPARTURE_N_FLIGHTS = 10
-    ARRIVAL_N_FLIGHTS = 20
+    TOTAL_N_FLIGHTS = 10
+    DEPARTURE_N_FLIGHTS = 5
+    ARRIVAL_N_FLIGHTS = 5
 
     # Time windows are deltas from "now", in minutes.
     DEPARTURE_MIN_DELTA_MINUTES = 60
@@ -99,6 +100,12 @@ class GENERATOR_CONFIG:
     # Backwards-compatible alias used by the scheduler loop.
     RANDOM_FLIGHTS_COUNT = TOTAL_N_FLIGHTS
     ENSURE_IN_WINDOW = True
+
+    # Runtime generator configuration
+    RUNTIME_FLIGHT_BATCH_MIN = 1
+    RUNTIME_FLIGHT_BATCH_MAX = 2
+    RUNTIME_FLIGHT_EVERY = timedelta(hours=1)
+
 
 MIN_POLL_REAL_S = 0.05
 CLOCK_HERTZ = 10.0

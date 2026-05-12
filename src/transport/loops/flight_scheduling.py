@@ -243,12 +243,39 @@ async def flight_scheduler_loop(
     # Initialize timestamp used to rate-limit scheduling window logging
     last_window_log = 0.0
 
+    async with ctx.clock_lock:
+        next_runtime_generation_at = as_utc(ctx.clock.now()) + GENERATOR_CONFIG.RUNTIME_FLIGHT_EVERY
+
     while True:
 
         # Read current time and time scale of the simulation
         async with ctx.clock_lock:
             now = as_utc(ctx.clock.now())
             time_scale = float(getattr(ctx.clock, "time_scale", 1.0))
+
+        while now >= next_runtime_generation_at:
+            generated_count = ctx.flight_actions.generate_runtime_flights(
+                1,
+                2,
+                scheduler.window,
+            )
+
+            logging.info(
+                "[flight_scheduler] runtime flights generated count=%d scheduled_at=%s now=%s",
+                generated_count,
+                next_runtime_generation_at.isoformat(),
+                now.isoformat(),
+            )
+
+            append_event({
+                "type": "backend_event",
+                "event": "runtime_flights_generated",
+                "count": generated_count,
+                "scheduled_at": next_runtime_generation_at.isoformat(),
+                "generated_at": now.isoformat(),
+            })
+
+            next_runtime_generation_at += timedelta(hours=1)
 
         # List flights inside scheduling window
         flights = ctx.flight_actions.list_flights_in_sliding_window(

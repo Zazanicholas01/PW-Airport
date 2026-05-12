@@ -294,3 +294,34 @@ GROUND_VEHICLES IMPLEMENTATION
         - If the Plane is Cargo, just need to unload with the cargo truck.
         - If Plane is Passengers, first unload the passengers and then the luggages.
         
+
+LAST_TASKS
+
+    Flight Generation
+        - Possibilità di aggiungere manualmente viaggi (LLM Powered se riusciamo)
+    
+    Animazione 3D
+        - Sistemare e rendere il più realistici possibile gli speed profile
+
+    Interazione
+        - Possibilità di poter cliccare gli aerei in scena e adattare la dashboard di conseguenza
+    
+    AI Chatbot
+        - Tool calling sulla lista della scheduling window
+        - Aggiungere manualmente viaggi
+        - Informazioni rigurdanti il progetto -- (DONE)
+        - Informazioni riguardanti ai prossimi viaggi in base ad aeroporto e altre Informazioni
+
+    Dashboard
+        - Valutare se cambiare immagini con render dei nostri modelli
+    
+    Codice
+        - Parametrizzare dove possibile
+        - Ripulire Log
+    
+    AR
+        - Sistemare spawn iniziali
+        - Sistemare Plane Detection
+
+    Monitoring & Dashboard
+        - Implementare parte di analisi dati e dashboard

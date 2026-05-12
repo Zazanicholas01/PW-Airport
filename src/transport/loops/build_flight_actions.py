@@ -28,5 +28,6 @@ def build_flight_actions(*, Session) -> FlightActions:
         get_airplane_prefab=f.get_airplane_prefab,
         count_parked_airplanes=db.count_parked_airplanes,
         generate_debug_flights=db.generate_debug_flights,
+        generate_runtime_flights=db.generate_runtime_flights,
     )
 

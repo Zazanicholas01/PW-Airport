@@ -28,4 +28,5 @@ class FlightActions:
 
     count_parked_airplanes: Callable[[], int]
     generate_debug_flights: Callable[[int, bool, timedelta], None]
+    generate_runtime_flights: Callable[[int, int, timedelta], int]
 
