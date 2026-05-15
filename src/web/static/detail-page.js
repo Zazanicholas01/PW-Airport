@@ -11,8 +11,12 @@
   const imageEl = document.querySelector(".detail-image");
   const labelEl = progressRoot ? progressRoot.querySelector(".js-progress-label") : null;
   const percentEl = progressRoot ? progressRoot.querySelector(".js-progress-percent") : null;
+  const startLabelEl = progressRoot ? progressRoot.querySelector(".js-progress-start-label") : null;
+  const endLabelEl = progressRoot ? progressRoot.querySelector(".js-progress-end-label") : null;
 
   let latestClock = null;
+  let progressTimerId = 0;
+  let refreshTimerId = 0;
 
   function buildFieldMap() {
     const map = new Map();
@@ -73,6 +77,18 @@
     if (subtitleEl && snapshot.subtitle) subtitleEl.textContent = snapshot.subtitle;
     if (imageEl && snapshot.image_url) imageEl.src = snapshot.image_url;
     if (imageEl && snapshot.image_alt) imageEl.alt = snapshot.image_alt;
+    if (progressRoot && snapshot.progress_start_unix_ms != null) {
+      progressRoot.dataset.progressStartUnixMs = String(snapshot.progress_start_unix_ms);
+    }
+    if (progressRoot && snapshot.progress_end_unix_ms != null) {
+      progressRoot.dataset.progressEndUnixMs = String(snapshot.progress_end_unix_ms);
+    }
+    if (labelEl && snapshot.progress_label) labelEl.textContent = snapshot.progress_label;
+    if (percentEl && Number.isFinite(Number(snapshot.progress_percent))) {
+      percentEl.textContent = String(snapshot.progress_percent) + "%";
+    }
+    if (startLabelEl && snapshot.progress_start_label) startLabelEl.textContent = snapshot.progress_start_label;
+    if (endLabelEl && snapshot.progress_end_label) endLabelEl.textContent = snapshot.progress_end_label;
 
     const incomingFields = Array.isArray(snapshot.fields) ? snapshot.fields : [];
     incomingFields.forEach((field) => {
@@ -84,6 +100,7 @@
     });
 
     renderVisualTitle();
+    renderProgress();
   }
 
   async function refreshDetail() {
@@ -127,9 +144,37 @@
     socket.addEventListener("open", renderProgress);
   }
 
+  function stopActiveTimers() {
+    if (progressTimerId) {
+      window.clearInterval(progressTimerId);
+      progressTimerId = 0;
+    }
+    if (refreshTimerId) {
+      window.clearInterval(refreshTimerId);
+      refreshTimerId = 0;
+    }
+  }
+
+  function startActiveTimers() {
+    stopActiveTimers();
+    progressTimerId = window.setInterval(renderProgress, 1000);
+    refreshTimerId = window.setInterval(refreshDetail, 5000);
+  }
+
+  function syncPageActivity() {
+    if (document.hidden) {
+      stopActiveTimers();
+      return;
+    }
+
+    renderProgress();
+    refreshDetail();
+    startActiveTimers();
+  }
+
   connectClock();
   renderVisualTitle();
   renderProgress();
-  window.setInterval(renderProgress, 250);
-  window.setInterval(refreshDetail, 3000);
+  syncPageActivity();
+  document.addEventListener("visibilitychange", syncPageActivity);
 })();

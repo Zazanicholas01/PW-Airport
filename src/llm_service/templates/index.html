@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>AI Chat</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/llm-service.css">
+</head>
+<body>
+  <main class="app-shell">
+    <header class="chat-header">
+      <div class="brand-mark" aria-hidden="true">
+        <img src="/img/master-spline.png" alt="">
+      </div>
+      <div class="header-copy">
+        <p class="header-kicker">LIAG Assistant</p>
+        <h1>Chat</h1>
+      </div>
+      <div class="header-status">
+        <span class="status-dot"></span>
+        <span id="status">Ready</span>
+      </div>
+    </header>
+
+    <section id="chat-feed" class="chat-feed" aria-live="polite">
+      <article class="message-row assistant">
+        <div class="avatar assistant-avatar">
+          <img src="/img/master-spline.png" alt="Assistant avatar">
+        </div>
+        <div class="bubble-group">
+          <p class="speaker">Assistant</p>
+          <div class="message-bubble assistant-bubble">
+            Ask anything and I will send your message to the remote model.
+          </div>
+        </div>
+      </article>
+    </section>
+
+    <form id="chat-form" class="composer-shell">
+      <div class="composer-panel">
+        <textarea
+          id="prompt"
+          name="prompt"
+          rows="1"
+          placeholder="Message the assistant..."
+        ></textarea>
+        <div class="composer-actions">
+          <p class="composer-hint">Enter to send, Shift + Enter for a new line</p>
+          <div class="composer-buttons">
+            <button id="mic" type="button" aria-label="Start voice input">Speak</button>
+            <button id="send" type="submit" aria-label="Send message">Send</button>
+          </div>
+        </div>
+      </div>
+    </form>
+  </main>
+
+  <script src="/static/llm-service.js" defer></script>
+</body>
+</html>

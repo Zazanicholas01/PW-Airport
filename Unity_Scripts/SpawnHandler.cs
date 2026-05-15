@@ -61,14 +61,16 @@ public class SpawnHandler : MonoBehaviour
             return;
         }
 
-        var position = Vector3.zero;
+        var worldPosition = Vector3.zero;
         if (command.position != null)
         {
-            position = new Vector3(command.position.x, command.position.y, command.position.z);
+            worldPosition = new Vector3(command.position.x, command.position.y, command.position.z);
         }
 
-        Quaternion rotation = RotationForStand(command.stand_id);
-        var instance = Instantiate(prefab, position, rotation, spawnParent);
+        var localStandRotation = RotationForStand(command.stand_id);
+        var worldRotation = spawnParent.rotation * localStandRotation;
+
+        var instance = Instantiate(prefab, worldPosition, worldRotation, spawnParent);
 
         var radarTarget = instance.GetComponentInChildren<RadarTarget>();
         if (radarTarget != null)

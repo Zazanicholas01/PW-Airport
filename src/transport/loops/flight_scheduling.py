@@ -14,7 +14,7 @@ from sqlalchemy import select
 
 from src.db import models
 from src.schedulers.flight_scheduler import FlightSlidingWindowScheduler
-from src.utils.datetimes import as_utc
+from src.utils.datetimes import as_rome, as_utc
 from src.utils.event_log import append_event
 from src.utils.geo_direction import direction_for_airport_icao
 from src.utils.landing_timing import landing_spawn_lead_seconds
@@ -145,12 +145,22 @@ def _scheduler_window_row(
     flight_code = str(getattr(flight, "icao", None) or getattr(flight, "id", "") or "")
 
     direction = "arrival" if destination == airport_icao else "departure"
+    departure_label = as_rome(departure_time).strftime("%H:%M") if departure_time else "--:--"
+    arrival_label = as_rome(arrival_time).strftime("%H:%M") if arrival_time else "--:--"
+    title_time = arrival_label if direction == "arrival" else departure_label
+    title_route = _remote_airport_label(
+        origin=origin,
+        destination=destination,
+        local_airport_icao=airport_icao,
+        airport_names=airport_names,
+    )
 
     return {
         "id": str(getattr(flight, "id", "") or ""),
         "direction": direction,
-        "departure_time": departure_time.astimezone().strftime("%H:%M") if departure_time else "--:--",
-        "arrival_time": arrival_time.astimezone().strftime("%H:%M") if arrival_time else "--:--",
+        "card_title": f"{title_route} - {title_time}",
+        "departure_time": departure_label,
+        "arrival_time": arrival_label,
         "delta_time": _duration_label(departure_time, arrival_time),
         "reference_unix_ms": int(reference_time.timestamp() * 1000) if reference_time else None,
         "flight_number": flight_code,

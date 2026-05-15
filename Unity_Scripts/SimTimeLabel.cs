@@ -40,7 +40,7 @@ public class SimTimeLabel : MonoBehaviour {
         try { return TimeZoneInfo.FindSystemTimeZoneById("Europe/Rome"); }
         catch {
             try { return TimeZoneInfo.FindSystemTimeZoneById("W. Europe Standard Time"); }
-            catch { return TimeZoneInfo.Utc; }
+            catch { return null; }
         }
     }
 
@@ -57,8 +57,41 @@ public class SimTimeLabel : MonoBehaviour {
         if (label == null) return;
 
         var utc = DateTimeOffset.FromUnixTimeMilliseconds(simUnixMs);
-        var localTime = TimeZoneInfo.ConvertTime(utc, displayTimeZone);
+        var localTime = ConvertUtcToRome(utc);
 
         label.text = $"Sim time: {localTime:yyyy-MM-dd HH:mm:ss} (x{timeScale:0.##})";
+    }
+
+    private DateTimeOffset ConvertUtcToRome(DateTimeOffset utc) {
+        if (displayTimeZone != null) {
+            try {
+                return TimeZoneInfo.ConvertTime(utc, displayTimeZone);
+            }
+            catch {
+            }
+        }
+
+        return ApplyRomeDstRules(utc);
+    }
+
+    private static DateTimeOffset ApplyRomeDstRules(DateTimeOffset utc) {
+        var utcInstant = utc.ToUniversalTime();
+        var year = utcInstant.Year;
+
+        var dstStartUtc = LastSunday(year, 3).AddHours(1);
+        var dstEndUtc = LastSunday(year, 10).AddHours(1);
+        var offset = (utcInstant >= dstStartUtc && utcInstant < dstEndUtc)
+            ? TimeSpan.FromHours(2)
+            : TimeSpan.FromHours(1);
+
+        return utcInstant.ToOffset(offset);
+    }
+
+    private static DateTimeOffset LastSunday(int year, int month) {
+        var lastDay = new DateTimeOffset(year, month, DateTime.DaysInMonth(year, month), 0, 0, 0, TimeSpan.Zero);
+        while (lastDay.DayOfWeek != DayOfWeek.Sunday) {
+            lastDay = lastDay.AddDays(-1);
+        }
+        return lastDay;
     }
 }

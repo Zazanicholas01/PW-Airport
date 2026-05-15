@@ -14,7 +14,7 @@
 
     if (!rows.length) {
       const emptyRow = document.createElement("tr");
-      emptyRow.innerHTML = `<td colspan="6" class="muted">${emptyMessage}</td>`;
+      emptyRow.innerHTML = `<td colspan="7" class="muted">${emptyMessage}</td>`;
       targetBody.appendChild(emptyRow);
       return;
     }
@@ -22,22 +22,26 @@
     const fragment = document.createDocumentFragment();
 
     rows.forEach((row) => {
+      const headerRow = document.createElement("tr");
+      headerRow.className = "flight-group-header";
+      headerRow.innerHTML = `
+        <td colspan="7" class="flight-group-title">
+          <span class="flight-group-title-text">${row.card_title || row.route || "--"}</span>
+          <span class="pill ${row.status_class || "status-default"}">${row.status || "--"}</span>
+        </td>
+      `;
+
       const tr = document.createElement("tr");
-      tr.className = "clickable-row";
+      tr.className = "clickable-row flight-card-row";
       tr.dataset.href = `/flight/${encodeURIComponent(row.id)}`;
 
       tr.innerHTML = `
-        <td class="flight-route-title">
-          <span class="flight-route-text">${row.route || "--"}</span>
-          <span class="pill ${row.status_class || "status-default"}">${row.status || "--"}</span>
-        </td>
         <td><span class="display-cell display-time">${row.departure_time || row.dep_time || "--:--"}</span></td>
         <td><span class="display-cell display-time">${row.arrival_time || row.arr_time || "--:--"}</span></td>
         <td><span class="display-cell display-delta">${row.delta_time || "--"}</span></td>
-        <td>${row.airline || "--"}</td>
-        <td>${row.type || "--"}</td>
       `;
 
+      fragment.appendChild(headerRow);
       fragment.appendChild(tr);
     });
 

@@ -320,7 +320,7 @@ LAST_TASKS
         - Ripulire Log
     
     AR
-        - Sistemare spawn iniziali
+        - Sistemare spawn iniziali -- (DONE)
         - Sistemare Plane Detection
 
     Monitoring & Dashboard

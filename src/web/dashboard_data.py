@@ -3,6 +3,7 @@ import logging
 import time
 from collections import deque
 from datetime import datetime, timedelta, timezone
+from functools import lru_cache
 from pathlib import Path
 
 from fastapi import HTTPException
@@ -13,6 +14,7 @@ from src.db import models
 from src.db.db_functions import list_flights_in_sliding_window
 from src.db.engine import get_engine
 from src.domain.status_constants import PERSONAL_AIRPORT, WINDOW_TIMEDELTA_HOURS
+from src.utils.datetimes import as_rome
 
 
 WEB_DIR = Path(__file__).resolve().parent
@@ -89,6 +91,10 @@ def _normalize_scheduler_window_row(row) -> dict[str, object]:
 
     normalized = dict(row)
     normalized["route"] = _friendly_route_label(str(normalized.get("route") or ""))
+    normalized["card_title"] = str(normalized.get("card_title") or "").strip() or (
+        f"{normalized['route']} - "
+        f"{normalized.get('arrival_time') if normalized.get('direction') == 'arrival' else normalized.get('departure_time') or '--:--'}"
+    ).strip()
     return normalized
 
 
@@ -110,7 +116,24 @@ def _cache_get(cache, key) -> dict[str, object] | None:
     return payload
 
 
-def _read_flight_detail_snapshot(flight_id: str) -> dict[str, object]:
+def _clock_to_sim_now_utc(clock_sync: dict[str, float | int | str] | None) -> datetime:
+    if clock_sync is None:
+        return datetime.now(timezone.utc)
+
+    sync_ts = datetime.fromisoformat(str(clock_sync["ts"]))
+    if sync_ts.tzinfo is None:
+        sync_ts = sync_ts.replace(tzinfo=timezone.utc)
+
+    elapsed_real_ms = max(0.0, (datetime.now(timezone.utc) - sync_ts).total_seconds() * 1000.0)
+    sim_unix_ms = float(clock_sync["sim_unix_ms"]) + elapsed_real_ms * float(clock_sync["time_scale"])
+    return datetime.fromtimestamp(sim_unix_ms / 1000.0, tz=timezone.utc)
+
+
+def _read_flight_detail_snapshot(
+    flight_id: str,
+    *,
+    now_utc: datetime | None = None,
+) -> dict[str, object]:
     with DASHBOARD_SESSION() as session:
         flight = session.get(models.Flight, flight_id)
         if flight is None:
@@ -122,20 +145,21 @@ def _read_flight_detail_snapshot(flight_id: str) -> dict[str, object]:
         dep = getattr(flight, "departure_time", None)
         arr = getattr(flight, "arrival_time", None)
 
-        dep_label = dep.astimezone().strftime("%Y-%m-%d %H:%M:%S") if dep else "--"
-        arr_label = arr.astimezone().strftime("%Y-%m-%d %H:%M:%S") if arr else "--"
+        dep_label = as_rome(dep).strftime("%Y-%m-%d %H:%M:%S") if dep else "--"
+        arr_label = as_rome(arr).strftime("%Y-%m-%d %H:%M:%S") if arr else "--"
 
         model = getattr(airplane, "model", None) if airplane else None
         origin = str(getattr(flight, "origin", "") or "")
         destination = str(getattr(flight, "destination", "") or "")
+        effective_now_utc = now_utc or _current_sim_now_utc()
         progress_percent, progress_label = _flight_progress(
-            now_utc=_current_sim_now_utc(),
+            now_utc=effective_now_utc,
             departure_time=dep,
             arrival_time=arr,
         )
 
         flight_code = str(getattr(flight, "icao", None) or flight_id)
-        route_label = f"{_city_label(origin)} -> {_city_label(destination)}"
+        route_label = _remote_route_label(origin, destination)
 
         return {
             "title": route_label,
@@ -162,17 +186,25 @@ def _read_flight_detail_snapshot(flight_id: str) -> dict[str, object]:
         }
     
 
-def get_flight_detail_snapshot_cached(flight_id: str) -> dict[str, object]:
+def get_flight_detail_snapshot_cached(
+    flight_id: str,
+    *,
+    now_utc: datetime | None = None,
+) -> dict[str, object]:
     cached = _cache_get(FLIGHT_DETAIL_CACHE, flight_id)
     if cached is not None:
         return cached
 
-    snapshot = _read_flight_detail_snapshot(flight_id)
+    snapshot = _read_flight_detail_snapshot(flight_id, now_utc=now_utc)
     FLIGHT_DETAIL_CACHE[flight_id] = (time.monotonic(), snapshot)
     return snapshot
 
 
-def _read_plane_detail_snapshot(airplane_id: str) -> dict[str, object]:
+def _read_plane_detail_snapshot(
+    airplane_id: str,
+    *,
+    now_utc: datetime | None = None,
+) -> dict[str, object]:
     with DASHBOARD_SESSION() as session:
         airplane = session.get(models.Airplane, airplane_id)
         if airplane is None:
@@ -194,8 +226,9 @@ def _read_plane_detail_snapshot(airplane_id: str) -> dict[str, object]:
         dep = getattr(latest_flight, "departure_time", None) if latest_flight else None
         arr = getattr(latest_flight, "arrival_time", None) if latest_flight else None
 
+        effective_now_utc = now_utc or _current_sim_now_utc()
         progress_percent, progress_label = _flight_progress(
-            now_utc=_current_sim_now_utc(),
+            now_utc=effective_now_utc,
             departure_time=dep,
             arrival_time=arr,
         )
@@ -228,12 +261,16 @@ def _read_plane_detail_snapshot(airplane_id: str) -> dict[str, object]:
 
 
 
-def get_plane_detail_snapshot_cached(airplane_id: str) -> dict[str, object]:
+def get_plane_detail_snapshot_cached(
+    airplane_id: str,
+    *,
+    now_utc: datetime | None = None,
+) -> dict[str, object]:
     cached = _cache_get(PLANE_DETAIL_CACHE, airplane_id)
     if cached is not None:
         return cached
 
-    snapshot = _read_plane_detail_snapshot(airplane_id)
+    snapshot = _read_plane_detail_snapshot(airplane_id, now_utc=now_utc)
     PLANE_DETAIL_CACHE[airplane_id] = (time.monotonic(), snapshot)
     return snapshot
 
@@ -415,17 +452,7 @@ def read_latest_clock_sync() -> dict[str, float | int | str] | None:
 
 
 def _current_sim_now_utc() -> datetime:
-    latest = read_latest_clock_sync()
-    if latest is None:
-        return datetime.now(timezone.utc)
-
-    sync_ts = datetime.fromisoformat(str(latest["ts"]))
-    if sync_ts.tzinfo is None:
-        sync_ts = sync_ts.replace(tzinfo=timezone.utc)
-
-    elapsed_real_ms = max(0.0, (datetime.now(timezone.utc) - sync_ts).total_seconds() * 1000.0)
-    sim_unix_ms = float(latest["sim_unix_ms"]) + elapsed_real_ms * float(latest["time_scale"])
-    return datetime.fromtimestamp(sim_unix_ms / 1000.0, tz=timezone.utc)
+    return _clock_to_sim_now_utc(read_latest_clock_sync())
 
 
 def read_clock_syncs_since(offset: int) -> tuple[list[dict[str, float | int | str]], int]:
@@ -489,19 +516,23 @@ def _serialize_window_flight(*, flight, airport_icao: str, now_utc: datetime) ->
     if reference_time is not None:
         reference_unix_ms = int(reference_time.timestamp() * 1000)
     if departure_time is not None:
-        dep_label = departure_time.astimezone().strftime("%H:%M")
+        dep_label = as_rome(departure_time).strftime("%H:%M")
     if arrival_time is not None:
-        arr_label = arrival_time.astimezone().strftime("%H:%M")
+        arr_label = as_rome(arrival_time).strftime("%H:%M")
 
     origin = str(getattr(flight, "origin", "") or "")
     destination = str(getattr(flight, "destination", "") or "")
     status = str(getattr(flight, "status", "") or "")
     flight_code = str(getattr(flight, "icao", None) or getattr(flight, "id", "") or "")
     direction = "arrival" if destination == airport_icao else "departure"
+    title_time = arr_label if direction == "arrival" else dep_label
+    title_route = _remote_route_label(origin, destination)
+    card_title = f"{title_route} - {title_time}".strip()
 
     return {
         "id": str(getattr(flight, "id", "") or ""),
         "direction": direction,
+        "card_title": card_title,
         "dep_time": dep_label,
         "arr_time": arr_label,
         "reference_unix_ms": reference_unix_ms,
@@ -586,6 +617,7 @@ def _normalize_plane_model_name(model: str | None) -> str | None:
     return str(model).strip().lower().replace("_", "-")
 
 
+@lru_cache(maxsize=128)
 def _plane_image_url(model: str | None) -> str:
     normalized = _normalize_plane_model_name(model)
     if normalized:
@@ -619,4 +651,4 @@ def _progress_time_label(value: datetime | None) -> str:
         return "--:--"
     if value.tzinfo is None:
         value = value.replace(tzinfo=timezone.utc)
-    return value.astimezone().strftime("%H:%M")
+    return as_rome(value).strftime("%H:%M")

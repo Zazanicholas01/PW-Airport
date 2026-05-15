@@ -7,7 +7,7 @@ import time
 from datetime import datetime, timezone
 
 from src.domain.status_constants import BUS_COMMANDS, CLOCK_HERTZ, EVT_EVERY_S, LOG_EVERY_S
-from src.utils.datetimes import isoformat_utc_plus1
+from src.utils.datetimes import isoformat_rome
 from src.utils.event_log import append_event
 
 from src.transport.session import SessionContext
@@ -50,7 +50,7 @@ async def handle_clock_control(ctx: SessionContext, payload: dict) -> bool:
             payload.get("time_scale"),
             req_id,
             before_scale,
-            isoformat_utc_plus1(before_now, timespec="seconds"),
+            isoformat_rome(before_now, timespec="seconds"),
         )
 
         # Convert scale to floating point and sanity checks
@@ -78,7 +78,7 @@ async def handle_clock_control(ctx: SessionContext, payload: dict) -> bool:
             scale,
             req_id,
             ctx.clock.time_scale,
-            isoformat_utc_plus1(after_now, timespec="seconds"),
+            isoformat_rome(after_now, timespec="seconds"),
         )
         
         # Send Clock Sync command to Unity
@@ -157,7 +157,7 @@ async def clock_sync_loop(ctx: SessionContext) -> None:
                 last_log_t = t
                 logging.info(
                     "[clock_sync] sim_now=%s sim_unix_ms=%d time_scale=%.2f sync_id=%d",
-                    isoformat_utc_plus1(sim_now, timespec="seconds"),
+                    isoformat_rome(sim_now, timespec="seconds"),
                     sync.sim_unix_ms,
                     sync.time_scale,
                     sync.sync_id,

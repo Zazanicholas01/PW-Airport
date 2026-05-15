@@ -5,6 +5,7 @@ from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
 from src.web.dashboard_data import (
+    _clock_to_sim_now_utc,
     get_flight_detail_snapshot_cached,
     get_plane_detail_snapshot_cached,
     read_window_flights_snapshot,
@@ -22,13 +23,17 @@ STATIC_DIR = WEB_DIR / "static"
 TEMPLATE_FILE = WEB_DIR / "templates" / "dashboard.html"
 
 
+def _detail_now_utc():
+    return None if dashboard_state.latest_clock is None else _clock_to_sim_now_utc(dashboard_state.latest_clock)
+
+
 def flight_detail(flight_id: str) -> HTMLResponse:
-    snapshot = get_flight_detail_snapshot_cached(flight_id)
+    snapshot = get_flight_detail_snapshot_cached(flight_id, now_utc=_detail_now_utc())
     return render_detail_page_from_snapshot(snapshot)
 
 
 def plane_detail(airplane_id: str) -> HTMLResponse:
-    snapshot = get_plane_detail_snapshot_cached(airplane_id)
+    snapshot = get_plane_detail_snapshot_cached(airplane_id, now_utc=_detail_now_utc())
     return render_detail_page_from_snapshot(snapshot)
 
 
@@ -99,9 +104,9 @@ async def shutdown_dashboard() -> None:
 
 @app.get("/api/flight/{flight_id}")
 def flight_detail_api(flight_id: str) -> dict[str, object]:
-    return get_flight_detail_snapshot_cached(flight_id)
+    return get_flight_detail_snapshot_cached(flight_id, now_utc=_detail_now_utc())
 
 
 @app.get("/api/plane/{airplane_id}")
 def plane_detail_api(airplane_id: str) -> dict[str, object]:
-    return get_plane_detail_snapshot_cached(airplane_id)
+    return get_plane_detail_snapshot_cached(airplane_id, now_utc=_detail_now_utc())

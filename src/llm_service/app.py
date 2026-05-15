@@ -1,16 +1,24 @@
 import json
 import urllib.error
 import urllib.request
+from pathlib import Path
 from urllib.parse import urlencode
 
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import HTMLResponse
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 
-REMOTE_PROMPT_URL = "http://10.0.20.68:8000/prompt"
-REMOTE_RESPONSE_URL = "http://10.0.20.68:8000/response"
+REMOTE_PROMPT_URL = "http://10.0.20.84:8000/api/prompt"
+REMOTE_RESPONSE_URL = "http://10.0.20.84:8000/api/response"
 REQUEST_TIMEOUT_SECONDS = 120.0
+REMOTE_STREAM = True
+SERVICE_DIR = Path(__file__).resolve().parent
+STATIC_DIR = SERVICE_DIR / "static"
+TEMPLATE_DIR = SERVICE_DIR / "templates"
+IMG_DIR = SERVICE_DIR / "img"
+INDEX_FILE = TEMPLATE_DIR / "index.html"
 
 
 class PromptRequest(BaseModel):
@@ -20,189 +28,17 @@ class PromptRequest(BaseModel):
 class PromptResponse(BaseModel):
     reply: str
     prompt_url: str
-    response_url: str
+    response_url: str | None
 
 
 app = FastAPI(title="LLM Prompt Service", version="1.0.0")
+app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+app.mount("/img", StaticFiles(directory=str(IMG_DIR)), name="img")
 
 
-@app.get("/", response_class=HTMLResponse)
-def index() -> str:
-    return """<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>LLM Prompt Service</title>
-  <style>
-    :root {
-      color-scheme: light;
-      --bg: #f4efe6;
-      --line: #d3c3a8;
-      --text: #1f1a14;
-      --muted: #675a4b;
-      --accent: #0f6d5f;
-      --accent-strong: #0b564b;
-      --output: #efe6d6;
-    }
-    * { box-sizing: border-box; }
-    body {
-      margin: 0;
-      font-family: "Segoe UI", Tahoma, sans-serif;
-      background:
-        radial-gradient(circle at top left, #fff7eb 0, transparent 28%),
-        linear-gradient(135deg, #f8f3ea 0%, var(--bg) 58%, #e6dccb 100%);
-      color: var(--text);
-      min-height: 100vh;
-    }
-    .page {
-      width: min(920px, calc(100vw - 32px));
-      margin: 32px auto;
-      padding: 28px;
-      border: 1px solid var(--line);
-      border-radius: 20px;
-      background: rgba(255, 250, 242, 0.94);
-      box-shadow: 0 20px 60px rgba(63, 46, 22, 0.12);
-    }
-    h1 {
-      margin: 0 0 8px;
-      font-size: clamp(28px, 4vw, 42px);
-      line-height: 1.05;
-    }
-    .meta {
-      margin: 0 0 24px;
-      color: var(--muted);
-      font-size: 15px;
-    }
-    label {
-      display: block;
-      margin: 0 0 8px;
-      font-weight: 600;
-    }
-    textarea {
-      width: 100%;
-      min-height: 240px;
-      resize: vertical;
-      border: 1px solid var(--line);
-      border-radius: 14px;
-      padding: 14px 16px;
-      font: inherit;
-      color: var(--text);
-      background: #fffdf8;
-    }
-    .row {
-      display: grid;
-      grid-template-columns: 1fr auto;
-      gap: 12px;
-      margin-top: 16px;
-      align-items: end;
-    }
-    button {
-      border: 0;
-      border-radius: 14px;
-      padding: 14px 20px;
-      font: inherit;
-      font-weight: 700;
-      color: white;
-      background: linear-gradient(180deg, var(--accent) 0%, var(--accent-strong) 100%);
-      cursor: pointer;
-      min-width: 132px;
-    }
-    button:disabled {
-      opacity: 0.65;
-      cursor: wait;
-    }
-    .status {
-      margin: 16px 0 0;
-      min-height: 24px;
-      color: var(--muted);
-    }
-    pre {
-      margin: 14px 0 0;
-      padding: 16px;
-      border-radius: 16px;
-      border: 1px solid var(--line);
-      background: var(--output);
-      white-space: pre-wrap;
-      word-break: break-word;
-      min-height: 180px;
-      font-family: Consolas, "Courier New", monospace;
-      font-size: 14px;
-      line-height: 1.5;
-    }
-    @media (max-width: 720px) {
-      .page { margin: 16px auto; padding: 18px; }
-      .row { grid-template-columns: 1fr; }
-      button { width: 100%; }
-    }
-  </style>
-</head>
-<body>
-  <main class="page">
-    <h1>LLM Prompt Service</h1>
-    <p class="meta">Sends prompts to <strong>""" + REMOTE_PROMPT_URL + """</strong> and fetches replies from <strong>""" + REMOTE_RESPONSE_URL + """</strong>.</p>
-
-    <label for="prompt">Prompt</label>
-    <textarea id="prompt" placeholder="Write the prompt to send to the remote service..."></textarea>
-
-    <div class="row">
-      <div></div>
-      <button id="send" type="button">Send Prompt</button>
-    </div>
-
-    <div id="status" class="status"></div>
-    <pre id="output">Response will appear here.</pre>
-  </main>
-
-  <script>
-    const sendButton = document.getElementById("send");
-    const promptInput = document.getElementById("prompt");
-    const statusNode = document.getElementById("status");
-    const outputNode = document.getElementById("output");
-
-    async function sendPrompt() {
-      const prompt = promptInput.value.trim();
-      if (!prompt) {
-        statusNode.textContent = "Enter a prompt first.";
-        promptInput.focus();
-        return;
-      }
-
-      sendButton.disabled = true;
-      statusNode.textContent = "Sending prompt...";
-      outputNode.textContent = "";
-
-      try {
-        const response = await fetch("/api/prompt", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ prompt })
-        });
-
-        const data = await response.json();
-        if (!response.ok) {
-          throw new Error(data.detail || "Request failed");
-        }
-
-        statusNode.textContent = "Reply received.";
-        outputNode.textContent = data.reply || "";
-      } catch (error) {
-        statusNode.textContent = "Request failed.";
-        outputNode.textContent = error.message || String(error);
-      } finally {
-        sendButton.disabled = false;
-      }
-    }
-
-    sendButton.addEventListener("click", sendPrompt);
-    promptInput.addEventListener("keydown", (event) => {
-      if ((event.ctrlKey || event.metaKey) && event.key === "Enter") {
-        sendPrompt();
-      }
-    });
-  </script>
-</body>
-</html>"""
+@app.get("/")
+def index() -> FileResponse:
+    return FileResponse(INDEX_FILE, media_type="text/html")
 
 
 @app.get("/health")
@@ -211,6 +47,7 @@ def health() -> dict[str, object]:
         "ok": True,
         "remote_prompt_url": REMOTE_PROMPT_URL,
         "remote_response_url": REMOTE_RESPONSE_URL,
+        "remote_stream": REMOTE_STREAM,
     }
 
 
@@ -226,15 +63,80 @@ def _post_json(url: str, payload: dict[str, object]) -> dict[str, object]:
         return json.loads(response.read().decode("utf-8"))
 
 
+def _post_streaming_json(url: str, payload: dict[str, object]) -> dict[str, object]:
+    body = json.dumps(payload).encode("utf-8")
+    request = urllib.request.Request(
+        url,
+        data=body,
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+
+    with urllib.request.urlopen(request, timeout=REQUEST_TIMEOUT_SECONDS) as response:
+        chunks: list[str] = []
+        last_object: dict[str, object] | None = None
+
+        for raw_line in response:
+            line = raw_line.decode("utf-8", errors="replace").strip()
+            if not line:
+                continue
+
+            try:
+                item = json.loads(line)
+            except json.JSONDecodeError:
+                try:
+                    return json.loads(line)
+                except json.JSONDecodeError as exc:
+                    raise HTTPException(status_code=502, detail="Remote stream returned invalid JSON") from exc
+
+            if not isinstance(item, dict):
+                continue
+
+            piece = _extract_reply(item)
+            if piece:
+                chunks.append(piece)
+            elif isinstance(item.get("message"), dict):
+                content = item["message"].get("content")
+                if isinstance(content, str) and content:
+                    chunks.append(content)
+            elif isinstance(item.get("delta"), dict):
+                content = item["delta"].get("content")
+                if isinstance(content, str) and content:
+                    chunks.append(content)
+
+            last_object = item
+
+        if last_object is None:
+            raise HTTPException(status_code=502, detail="Remote stream returned no data")
+
+        result = dict(last_object)
+        if chunks:
+            result["response"] = "".join(chunks)
+        return result
+
+
 def _get_json(url: str) -> dict[str, object]:
     with urllib.request.urlopen(url, timeout=REQUEST_TIMEOUT_SECONDS) as response:
         return json.loads(response.read().decode("utf-8"))
 
 
+def _extract_reply(data: dict[str, object]) -> str | None:
+    for key in ("response", "reply", "answer", "message"):
+        value = data.get(key)
+        if isinstance(value, str) and value.strip():
+            return value
+    return None
+
+
 @app.post("/api/prompt", response_model=PromptResponse)
 async def prompt(payload: PromptRequest) -> PromptResponse:
     try:
-        prompt_data = _post_json(REMOTE_PROMPT_URL, {"prompt": payload.prompt})
+        request_payload: dict[str, object] = {"question": payload.prompt}
+        prompt_data = (
+            _post_streaming_json(REMOTE_PROMPT_URL, {**request_payload, "stream": True})
+            if REMOTE_STREAM
+            else _post_json(REMOTE_PROMPT_URL, request_payload)
+        )
     except TimeoutError as exc:
         raise HTTPException(status_code=504, detail="Remote prompt request timed out") from exc
     except urllib.error.HTTPError as exc:
@@ -242,6 +144,14 @@ async def prompt(payload: PromptRequest) -> PromptResponse:
         raise HTTPException(status_code=502, detail=detail) from exc
     except urllib.error.URLError as exc:
         raise HTTPException(status_code=502, detail="Could not reach remote prompt route") from exc
+
+    direct_reply = _extract_reply(prompt_data)
+    if direct_reply is not None:
+        return PromptResponse(
+            reply=direct_reply,
+            prompt_url=REMOTE_PROMPT_URL,
+            response_url=None,
+        )
 
     response_url = REMOTE_RESPONSE_URL
     request_id = prompt_data.get("request_id")
@@ -258,9 +168,9 @@ async def prompt(payload: PromptRequest) -> PromptResponse:
     except urllib.error.URLError as exc:
         raise HTTPException(status_code=502, detail="Could not reach remote response route") from exc
 
-    reply = response_data.get("response")
-    if not isinstance(reply, str):
-        raise HTTPException(status_code=502, detail="Remote response route is missing 'response'")
+    reply = _extract_reply(response_data)
+    if reply is None:
+        raise HTTPException(status_code=502, detail="Remote response route is missing a text reply")
 
     return PromptResponse(
         reply=reply,

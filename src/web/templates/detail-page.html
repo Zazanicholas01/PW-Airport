@@ -4,9 +4,6 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>{{TITLE}} - PW Airport</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="/static/detail-page.css?v=2" />
   </head>
   <body>
@@ -16,7 +13,7 @@
       <div class="detail-layout">
         <aside class="detail-panel detail-visual">
           <div class="detail-visual-title js-visual-title">{{VISUAL_TITLE}}</div>
-          <img class="detail-image" src="{{IMAGE_URL}}" alt="{{IMAGE_ALT}}" />
+          <img class="detail-image" src="{{IMAGE_URL}}" alt="{{IMAGE_ALT}}" decoding="async" fetchpriority="high" />
 
           <div
             class="detail-progress"
@@ -47,8 +44,8 @@
             </div>
 
             <div class="detail-progress-times">
-              <span>{{PROGRESS_START_LABEL}}</span>
-              <span>{{PROGRESS_END_LABEL}}</span>
+              <span class="js-progress-start-label">{{PROGRESS_START_LABEL}}</span>
+              <span class="js-progress-end-label">{{PROGRESS_END_LABEL}}</span>
             </div>
           </div>
 
@@ -61,6 +58,6 @@
       </div>
     </div>
 
-    <script src="/static/detail-page.js?v=2"></script>
+    <script src="/static/detail-page.js?v=2" defer></script>
   </body>
 </html>

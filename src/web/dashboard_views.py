@@ -5,6 +5,7 @@ from fastapi.responses import HTMLResponse
 
 WEB_DIR = Path(__file__).resolve().parent
 DETAIL_TEMPLATE_FILE = WEB_DIR / "templates" / "detail-page.html"
+DETAIL_TEMPLATE = DETAIL_TEMPLATE_FILE.read_text(encoding="utf-8")
 
 
 def render_detail_page_from_snapshot(snapshot: dict[str, object]) -> HTMLResponse:
@@ -74,14 +75,13 @@ def render_detail_page(
     progress_end_unix_ms: int | None = None,
     detail_api_path: str | None = None,
 ) -> HTMLResponse:
-    template = DETAIL_TEMPLATE_FILE.read_text(encoding="utf-8")
     fields_markup = _render_fields(fields)
     plane_model = _detail_field_value(fields, "plane_model")
     airline = _detail_field_value(fields, "airline")
     visual_title = f"{plane_model} - {airline}"
 
     html_out = (
-        template
+        DETAIL_TEMPLATE
         .replace("{{TITLE}}", html.escape(title))
         .replace("{{SUBTITLE}}", html.escape(subtitle))
         .replace("{{FIELDS}}", fields_markup)

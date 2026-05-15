@@ -198,6 +198,26 @@ body::before {
   margin-bottom: 0;
 }
 
+.flights-board tr.flight-group-header {
+  margin-bottom: 4px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+}
+
+.flights-board tr.flight-group-header:active {
+  transform: none;
+  filter: none;
+  border-color: transparent;
+  box-shadow: none;
+}
+
+.flights-board tr.flight-card-row {
+  margin-bottom: 12px;
+}
+
 .flights-board tr:active {
   transform: scale(0.985);
   filter: brightness(0.9) saturate(0.95);
@@ -242,11 +262,9 @@ body::before {
   content: "";
 }
 
-.flights-board td:nth-child(2)::before { content: "Departure"; }
-.flights-board td:nth-child(3)::before { content: "Arrival"; }
-.flights-board td:nth-child(4)::before { content: "Duration"; }
-.flights-board td:nth-child(5)::before { content: "Airline"; }
-.flights-board td:nth-child(6)::before { content: "Type"; }
+.flights-board td:nth-child(1)::before { content: "Departure"; }
+.flights-board td:nth-child(2)::before { content: "Arrival"; }
+.flights-board td:nth-child(3)::before { content: "Duration"; }
 
 .flights-board td[colspan] {
   display: block;
@@ -258,33 +276,29 @@ body::before {
   content: none;
 }
 
-.flights-board td.flight-route-title {
+.flights-board td.flight-group-title {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  padding: 4px 4px 8px;
-  margin-bottom: 2px;
-  border-bottom: 1px solid rgba(255, 176, 64, 0.14);
+  padding: 4px 4px 0;
+  border-bottom: 0;
   color: var(--board-head);
   font-family: "Poppins", "Segoe UI", sans-serif;
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.02em;
-  text-transform: none;
+  font-size: 15px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
   text-align: left;
+  text-shadow: 0 0 8px rgba(255, 196, 110, 0.2);
 }
 
-.flights-board td.flight-route-title::before {
-  content: none;
-}
-
-.flight-route-text {
+.flight-group-title-text {
   flex: 1 1 auto;
   min-width: 0;
 }
 
-.flights-board td.flight-route-title .pill {
+.flights-board td.flight-group-title .pill {
   flex: 0 0 auto;
 }
 
