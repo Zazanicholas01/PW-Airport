@@ -258,6 +258,35 @@ class FlightSlidingWindowScheduler:
         return self._once(flight, "landing_start")
 
 
+    def should_start_landing_approach_dynamic(
+            self,
+            *,
+            flight,
+            now_utc: datetime,
+            lead_seconds: float,
+    ) -> bool:
+        """Start landing movement early enough for the dynamic directional approach."""
+
+        arrival_utc = as_utc(getattr(flight, "arrival_time", None))
+        if arrival_utc is None:
+            return False
+
+        if getattr(flight, "destination", None) != self.airport_icao:
+            return False
+
+        if getattr(flight, "status", None) != "Landing":
+            return False
+
+        if getattr(flight, "airplane_id", None) is None:
+            return False
+
+        start_time = arrival_utc - timedelta(seconds=lead_seconds)
+        if now_utc < start_time:
+            return False
+
+        return self._once(flight, "landing_start")
+
+
     def should_start_departure_embarking(self, *, flight, now_utc: datetime) -> bool:
         """Start outbound embarking 10 minutes before departig"""
 

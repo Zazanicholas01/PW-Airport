@@ -17,6 +17,7 @@ from src.schedulers.flight_scheduler import FlightSlidingWindowScheduler
 from src.utils.datetimes import as_rome, as_utc
 from src.utils.event_log import append_event
 from src.utils.geo_direction import direction_for_airport_icao
+from src.utils.mapping import landing_source_for_range, range_for_airplane_model
 from src.utils.landing_timing import landing_spawn_lead_seconds
 from src.path_commands import make_start_path_command
 
@@ -192,9 +193,50 @@ def _dynamic_landing_spawn_context(ctx: SessionContext, flight) -> tuple[object,
     if not isinstance(spawn_position, dict) or not isinstance(airport_position, dict):
         return None
 
+    airplane_id = getattr(flight, "airplane_id", None)
+    airplane_model = None
+    if isinstance(airplane_id, str) and airplane_id:
+        airplane_model = ctx.flight_actions.get_airplane_prefab(airplane_id=airplane_id)
+
+    route_segments = None
+    if isinstance(airplane_model, str) and airplane_model:
+        try:
+            landing_id = landing_source_for_range(range_for_airplane_model(airplane_model))
+            route_segments = []
+            if direction is not None:
+                route_segments.append({
+                    "name": f"Spline_Landing_{direction.value}",
+                    "t_start": 0.0,
+                    "t_end": 1.0,
+                })
+            route_segments.extend([
+                {
+                    "name": "Spline_Landing_Route",
+                    "t_start": 0.0,
+                    "t_end": 1.0,
+                },
+                {
+                    "name": "Spline_Landing_Approach",
+                    "t_start": 0.0,
+                    "t_end": 1.0,
+                },
+            ])
+        except ValueError:
+            route_segments = None
+
+    def spline_lookup(name: str):
+        if name == "MasterSpline":
+            return getattr(ctx.graph, "master_spline", None)
+        for spline in getattr(ctx.graph, "splines", []):
+            if isinstance(spline, dict) and spline.get("name") == name:
+                return spline
+        return None
+
     lead_seconds = landing_spawn_lead_seconds(
         spawn_position=spawn_position,
         airport_position=airport_position,
+        route_segments=route_segments,
+        spline_lookup=spline_lookup,
     )
 
     return direction, spawn_position, lead_seconds
@@ -678,7 +720,20 @@ async def flight_scheduler_loop(
                 })
 
             # START LANDING MOVEMENT
-            if scheduler.should_start_landing_approach(flight=flight, now_utc=now):
+            should_start_landing = False
+            if landing_spawn_context is not None:
+                should_start_landing = scheduler.should_start_landing_approach_dynamic(
+                    flight=flight,
+                    now_utc=now,
+                    lead_seconds=lead_seconds,
+                )
+            else:
+                should_start_landing = scheduler.should_start_landing_approach(
+                    flight=flight,
+                    now_utc=now,
+                )
+
+            if should_start_landing:
 
                 # Retrieve airplane ID from flight
                 airplane_id = getattr(flight, "airplane_id", None)

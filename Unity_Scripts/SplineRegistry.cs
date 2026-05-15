@@ -43,6 +43,7 @@ public class SplineRegistry : MonoBehaviour
         public List<KnotEntry> knotEntries; 
         public KnotPosition firstKnotPos;
         public KnotPosition lastKnotPos;
+        public float lengthMeters;
     }
 
     [Serializable] 
@@ -62,6 +63,32 @@ public class SplineRegistry : MonoBehaviour
     [Serializable]
     private class KnotPosition {
         public float x, y, z;
+    }
+
+    private static float EstimateSplineLengthWorld(SplineContainer container, int samples = 256)
+    {
+        if (container == null || container.Spline == null)
+            return 0f;
+
+        samples = Mathf.Max(8, samples);
+        Vector3 previous = EvalWorld(container, 0f);
+        float total = 0f;
+
+        for (int i = 1; i <= samples; i++)
+        {
+            float t = i / (float)samples;
+            Vector3 current = EvalWorld(container, t);
+            total += Vector3.Distance(previous, current);
+            previous = current;
+        }
+
+        return total;
+    }
+
+    private static Vector3 EvalWorld(SplineContainer container, float t)
+    {
+        var local = SplineUtility.EvaluatePosition(container.Spline, Mathf.Clamp01(t));
+        return container.transform.TransformPoint((Vector3)local);
     }
 
     private void Awake() => ws = GetComponent<LocalWebSocketClient>();
@@ -218,7 +245,8 @@ public class SplineRegistry : MonoBehaviour
                 closed = container.Spline.Closed,
                 knotEntries = knotEntries,
                 firstKnotPos = firstKnotPos,
-                lastKnotPos = lastKnotPos
+                lastKnotPos = lastKnotPos,
+                lengthMeters = EstimateSplineLengthWorld(container),
             };
         }
     }

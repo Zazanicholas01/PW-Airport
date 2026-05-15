@@ -94,7 +94,7 @@ class GENERATOR_CONFIG:
     # Time windows are deltas from "now", in minutes.
     DEPARTURE_MIN_DELTA_MINUTES = 60
     DEPARTURE_MAX_DELTA_MINUTES = 120
-    ARRIVAL_MIN_DELTA_MINUTES = 10
+    ARRIVAL_MIN_DELTA_MINUTES = 30
     ARRIVAL_MAX_DELTA_MINUTES = 60
 
     # Backwards-compatible alias used by the scheduler loop.
@@ -128,7 +128,7 @@ class LANDING_PARAMETERS:
     METERS_PER_UNITY_UNIT = 867.08
 
     MIN_LANDING_SPAWN_LEAD_SECONDS = 20
-    MAX_LANDING_SPAWN_LEAD_SECONDS = 8 * 60
+    FINAL_LANDING_TO_STAND_SECONDS = 60
 
 # Airline categories
 @dataclass
