@@ -13,7 +13,13 @@ from sqlalchemy.orm import sessionmaker
 from src.db import models
 from src.db.db_functions import list_flights_in_sliding_window
 from src.db.engine import get_engine
-from src.domain.status_constants import PERSONAL_AIRPORT, WINDOW_TIMEDELTA_HOURS
+from src.domain.status_constants import (
+    AIRPLANE_STATUS,
+    FLIGHT_STATUS,
+    PERSONAL_AIRPORT,
+    STAND_STATUS,
+    WINDOW_TIMEDELTA_HOURS,
+)
 from src.utils.datetimes import as_rome
 
 
@@ -32,7 +38,7 @@ FLIGHT_DETAIL_CACHE = {}
 PLANE_DETAIL_CACHE = {}
 
 CITY_LABEL_OVERRIDES = {
-    "LIAG": "Amaro",
+    PERSONAL_AIRPORT: "Amaro",
     "LIML": "Milano Linate",
     "LIMC": "Milano Malpensa",
     "LIPZ": "Venezia Marco Polo",
@@ -472,15 +478,22 @@ def read_clock_syncs_since(offset: int) -> tuple[list[dict[str, float | int | st
 
 def _status_pill_class(status: str | None) -> str:
     normalized = str(status or "").lower()
-    if normalized in {"parked"}:
+    if normalized in {AIRPLANE_STATUS.PARKED.lower()}:
         return "status-parked"
-    if normalized in {"scheduled", "standreserved"}:
+    if normalized in {FLIGHT_STATUS.SCHEDULED.lower(), FLIGHT_STATUS.STAND_RESERVED.lower()}:
         return "status-scheduled"
-    if normalized in {"reserved"}:
+    if normalized in {AIRPLANE_STATUS.RESERVED.lower(), STAND_STATUS.RESERVED.lower()}:
         return "status-default"
-    if normalized in {"departing", "dep_ongoing", "landing", "lan_ongoing", "disembarking", "inparking"}:
+    if normalized in {
+        FLIGHT_STATUS.DEPARTING.lower(),
+        FLIGHT_STATUS.DEP_ONGOING.lower(),
+        FLIGHT_STATUS.LANDING.lower(),
+        FLIGHT_STATUS.LAN_ONGOING.lower(),
+        FLIGHT_STATUS.DISEMBARKING.lower(),
+        AIRPLANE_STATUS.IN_PARKING.lower(),
+    }:
         return "status-landing"
-    if normalized in {"completed"}:
+    if normalized in {FLIGHT_STATUS.COMPLETED.lower()}:
         return "status-completed"
     return "status-default"
 
@@ -640,7 +653,7 @@ def _flight_progress(*, now_utc: datetime, departure_time: datetime | None, arri
     progress = max(0, min(100, round((elapsed_seconds / total_seconds) * 100)))
 
     if now_utc < departure_time:
-        return progress, "Scheduled"
+        return progress, FLIGHT_STATUS.SCHEDULED
     if now_utc > arrival_time:
         return progress, "Arrived"
     return progress, "Live Tracking"

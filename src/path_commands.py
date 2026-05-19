@@ -2,12 +2,21 @@ from sqlalchemy import select
 from src.db import models
 
 from src.transport.command_builders import build_start_path_command, build_continue_path_command
-from src.domain.status_constants import DEFAULT_PLANE_SPEED
+from src.domain.status_constants import (
+    DEFAULT_PLANE_SPEED,
+    DEPARTURE_DIRECTION_PREFIX,
+    DEPARTURE_SPLINE,
+    DEPARTURE_SPLINE_NAME,
+    FLIGHT_STATUS,
+    LONG_LANDING_SPLINE,
+    MASTER_SPLINE,
+    PARKING_PREFIX,
+    ROUTE_KIND,
+)
 
 # Now constant speed CHANGE WITH DYNAMIC SPEED
 
-MASTER_SPLINE_NAME = "MasterSpline"
-DEPARTURE_SPLINE_NAME = "Spline_Departure"
+MASTER_SPLINE_NAME = MASTER_SPLINE
 
 def get_route_id_for_airplane(*, session, airplane_id: str) -> str | None:
     return session.execute(
@@ -28,24 +37,24 @@ def detect_route_kind(segments: list[dict]) -> str:
     names = [str(seg.get("name", "")) for seg in segments]
 
     # Check for departure spline
-    if any("Departure" in name for name in names):
-        return "departure"
+    if any(DEPARTURE_SPLINE in name or DEPARTURE_DIRECTION_PREFIX in name for name in names):
+        return ROUTE_KIND.DEPARTURE
 
     # Check for parking spline
-    if any("Parking" in name for name in names):
-        return "parking"
+    if any(PARKING_PREFIX in name for name in names):
+        return ROUTE_KIND.PARKING
 
     # Check for landing spline
-    if any("Landing" in name or "LongLanding" in name for name in names):
-        return "landing"
-    
-    return "taxi"
+    if any(FLIGHT_STATUS.LANDING in name or LONG_LANDING_SPLINE in name for name in names):
+        return ROUTE_KIND.LANDING
+
+    return ROUTE_KIND.TAXI
 
 
 def speed_profile_for_segment(*, route_kind: str, segment: dict, index: int, total: int) -> dict:
     name = str(segment.get("name", ""))
 
-    if route_kind == "departure":
+    if route_kind == ROUTE_KIND.DEPARTURE:
         if index == 0:
             return {
                 "purpose": "stand_exit",
@@ -55,7 +64,7 @@ def speed_profile_for_segment(*, route_kind: str, segment: dict, index: int, tot
                 "deceleration_mps2": 0.25,
             }
 
-        if name == "MasterSpline":
+        if name == MASTER_SPLINE_NAME:
             return {
                 "purpose": "taxi",
                 "initial_speed_kmh": 1.0,
@@ -64,7 +73,7 @@ def speed_profile_for_segment(*, route_kind: str, segment: dict, index: int, tot
                 "deceleration_mps2": 0.25,
             }
 
-        if name == "Spline_Departure":
+        if name == DEPARTURE_SPLINE_NAME:
             return {
                 "purpose": "departure_accel",
                 "initial_speed_kmh": 1.5,
@@ -73,8 +82,8 @@ def speed_profile_for_segment(*, route_kind: str, segment: dict, index: int, tot
                 "deceleration_mps2": 0.30,
             }
 
-    if route_kind == "landing":
-        if "Landing" in name:
+    if route_kind == ROUTE_KIND.LANDING:
+        if FLIGHT_STATUS.LANDING in name:
             return {
                 "purpose": "landing_decel",
                 "initial_speed_kmh": 2,
@@ -83,7 +92,7 @@ def speed_profile_for_segment(*, route_kind: str, segment: dict, index: int, tot
                 "deceleration_mps2": 0.35,
             }
 
-        if name == "MasterSpline":
+        if name == MASTER_SPLINE_NAME:
             return {
                 "purpose": "taxi_after_landing",
                 "initial_speed_kmh": 0.5,
@@ -100,11 +109,11 @@ def speed_profile_for_segment(*, route_kind: str, segment: dict, index: int, tot
                 "acceleration_mps2": 0.03,
                 "deceleration_mps2": 0.08,
             }
-        
-    if route_kind == "parking":
+
+    if route_kind == ROUTE_KIND.PARKING:
 
         # PARKING ENTRY SPEED PROFILE
-        if "Entry_Parking" in name:
+        if f"Entry_{PARKING_PREFIX}" in name:
             return {
                 "purpose": "parking_entry",
                 "initial_speed_kmh": 2.0,
@@ -112,9 +121,9 @@ def speed_profile_for_segment(*, route_kind: str, segment: dict, index: int, tot
                 "acceleration_mps2": 0.25,
                 "deceleration_mps2": 0.30,
             }
-        
+
         # PARKING LOOP SPEED PROFILE
-        if "Parking" in name and "Entry" not in name and "Exit" not in name:
+        if PARKING_PREFIX in name and "Entry" not in name and "Exit" not in name:
             return {
                 "purpose": "parking_loop",
                 "initial_speed_kmh": 2.0,
@@ -122,9 +131,9 @@ def speed_profile_for_segment(*, route_kind: str, segment: dict, index: int, tot
                 "acceleration_mps2": 0.15,
                 "deceleration_mps2": 0.15,
             }
-        
+
         # PARKING EXIT SPEED PROFILE
-        if "Exit_Parking" in name:
+        if f"Exit_{PARKING_PREFIX}" in name:
             return {
                 "purpose": "parking_exit",
                 "initial_speed_kmh": 2.0,
@@ -157,7 +166,7 @@ def split_departure_segment(segment: dict) -> list[dict]:
 
     if not (t_start < hold_t < t_end):
         return [segment]
-    
+
     # Create first segment with speed profile (Departure start --> Knot 3)
     first = dict(segment)
     first["t_end"] = hold_t
@@ -196,7 +205,7 @@ def attach_speed_profiles(segments: list[dict]) -> list[dict]:
         name = str(segment.get("name", ""))
 
         # For departure spline, split spline for different speed profile
-        if route_kind == "departure" and name == DEPARTURE_SPLINE_NAME:
+        if route_kind == ROUTE_KIND.DEPARTURE and name == DEPARTURE_SPLINE_NAME:
             output.extend(split_departure_segment(segment))
             continue
 
@@ -211,20 +220,20 @@ def attach_speed_profiles(segments: list[dict]) -> list[dict]:
 
         # Append segments to new list
         output.append(enriched)
-    
+
     return output
 
 
 def detect_motion_mode(segments: list[dict]) -> str:
     names = [str(seg.get("name", "")) for seg in segments]
 
-    if any("Departure" in name for name in names):
-        return "departure"
+    if any(DEPARTURE_SPLINE in name or DEPARTURE_DIRECTION_PREFIX in name for name in names):
+        return ROUTE_KIND.DEPARTURE
 
-    if any("Landing" in name for name in names):
-        return "landing"
+    if any(FLIGHT_STATUS.LANDING in name for name in names):
+        return ROUTE_KIND.LANDING
 
-    return "taxi"
+    return ROUTE_KIND.TAXI
 
 
 
@@ -235,14 +244,14 @@ def make_start_path_command(
     speed: float = DEFAULT_PLANE_SPEED,
     Session=None,
 ) -> dict | None:
-    
+
     with Session() as session:
 
         # Get the route linked to the airplane
         route_id = get_route_id_for_airplane(session=session, airplane_id=airplane_id)
         if route_id is None:
             return None
-        
+
         # Get the path from DB corresponding to the route
         segments = get_segments_for_route(session=session, route_id=route_id)
         if not segments:
@@ -250,7 +259,7 @@ def make_start_path_command(
 
         # Enrich spline payloads with speed profiles
         segments = attach_speed_profiles(segments)
-        
+
         # Return START PATH command
         return build_start_path_command(
             airplane_id=airplane_id,
@@ -263,11 +272,11 @@ def _make_continue_path_command_from_session(*, session, airplane_id: str) -> di
     route_id = get_route_id_for_airplane(session=session, airplane_id=airplane_id)
     if route_id is None:
         return None
-    
+
     segments = get_segments_for_route(session=session, route_id=route_id)
     if not segments:
         return None
-    
+
     segments = attach_speed_profiles(segments)
 
     return build_continue_path_command(

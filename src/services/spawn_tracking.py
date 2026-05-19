@@ -4,6 +4,7 @@ from uuid import uuid4
 from sqlalchemy.orm import sessionmaker
 from src.db import models
 from src.db.engine import get_engine
+from src.domain.status_constants import AIRPLANE_STATUS
 
 from src.utils.mapping import (
     range_for_airplane_model,
@@ -36,10 +37,12 @@ def ensure_airplane_row(*, Session=None, airplane_id: str | None, prefab: str) -
             airplane_capacity = capacity_for_airplane_model(prefab)
         except ValueError:
             logging.warning("Unknown prefab=%r; using defaults", prefab)
-            range_value, airplane_type, airplane_capacity = "Medium", "Passengers", 120
+            range_value = AIRPLANE_STATUS.RANGE_MEDIUM
+            airplane_type = AIRPLANE_STATUS.PASSEGNERS_TYPE
+            airplane_capacity = 120
 
             # FALLBACK
-            range_value, airplane_type = "Medium", "Passengers"
+            range_value, airplane_type = AIRPLANE_STATUS.RANGE_MEDIUM, AIRPLANE_STATUS.PASSEGNERS_TYPE
 
 
         # Crea il record per creare un aereo basato sui models
@@ -53,7 +56,7 @@ def ensure_airplane_row(*, Session=None, airplane_id: str | None, prefab: str) -
             range=range_value,
             model=prefab,
             capacity=airplane_capacity,
-            status="Parked",
+            status=AIRPLANE_STATUS.PARKED,
             speed=0.0,
             fuel_level=1.0,
             maintenance=False,

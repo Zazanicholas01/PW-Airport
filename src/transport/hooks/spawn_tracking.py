@@ -1,5 +1,6 @@
 from src.services.spawn_tracking import ensure_airplane_row
 from src.db.db_functions import link_airplane_to_stand
+from src.domain.status_constants import BUS_COMMANDS, SPAWN_CONTEXT
 
 def make_spawn_tracking_hook(*, world_state, Session=None):
     def _hook(payload: dict) -> None:
@@ -7,7 +8,7 @@ def make_spawn_tracking_hook(*, world_state, Session=None):
 
         # Get payload and check for 'Spawn Plane' or 'Spawn' command, otherwise skip
         cmd = payload.get("command")
-        if cmd not in ("spawn_plane", "spawn"):
+        if cmd not in (BUS_COMMANDS.SPAWN_PLANE, BUS_COMMANDS.LEGACY_SPAWN):
             return
         
         # Retrieve Stand ID and Prefab from the payload
@@ -22,7 +23,7 @@ def make_spawn_tracking_hook(*, world_state, Session=None):
         airplane_id = ensure_airplane_row(Session=Session, airplane_id=airplane_id, prefab=prefab)
 
         # If context bootsrap, link airplane to stand in DB
-        if spawn_ctx == "bootstrap":
+        if spawn_ctx == SPAWN_CONTEXT.BOOTSTRAP:
             link_airplane_to_stand(stand_id=stand_id, airplane_id=airplane_id)
 
         if not isinstance(stand_id, str) or not isinstance(prefab, str):

@@ -79,6 +79,90 @@ EMBARK_SIM_SECONDS = 5 * 60
 
 
 @dataclass
+class MESSAGE_TYPES:
+    EVENT = "event"
+    BACKEND_EVENT = "backend_event"
+
+
+@dataclass
+class BACKEND_EVENTS:
+    DISEMBARK_COMPLETE = "disembark_complete"
+    PARKING_ENTERED = "parking_entered"
+    DEPARTURE_COMPLETED = "departure_completed"
+    LANDING_COMPLETED = "landing_completed"
+    PARKING_CLEARED = "parking_cleared"
+    DEBUG_FLIGHTS_GENERATED = "debug_flights_generated"
+    RUNTIME_FLIGHTS_GENERATED = "runtime_flights_generated"
+    DEPARTURE_ASSIGNED = "departure_assigned"
+    LANDING_PLANE_ASSIGNED = "landing_plane_assigned"
+    LANDING_DEPARTED = "landing_departed"
+    LANDING_STAND_RESERVED = "landing_stand_reserved"
+    LANDING_PARKING_RESERVED = "landing_parking_reserved"
+    LANDING_ARRIVAL_DELAYED = "landing_arrival_delayed"
+    DEPARTURE_EMBARKING_STARTED = "departure_embarking_started"
+    DEPARTURE_STARTED = "departure_started"
+    LANDING_SPAWN = "landing_spawn"
+    LANDING_APPROACH_STARTED = "landing_approach_started"
+    INITIAL_SPAWNS_SCHEDULED = "initial_spawns_scheduled"
+
+
+@dataclass
+class SPAWN_CONTEXT:
+    BOOTSTRAP = "bootstrap"
+    LANDING = "landing"
+
+
+@dataclass
+class GROUND_SERVICE_TYPE:
+    PASSENGER_TRANSFER = "passenger_transfer"
+    LUGGAGE_TRANSFER = "luggage_transfer"
+    CARGO_TRANSFER = "cargo_transfer"
+    ALL = (PASSENGER_TRANSFER, LUGGAGE_TRANSFER, CARGO_TRANSFER)
+
+
+@dataclass
+class VEHICLE_TYPE:
+    BUS = "Bus"
+    CARGO = "Cargo"
+
+
+@dataclass
+class VEHICLE_STATUS:
+    AVAILABLE = "Available"
+    EN_ROUTE = "EnRoute"
+    RETURNING = "Returning"
+    SERVICING = "Servicing"
+
+
+@dataclass
+class GROUND_JOB_DIRECTION:
+    TO_STAND = "to_stand"
+    TO_HOME = "to_home"
+    SERVICING = "servicing"
+
+
+@dataclass
+class GROUND_FLOW_MODE:
+    LOAD = "load"
+    UNLOAD = "unload"
+
+
+@dataclass
+class LANDING_ROUTE_DECISION:
+    LAND = "land"
+    PARKING = "parking"
+    DELAYED = "delayed"
+
+
+@dataclass
+class ROUTE_KIND:
+    DEPARTURE = "departure"
+    LANDING = "landing"
+    PARKING = "parking"
+    TAXI = "taxi"
+
+
+@dataclass
 class BUS_SERVICE_CONFIG:
     PASSENGER_TRANSFER_TIME = 30
     LUGGAGE_TRANSFER_TIME = 20
@@ -234,6 +318,14 @@ class BUS_COMMANDS:
     CONTINUE_PATH = "continue_path"
     CLEAR_PARKING = "clear_parking"
     START_VEHICLE_PATH = "start_vehicle_path"
+    START_SERVICE_PROGRESS = "start_service_progress"
+    STOP_SERVICE_PROGRESS = "stop_service_progress"
+    LEGACY_SPAWN = "spawn"
+
+
+@dataclass
+class DASHBOARD_COMMANDS:
+    HIGHLIGHT_FLIGHT = "highlight_flight"
 
 # Websocket configuration
 @dataclass
@@ -246,6 +338,20 @@ class WEBSOCKET_CONFIG:
     MAX_QUEUE = 32
 
 # Spline related constants
+SPLINE_PREFIX = "Spline_"
+PATH_PREFIX = "Path_"
+PARKING_PREFIX = "Parking"
+
+DEPARTURE_DIRECTION_PREFIX = "Departure_"
+LANDING_DIRECTION_SPLINE_PREFIX = "Spline_Landing_"
+DEPARTURE_DIRECTION_SPLINE_PREFIX = "Spline_Departure_"
+BUS_SPLINE_PREFIX = "Bus_Spline_"
+CARGO_SPLINE_PREFIX = "Cargo_Spline_"
+ENTRY_PARKING_SPLINE_PREFIX = "Spline_Entry_Parking"
+EXIT_PARKING_SPLINE_PREFIX = "Spline_Exit_Parking"
+PATH_LANDING_ROUTE_PREFIX = "Path_LandingRoute_"
+PATH_PARKING_PREFIX = "Path_Parking"
+
 DEPARTURE_SPLINE = "Departure"
 SHORT_LANDING_SPLINE = "ShortLanding"
 MEDIUM_LANDING_SPLINE = "MediumLanding"
@@ -256,4 +362,9 @@ MASTER_SPLINE = "MasterSpline"
 LANDING_ROUTE_SPLINE = "Landing_Route"
 LANDING_APPROACH_SPLINE = "Landing_Approach"
 
+DEPARTURE_SPLINE_NAME = f"{SPLINE_PREFIX}{DEPARTURE_SPLINE}"
+LANDING_ROUTE_SPLINE_NAME = f"{SPLINE_PREFIX}{LANDING_ROUTE_SPLINE}"
+LANDING_APPROACH_SPLINE_NAME = f"{SPLINE_PREFIX}{LANDING_APPROACH_SPLINE}"
+
 PARKING_SPLINES = (1, 2, 3)
+REVERSED_STAND_SPLINES = {f"{SPLINE_PREFIX}C3"}

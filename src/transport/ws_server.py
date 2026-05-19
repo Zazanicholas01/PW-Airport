@@ -10,7 +10,7 @@ from src.handlers.setup_bus import SetupBusHandler
 from src.transport.message_bus import WsMessageBus
 from src.domain.sim_clock import SimulationClock
 from src.services.ground_vehicle_coordinator import GroundVehicleCoordinator
-from src.domain.status_constants import BUS_COMMANDS, WEBSOCKET_CONFIG
+from src.domain.status_constants import BUS_COMMANDS, DASHBOARD_COMMANDS, WEBSOCKET_CONFIG
 
 from src.transport.session import SessionContext
 from src.transport.loops.clock import handle_clock_control, clock_sync_loop
@@ -124,13 +124,13 @@ async def incoming_dispatch_loop(ctx: SessionContext, incoming_queue: asyncio.Qu
             if isinstance(payload, dict) and await handle_clock_control(ctx, payload):
                 continue
 
-            if isinstance(payload, dict) and payload.get("command") == "highlight_flight":
+            if isinstance(payload, dict) and payload.get("command") == DASHBOARD_COMMANDS.HIGHLIGHT_FLIGHT:
                 flight_id = payload.get("flight_id")
                 if isinstance(flight_id, str) and flight_id.strip():
                     redirect_url = f"/flight/{quote(flight_id, safe='')}"
                     append_event({
                         "type": "dashboard_redirect",
-                        "command": "highlight_flight",
+                        "command": DASHBOARD_COMMANDS.HIGHLIGHT_FLIGHT,
                         "flight_id": flight_id,
                         "redirect_url": redirect_url,
                     })

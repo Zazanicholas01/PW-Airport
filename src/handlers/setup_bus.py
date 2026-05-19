@@ -346,8 +346,8 @@ class SetupBusHandler:
             self.init_graph.add_spline(spline)
 
             # Save landing spawn positions by direction
-            if name.startswith("Spline_Landing_") and self._is_vec3(first):
-                direction = name.removeprefix("Spline_Landing_")
+            if name.startswith(LANDING_DIRECTION_SPLINE_PREFIX) and self._is_vec3(first):
+                direction = name.removeprefix(LANDING_DIRECTION_SPLINE_PREFIX)
 
                 if direction in CARDINAL_DIRECTIONS:
                     pos = self._vec3(first)
@@ -363,8 +363,8 @@ class SetupBusHandler:
                     )
 
             # Save stand positions
-            if name.startswith("Spline_") and self._is_vec3(first):
-                stand_id = name.removeprefix("Spline_")
+            if name.startswith(SPLINE_PREFIX) and self._is_vec3(first):
+                stand_id = name.removeprefix(SPLINE_PREFIX)
 
                 if stand_id in AVAILABLE_STANDS:
                     stand_positions[stand_id] = self._vec3(first)

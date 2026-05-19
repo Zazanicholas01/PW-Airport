@@ -4,6 +4,7 @@ import asyncio
 import logging
 
 from src.schedulers.spawn_scheduler import SpawnScheduler
+from src.domain.status_constants import BACKEND_EVENTS, MESSAGE_TYPES
 from src.utils.event_log import append_event
 
 from src.transport.session import SessionContext
@@ -42,8 +43,8 @@ async def schedule_initial_spawns(ctx: SessionContext) -> None:
 
         logging.info("Scheduled %d initial spawn commands", len(commands))
         append_event({
-            "type": "backend_event",
-            "event": "initial_spawns_scheduled",
+            "type": MESSAGE_TYPES.BACKEND_EVENT,
+            "event": BACKEND_EVENTS.INITIAL_SPAWNS_SCHEDULED,
             "count": len(commands),
         })
     finally:

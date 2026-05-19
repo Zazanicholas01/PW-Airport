@@ -303,13 +303,9 @@ LAST_TASKS
     Animazione 3D
         - Sistemare e rendere il più realistici possibile gli speed profile
 
-    Interazione
-        - Possibilità di poter cliccare gli aerei in scena e adattare la dashboard di conseguenza
-    
     AI Chatbot
         - Tool calling sulla lista della scheduling window
         - Aggiungere manualmente viaggi
-        - Informazioni rigurdanti il progetto -- (DONE)
         - Informazioni riguardanti ai prossimi viaggi in base ad aeroporto e altre Informazioni
 
     Dashboard
@@ -320,7 +316,6 @@ LAST_TASKS
         - Ripulire Log
     
     AR
-        - Sistemare spawn iniziali -- (DONE)
         - Sistemare Plane Detection
 
     Monitoring & Dashboard

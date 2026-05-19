@@ -63,7 +63,7 @@ class RandomFlightGenerator:
                 flight_id=None,
                 destination=None,
                 route_id=None,
-                status="Available",
+                status=VEHICLE_STATUS.AVAILABLE,
             )
         )
         session.execute(delete(models.Operation))
@@ -563,13 +563,13 @@ class RandomFlightGenerator:
     def _duration_bounds_for_airport(self, remote_airport: models.Airport) -> tuple[timedelta, timedelta]:
         distance = normalize_distance(getattr(remote_airport, "distance", None))
 
-        if distance == "Short":
+        if distance == AIRPLANE_STATUS.RANGE_SHORT:
             return timedelta(minutes=50), timedelta(minutes=70)
 
-        if distance == "Medium":
+        if distance == AIRPLANE_STATUS.RANGE_MEDIUM:
             return timedelta(minutes=100), timedelta(minutes=150)
 
-        if distance == "Long":
+        if distance == AIRPLANE_STATUS.RANGE_LONG:
             return timedelta(minutes=200), timedelta(minutes=480)
 
         return timedelta(minutes=45), timedelta(minutes=120)

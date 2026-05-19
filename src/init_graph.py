@@ -121,7 +121,7 @@ class InitGraph:
 
 
     def _departure_hold_t(self) -> float:
-        departure_spline = self._find_spline_by_name("Spline_Departure")
+        departure_spline = self._find_spline_by_name(DEPARTURE_SPLINE_NAME)
         if departure_spline is None:
             return 0.1
 
@@ -149,7 +149,7 @@ class InitGraph:
         # Schema links: [ "O1", "P3" ] -> stored as [ "Spline_O1", "Spline_P3" ]
         for i, node in enumerate(links_schema.get('nodes', [])):
             links = node.get('links', [])
-            links = [f"Spline_{link}" for link in links]
+            links = [f"{SPLINE_PREFIX}{link}" for link in links]
             self.master_links[i] = links
 
         logger.info("Master Links Constructed: %s", self.master_links)
@@ -208,7 +208,7 @@ class InitGraph:
 
             # Compute the master spline slice between the landing index and the stand index.
             # !!! EDGE CASE !!! - Spline C3 needs to be reversed
-            if stand_spline == "Spline_C3":
+            if stand_spline in REVERSED_STAND_SPLINES:
                 master_edges = find_master_edges(start_link=end_link, end_link=start_link)
             else:
                 master_edges = find_master_edges(start_link=start_link, end_link=end_link)
@@ -240,12 +240,12 @@ class InitGraph:
         def direct_landing_prefix(landing_spline: str) -> list[dict]:
             return [
                 {
-                    "name": f"Spline_{LANDING_ROUTE_SPLINE}",
+                    "name": LANDING_ROUTE_SPLINE_NAME,
                     "t_start": 0.0,
                     "t_end": 1.0,
                 },
                 {
-                    "name": f"Spline_{LANDING_APPROACH_SPLINE}",
+                    "name": LANDING_APPROACH_SPLINE_NAME,
                     "t_start": 0.0,
                     "t_end": 1.0,
                 },
@@ -259,22 +259,22 @@ class InitGraph:
         def parking_entry_segments(parking_n: int, direction: str) -> list[dict]:
             return [
                 {
-                    "name": f"Spline_Landing_{direction}",
+                    "name": f"{LANDING_DIRECTION_SPLINE_PREFIX}{direction}",
                     "t_start": 0.0,
                     "t_end": 1.0,
                 },
                 {
-                    "name": f"Spline_{LANDING_ROUTE_SPLINE}",
+                    "name": LANDING_ROUTE_SPLINE_NAME,
                     "t_start": 0.0,
                     "t_end": 1.0,
                 },
                 {
-                    "name": f"Spline_Entry_Parking{parking_n}",
+                    "name": f"{ENTRY_PARKING_SPLINE_PREFIX}{parking_n}",
                     "t_start": 0.0,
                     "t_end": 1.0,
                 },
                 {
-                    "name": f"Spline_Parking{parking_n}",
+                    "name": f"{SPLINE_PREFIX}{PARKING_PREFIX}{parking_n}",
                     "t_start": 0.0,
                     "t_end": 1.0,
                     "auto_start_from_previous_end": True,
@@ -286,7 +286,7 @@ class InitGraph:
         def parking_exit_prefix(parking_n: int, landing_spline: str) -> list[dict]:
             return [
                 {
-                    "name": f"Spline_Exit_Parking{parking_n}",
+                    "name": f"{EXIT_PARKING_SPLINE_PREFIX}{parking_n}",
                     "t_start": 0.0,
                     "t_end": 1.0,
                 },
@@ -299,8 +299,8 @@ class InitGraph:
 
 
         # Retrieve stands and spline names and add Spline_ for Unity naming convention
-        available_stands = [f"Spline_{x}" for x in AVAILABLE_STANDS]
-        available_landings = [f"Spline_{x}" for x in LANDING_SOURCES]
+        available_stands = [f"{SPLINE_PREFIX}{x}" for x in AVAILABLE_STANDS]
+        available_landings = [f"{SPLINE_PREFIX}{x}" for x in LANDING_SOURCES]
         available_directions = [direction.value for direction in CardinalDirection]
 
         # Data structures for different landing routing
@@ -314,7 +314,7 @@ class InitGraph:
 
         for landing_spline in available_landings:
 
-            landing_id = landing_spline.replace("Spline_", "")
+            landing_id = landing_spline.replace(SPLINE_PREFIX, "")
 
             # For each landing spline, create a path to every available stand.
             for stand_spline in available_stands:
@@ -329,7 +329,7 @@ class InitGraph:
                 if end_link is None:
                     continue
                 
-                stand_id = stand_spline.replace("Spline_", "")
+                stand_id = stand_spline.replace(SPLINE_PREFIX, "")
 
                 tail = master_to_stand_tail(
                     start_link=landing_start_link,
@@ -344,14 +344,14 @@ class InitGraph:
                 for direction in available_directions:
                     direct_segments = [
                         {
-                            "name": f"Spline_Landing_{direction}",
+                            "name": f"{LANDING_DIRECTION_SPLINE_PREFIX}{direction}",
                             "t_start": 0.0,
                             "t_end": 1.0,
                         },
                     ] + base_direct_segments
 
                     landing_paths.append({
-                        "name": f"Path_LandingRoute_{direction}_{landing_id}_{stand_id}",
+                        "name": f"{PATH_LANDING_ROUTE_PREFIX}{direction}_{landing_id}_{stand_id}",
                         "source": f"{LANDING_ROUTE_SPLINE}_{direction}_{landing_id}",
                         "destination": stand_id,
                         "segments": direct_segments,
@@ -363,8 +363,8 @@ class InitGraph:
                     exit_segments = parking_exit_prefix(parking_n, landing_spline) + tail
 
                     parking_exit_paths.append({
-                        "name": f"Path_Parking{parking_n}_{landing_id}_{stand_id}",
-                        "source": f"Parking{parking_n}_{landing_id}",
+                        "name": f"{PATH_PARKING_PREFIX}{parking_n}_{landing_id}_{stand_id}",
+                        "source": f"{PARKING_PREFIX}{parking_n}_{landing_id}",
                         "destination": stand_id,
                         "segments": exit_segments,
                     })
@@ -376,9 +376,9 @@ class InitGraph:
         for parking_n in PARKING_SPLINES:
             for direction in available_directions:
                 parking_entry_paths.append({
-                    "name": f"Path_LandingRoute_{direction}_Parking{parking_n}",
+                    "name": f"{PATH_LANDING_ROUTE_PREFIX}{direction}_{PARKING_PREFIX}{parking_n}",
                     "source": f"{LANDING_ROUTE_SPLINE}_{direction}",
-                    "destination": f"Parking{parking_n}",
+                    "destination": f"{PARKING_PREFIX}{parking_n}",
                     "segments": parking_entry_segments(parking_n, direction),
                 })
         
@@ -429,25 +429,25 @@ class InitGraph:
             departure_hold_t = self._departure_hold_t()
             
             base_segments.append({
-                "name": "Spline_Departure",
+                "name": DEPARTURE_SPLINE_NAME,
                 "t_start": 0.0,
                 "t_end": 1.0,
                 "departure_hold_t": departure_hold_t,
             })
 
-            stand_id = stand_spline.replace("Spline_", "")
+            stand_id = stand_spline.replace(SPLINE_PREFIX, "")
 
             # 4. Directional departure route
             for direction in available_directions:
                 directional_segments = list(base_segments)
 
                 directional_segments.append({
-                    "name": f"Spline_Departure_{direction}",
+                    "name": f"{DEPARTURE_DIRECTION_SPLINE_PREFIX}{direction}",
                     "t_start": 0.0,
                     "t_end": 1.0,
                 })
 
-                departing_id = f"Departure_{direction}"
+                departing_id = f"{DEPARTURE_DIRECTION_PREFIX}{direction}"
 
                 paths.append({
                     "name": f"Path_{stand_id}_{departing_id}",
@@ -507,8 +507,8 @@ class InitGraph:
 
         # Bus + Cargo routes for passengers stands (P*)
         for stand_id in PASSENGER_STANDS:
-            bus_spline = f"Bus_Spline_{stand_id}"
-            cargo_spline = f"Cargo_Spline_{stand_id}"
+            bus_spline = f"{BUS_SPLINE_PREFIX}{stand_id}"
+            cargo_spline = f"{CARGO_SPLINE_PREFIX}{stand_id}"
 
             if self.has_spline(bus_spline):
                 paths.append({
@@ -556,7 +556,7 @@ class InitGraph:
 
         # Cargo-only routes for cargo stands (C*)
         for stand_id in CARGO_STANDS:
-            cargo_spline = f"Cargo_Spline_{stand_id}"
+            cargo_spline = f"{CARGO_SPLINE_PREFIX}{stand_id}"
 
             if self.has_spline(cargo_spline):
                 paths.append({
@@ -591,8 +591,8 @@ class InitGraph:
 
         # Bus + Cargo routes for open stands (O*)
         for stand_id in OPEN_STANDS:
-            bus_branch = f"Bus_Spline_{stand_id}"
-            cargo_branch = f"Cargo_Spline_{stand_id}"
+            bus_branch = f"{BUS_SPLINE_PREFIX}{stand_id}"
+            cargo_branch = f"{CARGO_SPLINE_PREFIX}{stand_id}"
 
             if has_bus_master and self.has_spline(bus_branch):
                 paths.append({

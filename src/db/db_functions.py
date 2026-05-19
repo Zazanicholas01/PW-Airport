@@ -557,7 +557,7 @@ def parking_exit_source_for_airplane(session, airplane_id: str, parking_n: int) 
     
     # Assign Long / Medium / Short based on airplane range
     landing_id = landing_source_for_range(getattr(airplane, "range", None))
-    return f"Parking{parking_n}_{landing_id}"
+    return f"{PARKING_PREFIX}{parking_n}_{landing_id}"
 
 
 def assign_arrival_route_or_parking(*, flight_id: str) -> dict | None:
@@ -568,9 +568,9 @@ def assign_arrival_route_or_parking(*, flight_id: str) -> dict | None:
     - delay flight if no parking is available
 
     Returns:
-        {"decisions": "land", "stand_id": "...", "route_id": 1}
-        {"decision": "parking", "parking_n": 1, "route_id": 2}
-        {"decision": "delayed"}
+        {"decisions": LANDING_ROUTE_DECISION.LAND, "stand_id": "...", "route_id": 1}
+        {"decision": LANDING_ROUTE_DECISION.PARKING, "parking_n": 1, "route_id": 2}
+        {"decision": LANDING_ROUTE_DECISION.DELAYED}
         None on invalid flight
     """
 
@@ -641,7 +641,7 @@ def assign_arrival_route_or_parking(*, flight_id: str) -> dict | None:
 
             session.commit()
             return {
-                "decision": "land",
+                "decision": LANDING_ROUTE_DECISION.LAND,
                 "stand_id": chosen_stand.id,
                 "route_id": path_id,
             }
@@ -669,7 +669,7 @@ def assign_arrival_route_or_parking(*, flight_id: str) -> dict | None:
             path_id = session.execute(
                 select(models.Path.id)
                 .where(models.Path.source == source)
-                .where(models.Path.destination == f"Parking{parking.spline}")
+                .where(models.Path.destination == f"{PARKING_PREFIX}{parking.spline}")
             ).scalar_one_or_none()
 
             if path_id is None:
@@ -690,7 +690,7 @@ def assign_arrival_route_or_parking(*, flight_id: str) -> dict | None:
 
             session.commit()
             return {
-                "decision": "parking",
+                "decision": LANDING_ROUTE_DECISION.PARKING,
                 "parking_n": parking.spline,
                 "route_id": path_id,
             }
@@ -699,7 +699,7 @@ def assign_arrival_route_or_parking(*, flight_id: str) -> dict | None:
         flight.arrival_time = flight.arrival_time + timedelta(minutes=15)
         session.commit()
 
-        return {"decision": "delayed"}
+        return {"decision": LANDING_ROUTE_DECISION.DELAYED}
 
 
 def landing_route_source_for_flight(session, flight, airplane_id: str) -> str | None:

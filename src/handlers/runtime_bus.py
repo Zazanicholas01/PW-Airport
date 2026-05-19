@@ -56,7 +56,7 @@ class RuntimeBusHandler:
 
         self._ground_ops = ground_ops
 
-    
+
     def _start_disembark_timer(self, airplane_id: str) -> None:
         """Reset and start Disembarking Timer"""
 
@@ -64,10 +64,10 @@ class RuntimeBusHandler:
         old = self._disembark_tasks.pop(airplane_id, None)
         if old is not None:
             old.cancel()
-        
+
         # Starts the async timer that will change status Disembarking --> Parked / Completed
         self._disembark_tasks[airplane_id] = asyncio.create_task(self._finish_disembark(airplane_id))
-    
+
 
     async def _sleep_sim_seconds(self, seconds: float) -> None:
         """Sleep timer in simulated time"""
@@ -138,7 +138,7 @@ class RuntimeBusHandler:
                     return
                 if getattr(airplane, "status", None) != AIRPLANE_STATUS.DISEMBARKING:
                     return
-                
+
                 # Update status from Disembarking to Parked
                 airplane.status = AIRPLANE_STATUS.PARKED
 
@@ -154,13 +154,13 @@ class RuntimeBusHandler:
                     flight.status = FLIGHT_STATUS.COMPLETED
 
                 session.commit()
-            
+
             # Final logging and exception handling
 
             logging.info("[runtime] disembark complete airplane_id=%s -> Parked", airplane_id)
             append_event({
-                "type": "backend_event",
-                "event": "disembark_complete",
+                "type": MESSAGE_TYPES.BACKEND_EVENT,
+                "event": BACKEND_EVENTS.DISEMBARK_COMPLETE,
                 "airplane_id": airplane_id,
             })
         except asyncio.CancelledError:
@@ -173,12 +173,12 @@ class RuntimeBusHandler:
         """Launch the background consumer task"""
         if self._task is None or self._task.done():
             self._task = asyncio.create_task(self._event_loop())
-    
+
 
     async def enqueue(self, payload: dict):
         """Entrypoint to push a payload into the async queue"""
         await self.queue.put(payload)
-    
+
 
     async def _event_loop(self):
         """Consume forever loop"""
@@ -188,7 +188,7 @@ class RuntimeBusHandler:
                 await self.handle_payload(payload)
             finally:
                 self.queue.task_done()
-    
+
 
     def _find_stand_id_by_airplane_id(self, session, airplane_id: str) -> str | None:
         """Helper DB Function to lookup at which stand currently references this airplane"""
@@ -200,7 +200,7 @@ class RuntimeBusHandler:
         """Payload Handling event router"""
 
         # Sanity check on payload to be of type event
-        if payload.get("type") != "event":
+        if payload.get("type") != MESSAGE_TYPES.EVENT:
             return
 
         # Get event type and airplane ID
@@ -238,12 +238,12 @@ class RuntimeBusHandler:
                 airplane = session.get(models.Airplane, airplane_id)
                 if airplane is None or getattr(airplane, "route_id", None) is None:
                     return
-                
+
                 # Get path by route linked to the airplane
                 path = session.get(models.Path, airplane.route_id)
                 if path is None:
                     return
-                
+
                 # Get destination of the path
                 destination = getattr(path, "destination", None)
 
@@ -251,7 +251,7 @@ class RuntimeBusHandler:
                 parking_n = self._parking_number_from_destination(destination)
 
                 if parking_n is not None:
-                    
+
                     # Retrieve parking from DB
                     parking = session.execute(
                         select(models.ParkingSpot)
@@ -261,7 +261,7 @@ class RuntimeBusHandler:
 
                     if parking is not None:
                         parking.status = STAND_STATUS.OCCUPIED
-                    
+
                     # Update Airplane status
                     airplane.status = AIRPLANE_STATUS.IN_PARKING
 
@@ -275,17 +275,17 @@ class RuntimeBusHandler:
 
                     # Send event to dashboard web
                     append_event({
-                        "type": "backend_event",
-                        "event": "parking_entered",
+                        "type": MESSAGE_TYPES.BACKEND_EVENT,
+                        "event": BACKEND_EVENTS.PARKING_ENTERED,
                         "airplane_id": airplane_id,
                         "parking_n": parking_n,
                         "route_id": airplane.route_id,
                     })
 
                     return
-                
+
                 if self._is_departure_destination(destination):
-                    
+
                     # Update status of airplane from Departing --> InFlight with idempotency check
                     if airplane.status == AIRPLANE_STATUS.DEPARTING:
                         airplane.status = AIRPLANE_STATUS.IN_FLIGHT
@@ -300,7 +300,7 @@ class RuntimeBusHandler:
 
                     if flight is not None and flight.status != FLIGHT_STATUS.DEP_ONGOING:
                         flight.status = FLIGHT_STATUS.DEP_ONGOING
-                    
+
                     session.commit()
 
                     # Send command to Unity through bus
@@ -308,17 +308,17 @@ class RuntimeBusHandler:
                         await self._bus.send_command(
                             self._commands.despawn_plane(airplane_id=airplane_id)
                         )
-                    
+
                     # Logging and return
                     logging.info("[runtime] path_completed (departure) airplane_id=%s route_id=%s", airplane_id, airplane.route_id)
                     append_event({
-                        "type": "backend_event",
-                        "event": "departure_completed",
+                        "type": MESSAGE_TYPES.BACKEND_EVENT,
+                        "event": BACKEND_EVENTS.DEPARTURE_COMPLETED,
                         "airplane_id": airplane_id,
                         "route_id": airplane.route_id,
                     })
                     return
-                
+
                 else:
                     # Update airplane status from Landing --> Disembarking
                     airplane.status = AIRPLANE_STATUS.DISEMBARKING
@@ -340,18 +340,18 @@ class RuntimeBusHandler:
                         stand = session.get(models.Stand, stand_id)
                         if stand is not None and stand.airplane_id == airplane_id:
                             stand.status = STAND_STATUS.OCCUPIED
-                    
+
                     # Commit session, Logging and Start disembarking timer
                     session.commit()
 
                     # Start disembarking vehicle jobs
                     if self._ground_ops is not None:
                         await self._ground_ops.maybe_start_for_airplane(airplane_id)
-                    
+
                     logging.info("[runtime] path_completed (landing) airplane_id=%s -> Disembarking (timer started)", airplane_id)
                     append_event({
-                        "type": "backend_event",
-                        "event": "landing_completed",
+                        "type": MESSAGE_TYPES.BACKEND_EVENT,
+                        "event": BACKEND_EVENTS.LANDING_COMPLETED,
                         "airplane_id": airplane_id,
                         "stand_id": stand_id,
                     })
@@ -367,7 +367,7 @@ class RuntimeBusHandler:
                 if stand_id is None:
                     logging.info("[runtime] plane_left_stand ignored airplane_id=%s reason=no linked stand", airplane_id)
                     return
-                
+
                 stand = session.get(models.Stand, stand_id)
                 if stand is None or stand.airplane_id != airplane_id:
                     logging.info(
@@ -425,7 +425,7 @@ class RuntimeBusHandler:
                                     logging.warning("[runtime] parking clear aborted: continue_path command missing airplane_id=%s", waiting_airplane_id)
                                     session.rollback()
                                     return
-                                
+
                                 # Release the parking
                                 waiting_parking.status = STAND_STATUS.AVAILABLE
                                 waiting_parking.airplane_id = None
@@ -463,8 +463,8 @@ class RuntimeBusHandler:
 
                                 # Send event to dashboard web
                                 append_event({
-                                    "type": "backend_event",
-                                    "event": "parking_cleared",
+                                    "type": MESSAGE_TYPES.BACKEND_EVENT,
+                                    "event": BACKEND_EVENTS.PARKING_CLEARED,
                                     "airplane_id": waiting_airplane_id,
                                     "parking_n": parking_n,
                                     "stand_id": released_stand_id,
@@ -474,14 +474,14 @@ class RuntimeBusHandler:
 
                 logging.info("[runtime] plane_left_stand released stand_id=%s airplane_id=%s", stand_id, airplane_id)
                 append_event({
-                    "type": "backend_event",
-                    "event": "plane_left_stand",
+                    "type": MESSAGE_TYPES.BACKEND_EVENT,
+                    "event": RUNTIME_EVENTS.PLANE_LEFT_STAND,
                     "airplane_id": airplane_id,
                     "stand_id": stand_id,
                 })
                 return
-            
-            elif evt == "parking_entered":
+
+            elif evt == RUNTIME_EVENTS.PARKING_ENTERED:
 
                 # Retrieve parking spline and number
                 parking_spline = payload.get("parking_spline")
@@ -490,7 +490,7 @@ class RuntimeBusHandler:
                 if parking_n is None:
                     logging.warning("[runtime] parking_entered ignored invalid spline=%s airplane_id=%s", parking_spline, airplane_id)
                     return
-                
+
                 # Retrieve parking from DB
                 parking = session.execute(
                     select(models.ParkingSpot)
@@ -501,7 +501,7 @@ class RuntimeBusHandler:
                 if parking is None:
                     logging.warning("[runtime] parking_entered no matching parking parking=%s airplane_id=%s", parking_n, airplane_id)
                     return
-                
+
                 # Mark parking as Occupied
                 parking.status = STAND_STATUS.OCCUPIED
 
@@ -509,23 +509,23 @@ class RuntimeBusHandler:
                 airplane = session.get(models.Airplane, airplane_id)
                 if airplane is not None:
                     airplane.status = AIRPLANE_STATUS.IN_PARKING
-                
+
                 session.commit()
 
                 logging.info("[runtime] parking_entered airplane_id=%s parking=%s", airplane_id, parking_n)
                 return
-            
+
 
     def _parking_number_from_spline_name(self, spline_name: str | None) -> int | None:
 
         if not isinstance(spline_name, str):
             return None
-        
+
         # Search for Parking into spline name
-        marker = "Parking"
+        marker = PARKING_PREFIX
         if marker not in spline_name:
             return None
-        
+
         # Retrieve suffix from the spline name
         suffix = spline_name.split(marker, 1)[1]
 
@@ -533,24 +533,24 @@ class RuntimeBusHandler:
             return int(suffix)
         except ValueError:
             return None
-            
+
 
     def _parking_number_from_destination(self, destination: str | None) -> int | None:
         if not isinstance(destination, str):
             return None
-        
-        if not destination.startswith("Parking"):
+
+        if not destination.startswith(PARKING_PREFIX):
             return None
-        
+
         try:
-            return int(destination.removeprefix("Parking"))
+            return int(destination.removeprefix(PARKING_PREFIX))
         except ValueError:
             return None
-        
+
     def _find_waiting_parking(self, session):
         return session.execute(
             select(models.ParkingSpot)
-            .where(models.ParkingSpot.status == "Occupied")
+            .where(models.ParkingSpot.status == STAND_STATUS.OCCUPIED)
             .where(models.ParkingSpot.airplane_id.is_not(None))
             .order_by(models.ParkingSpot.id)
         ).scalars().first()
@@ -561,10 +561,10 @@ class RuntimeBusHandler:
 
         if stand is None:
             return False
-        
+
         if stand.status != STAND_STATUS.AVAILABLE:
             return False
-        
+
         stand.status = STAND_STATUS.RESERVED
         stand.airplane_id = airplane_id
 
@@ -581,7 +581,7 @@ class RuntimeBusHandler:
 
         if flight is not None:
             flight.status = FLIGHT_STATUS.LANDING
-        
+
         return True
 
     def _assign_parking_exit_route(self, session, *, airplane_id: str, parking_n: int, stand_id: str) -> int | None:
@@ -590,7 +590,7 @@ class RuntimeBusHandler:
             return None
 
         landing_id = landing_source_for_range(getattr(airplane, "range", None))
-        source = f"Parking{parking_n}_{landing_id}"
+        source = f"{PARKING_PREFIX}{parking_n}_{landing_id}"
 
         path_id = session.execute(
             select(models.Path.id)
@@ -609,11 +609,11 @@ class RuntimeBusHandler:
 
         airplane.route_id = path_id
         return path_id
-    
+
 
     def _is_departure_destination(self, destination: str | None) -> bool:
 
         if not isinstance(destination, str):
             return False
-        
-        return destination == "Departure" or destination.startswith("Departure_")
+
+        return destination == DEPARTURE_SPLINE or destination.startswith(DEPARTURE_DIRECTION_PREFIX)

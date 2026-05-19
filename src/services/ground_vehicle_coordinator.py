@@ -9,24 +9,42 @@ from sqlalchemy import select
 
 from src.db import models
 
-from src.domain.status_constants import BUS_SERVICE_CONFIG
+from src.domain.status_constants import (
+    BUS_HOME_O,
+    BUS_HOME_P,
+    BUS_SERVICE_CONFIG,
+    CARGO_HOME_C,
+    CARGO_HOME_O,
+    CARGO_HOME_P,
+    FLIGHT_STATUS,
+    GROUND_SERVICE_TYPE,
+    GROUND_JOB_DIRECTION,
+    GROUND_FLOW_MODE,
+    STAND_STATUS,
+    BUS_COMMANDS,
+    VEHICLE_STATUS,
+    VEHICLE_TYPE,
+)
 
 # ============================
 # HELPER FUNCTIONS
 # ============================
 
 def planned_services_for_flight_type(flight_type: str | None) -> list[str]:
-    
+
     # passenger_transfer -> Bus
     # luggage_transfer -> Cargo
     # cargo_transfer -> Cargo
 
     normalized = (flight_type or "").strip().lower()
 
-    if normalized == "cargo":
-        return ["cargo_transfer"]
+    if normalized == FLIGHT_STATUS.CARGO_TYPE.lower():
+        return [GROUND_SERVICE_TYPE.CARGO_TRANSFER]
 
-    return ["passenger_transfer", "luggage_transfer"]
+    return [
+        GROUND_SERVICE_TYPE.PASSENGER_TRANSFER,
+        GROUND_SERVICE_TYPE.LUGGAGE_TRANSFER,
+    ]
 
 
 def service_allowed_for_stand(*, stand_id: str, service_type: str) -> bool:
@@ -34,55 +52,58 @@ def service_allowed_for_stand(*, stand_id: str, service_type: str) -> bool:
     # Check stand type and return available services
     prefix = stand_id[:1].upper()
 
-    if prefix == "P":
-        return service_type in {"passenger_transfer", "luggage_transfer"}
+    if prefix == STAND_STATUS.PASSENGERS_CATEGORY:
+        return service_type in {
+            GROUND_SERVICE_TYPE.PASSENGER_TRANSFER,
+            GROUND_SERVICE_TYPE.LUGGAGE_TRANSFER,
+        }
 
-    if prefix == "C":
-        return service_type == "cargo_transfer"
+    if prefix == STAND_STATUS.CARGO_CATEGORY:
+        return service_type == GROUND_SERVICE_TYPE.CARGO_TRANSFER
 
-    if prefix == "O":
-        return service_type in {"passenger_transfer", "luggage_transfer", "cargo_transfer"}
+    if prefix == STAND_STATUS.O_CATEGORY:
+        return service_type in GROUND_SERVICE_TYPE.ALL
 
     return False
 
 
 def required_vehicle_type_for_service(service_type: str) -> str:
-    if service_type == "passenger_transfer":
-        return "Bus"
+    if service_type == GROUND_SERVICE_TYPE.PASSENGER_TRANSFER:
+        return VEHICLE_TYPE.BUS
 
-    return "Cargo"
+    return VEHICLE_TYPE.CARGO
 
 
 def vehicle_can_serve_stand(*, vehicle_type: str, stand_id: str) -> bool:
     prefix = stand_id[:1].upper()
 
-    if vehicle_type == "Bus":
-        return prefix in {"P", "O"}
+    if vehicle_type == VEHICLE_TYPE.BUS:
+        return prefix in {STAND_STATUS.PASSENGERS_CATEGORY, STAND_STATUS.O_CATEGORY}
 
-    if vehicle_type == "Cargo":
-        return prefix in {"P", "C", "O"}
+    if vehicle_type == VEHICLE_TYPE.CARGO:
+        return prefix in STAND_STATUS.CATEGORIES
 
     return False
 
 def resolve_route_nodes(*, stand_id: str, service_type: str, returning: bool) -> tuple[str, str]:
     prefix = stand_id[:1].upper()
 
-    if service_type == "passenger_transfer":
-        home = "BusHome_P" if prefix == "P" else "BusHome_O"
+    if service_type == GROUND_SERVICE_TYPE.PASSENGER_TRANSFER:
+        home = BUS_HOME_P if prefix == STAND_STATUS.PASSENGERS_CATEGORY else BUS_HOME_O
 
-    elif service_type == "luggage_transfer":
-        if prefix == "P":
-            home = "CargoHome_P"
-        elif prefix == "O":
-            home = "CargoHome_O"
+    elif service_type == GROUND_SERVICE_TYPE.LUGGAGE_TRANSFER:
+        if prefix == STAND_STATUS.PASSENGERS_CATEGORY:
+            home = CARGO_HOME_P
+        elif prefix == STAND_STATUS.O_CATEGORY:
+            home = CARGO_HOME_O
         else:
             raise ValueError(f"Invalid luggage_transfer stand: {stand_id}")
 
-    elif service_type == "cargo_transfer":
-        if prefix == "C":
-            home = "CargoHome_C"
-        elif prefix == "O":
-            home = "CargoHome_O"
+    elif service_type == GROUND_SERVICE_TYPE.CARGO_TRANSFER:
+        if prefix == STAND_STATUS.CARGO_CATEGORY:
+            home = CARGO_HOME_C
+        elif prefix == STAND_STATUS.O_CATEGORY:
+            home = CARGO_HOME_O
         else:
             raise ValueError(f"Invalid cargo_transfer stand: {stand_id}")
 
@@ -95,7 +116,7 @@ def resolve_route_nodes(*, stand_id: str, service_type: str, returning: bool) ->
 def resolve_capacity_workload(*, airplane, service_type: str) -> int:
     airplane_capacity = max(0, int(getattr(airplane, "capacity", 0) or 0))
 
-    if service_type in {"passenger_transfer", "luggage_transfer", "cargo_transfer"}:
+    if service_type in GROUND_SERVICE_TYPE.ALL:
         return airplane_capacity
 
     return 0
@@ -136,15 +157,15 @@ class GroundVehicleCoordinator:
         self._clock_changed = clock_changed
 
         self._service_durations = service_durations or {
-            "passenger_transfer": BUS_SERVICE_CONFIG.PASSENGER_TRANSFER_TIME,
-            "luggage_transfer": BUS_SERVICE_CONFIG.LUGGAGE_TRANSFER_TIME,
-            "cargo_transfer": BUS_SERVICE_CONFIG.CARGO_TRANSFER_TIME,
+            GROUND_SERVICE_TYPE.PASSENGER_TRANSFER: BUS_SERVICE_CONFIG.PASSENGER_TRANSFER_TIME,
+            GROUND_SERVICE_TYPE.LUGGAGE_TRANSFER: BUS_SERVICE_CONFIG.LUGGAGE_TRANSFER_TIME,
+            GROUND_SERVICE_TYPE.CARGO_TRANSFER: BUS_SERVICE_CONFIG.CARGO_TRANSFER_TIME,
         }
 
         self._jobs_by_vehicle_id = {}
         self._jobs_by_flight_id = {}
         self._service_tasks = {}
-    
+
     async def maybe_start_for_airplane(self, airplane_id: str) -> None:
 
         with self.Session() as session:
@@ -153,14 +174,14 @@ class GroundVehicleCoordinator:
             airplane = session.get(models.Airplane, airplane_id)
             if airplane is None:
                 return
-            
+
             # Get stand with airplane linked
             stand_id = session.execute(
                 select(models.Stand.id).where(models.Stand.airplane_id == airplane_id)
             ).scalar_one_or_none()
             if stand_id is None:
                 return
-            
+
             # Get the flight from DB
             flight = session.scalars(
                 select(models.Flight)
@@ -170,25 +191,25 @@ class GroundVehicleCoordinator:
             ).first()
             if flight is None:
                 return
-            
+
             if flight.id in self._jobs_by_flight_id:
                 return
-            
+
             # Retrieve flow mode (load or unload)
             flight_status = getattr(flight, "status", None)
 
-            if flight_status == "Embarking":
-                flow_mode = "load"
-            elif flight_status == "Disembarking":
-                flow_mode = "unload"
+            if flight_status == FLIGHT_STATUS.EMBARKING:
+                flow_mode = GROUND_FLOW_MODE.LOAD
+            elif flight_status == FLIGHT_STATUS.DISEMBARKING:
+                flow_mode = GROUND_FLOW_MODE.UNLOAD
             else:
                 return
-            
+
             # Retrieve service sequence
             sequence = planned_services_for_flight_type(getattr(flight, "tipo", None))
             if not sequence:
                 return
-            
+
             # Check first service in the list
             first_service = sequence[0]
             total_units = resolve_capacity_workload(
@@ -197,7 +218,7 @@ class GroundVehicleCoordinator:
             )
             if not service_allowed_for_stand(stand_id=stand_id, service_type=first_service):
                 return
-            
+
             # Pick vehicle for the service
             vehicle = self.pick_vehicle_for_service(
                 session=session,
@@ -206,7 +227,7 @@ class GroundVehicleCoordinator:
             )
             if vehicle is None:
                 return
-            
+
             # Create the job from the dataclass
             job = ActiveGroundJob(
                 flight_id=flight.id,
@@ -215,13 +236,13 @@ class GroundVehicleCoordinator:
                 service_sequence=sequence,
                 current_index=0,
                 vehicle_id=vehicle.id,
-                direction="to_stand",
+                direction=GROUND_JOB_DIRECTION.TO_STAND,
                 flow_mode=flow_mode,
                 current_service_total_units=total_units,
                 current_service_remaining_units=total_units,
             )
 
-            await self.dispatch_job_phase(session=session, job=job, direction="to_stand")
+            await self.dispatch_job_phase(session=session, job=job, direction=GROUND_JOB_DIRECTION.TO_STAND)
 
 
     def pick_vehicle_for_service(self, *, session, stand_id: str, service_type: str):
@@ -233,16 +254,16 @@ class GroundVehicleCoordinator:
         vehicles = session.scalars(
             select(models.Vehicle)
             .where(models.Vehicle.type == required_type)
-            .where(models.Vehicle.status == "Available")
+            .where(models.Vehicle.status == VEHICLE_STATUS.AVAILABLE)
             .order_by(models.Vehicle.id)
         ).all()
 
         for vehicle in vehicles:
             if vehicle_can_serve_stand(vehicle_type=required_type, stand_id=stand_id):
                 return vehicle
-        
+
         return None
-    
+
 
     def assign_vehicle_route(self, *, session, vehicle_id: str, source: str, destination: str) -> int | None:
 
@@ -261,12 +282,12 @@ class GroundVehicleCoordinator:
                 destination,
             )
             return None
-        
+
         # Retrieve vehicle and assign path
         vehicle = session.get(models.Vehicle, vehicle_id)
         if vehicle is None:
             return None
-        
+
         vehicle.route_id = path_id
         return path_id
 
@@ -279,7 +300,7 @@ class GroundVehicleCoordinator:
         source, destination = resolve_route_nodes(
             stand_id=job.stand_id,
             service_type=service_type,
-            returning=(direction == "to_home"),
+            returning=(direction == GROUND_JOB_DIRECTION.TO_HOME),
         )
 
         logging.info(
@@ -313,7 +334,7 @@ class GroundVehicleCoordinator:
                 destination,
             )
             return
-        
+
         # Get vehicle from DB
         vehicle = session.get(models.Vehicle, job.vehicle_id)
         if vehicle is None:
@@ -323,11 +344,15 @@ class GroundVehicleCoordinator:
                 job.flight_id,
             )
             return
-        
+
         # Assign flight_id / destination / status
         vehicle.flight_id = job.flight_id
         vehicle.destination = destination
-        vehicle.status = "EnRoute" if direction == "to_stand" else "Returning"
+        vehicle.status = (
+            VEHICLE_STATUS.EN_ROUTE
+            if direction == GROUND_JOB_DIRECTION.TO_STAND
+            else VEHICLE_STATUS.RETURNING
+        )
 
         session.commit()
 
@@ -340,14 +365,14 @@ class GroundVehicleCoordinator:
                 direction,
             )
             return
-        
+
         # Attach speed profiles
         segments = self.attach_vehicle_speed_profiles(
             segments=path.spline,
             service_type=service_type,
             direction=direction,
         )
-        
+
         # Commmit into job data structures
         job.direction = direction
         self._jobs_by_vehicle_id[job.vehicle_id] = job
@@ -380,13 +405,13 @@ class GroundVehicleCoordinator:
         job = self._jobs_by_vehicle_id.get(vehicle_id)
         if job is None:
             return
-        
+
         with self.Session() as session:
             vehicle = session.get(models.Vehicle, vehicle_id)
             if vehicle is None:
                 return
-            
-            vehicle.status = "Servicing"
+
+            vehicle.status = VEHICLE_STATUS.SERVICING
             vehicle_capacity = max(0, int(getattr(vehicle, "capacity", 0) or 0))
             session.commit()
 
@@ -402,7 +427,7 @@ class GroundVehicleCoordinator:
         )
 
         await self._bus.send_command({
-            "command": "start_service_progress",
+            "command": BUS_COMMANDS.START_SERVICE_PROGRESS,
             "flight_id": job.flight_id,
             "airplane_id": job.airplane_id,
             "vehicle_id": job.vehicle_id,
@@ -411,10 +436,10 @@ class GroundVehicleCoordinator:
             "duration_seconds": duration_seconds,
             "label": label,
         })
-        
-        job.direction = "servicing"
+
+        job.direction = GROUND_JOB_DIRECTION.SERVICING
         self.start_service_timer(job)
-        
+
 
     def start_service_timer(self, job: ActiveGroundJob) -> None:
 
@@ -450,7 +475,7 @@ class GroundVehicleCoordinator:
                 )
 
             await self._bus.send_command({
-                "command": "stop_service_progress",
+                "command": BUS_COMMANDS.STOP_SERVICE_PROGRESS,
                 "stand_id": job.stand_id,
             })
 
@@ -465,11 +490,11 @@ class GroundVehicleCoordinator:
             )
 
             with self.Session() as session:
-                await self.dispatch_job_phase(session=session, job=job, direction="to_home")
+                await self.dispatch_job_phase(session=session, job=job, direction=GROUND_JOB_DIRECTION.TO_HOME)
 
         except asyncio.CancelledError:
             return
-            
+
 
     async def handle_vehicle_returned_home(self, vehicle_id: str) -> None:
         job = self._jobs_by_vehicle_id.get(vehicle_id)
@@ -481,7 +506,7 @@ class GroundVehicleCoordinator:
             if vehicle is None:
                 return
 
-            vehicle.status = "Available"
+            vehicle.status = VEHICLE_STATUS.AVAILABLE
             vehicle.flight_id = None
             vehicle.destination = None
             vehicle.route_id = None
@@ -530,7 +555,7 @@ class GroundVehicleCoordinator:
                         service_sequence=job.service_sequence,
                         current_index=job.current_index,
                         vehicle_id="",
-                        direction="to_stand",
+                        direction=GROUND_JOB_DIRECTION.TO_STAND,
                         flow_mode=job.flow_mode,
                         current_service_total_units=job.current_service_total_units,
                         current_service_remaining_units=job.current_service_remaining_units,
@@ -551,7 +576,7 @@ class GroundVehicleCoordinator:
                 self._service_tasks.pop(job.vehicle_id, None)
 
                 job.vehicle_id = next_vehicle.id
-                await self.dispatch_job_phase(session=session, job=job, direction="to_stand")
+                await self.dispatch_job_phase(session=session, job=job, direction=GROUND_JOB_DIRECTION.TO_STAND)
                 return
 
         next_index = job.current_index + 1
@@ -621,7 +646,7 @@ class GroundVehicleCoordinator:
                     service_sequence=job.service_sequence,
                     current_index=next_index,
                     vehicle_id="",
-                    direction="to_stand",
+                    direction=GROUND_JOB_DIRECTION.TO_STAND,
                     flow_mode=job.flow_mode,
                     current_service_total_units=total_units,
                     current_service_remaining_units=total_units,
@@ -639,13 +664,13 @@ class GroundVehicleCoordinator:
                 service_sequence=job.service_sequence,
                 current_index=next_index,
                 vehicle_id=next_vehicle.id,
-                direction="to_stand",
+                direction=GROUND_JOB_DIRECTION.TO_STAND,
                 flow_mode=job.flow_mode,
                 current_service_total_units=total_units,
                 current_service_remaining_units=total_units,
             )
 
-            await self.dispatch_job_phase(session=session, job=next_job, direction="to_stand")
+            await self.dispatch_job_phase(session=session, job=next_job, direction=GROUND_JOB_DIRECTION.TO_STAND)
 
 
 
@@ -711,13 +736,13 @@ class GroundVehicleCoordinator:
                 service_sequence=job.service_sequence,
                 current_index=job.current_index,
                 vehicle_id=vehicle.id,
-                direction="to_stand",
+                direction=GROUND_JOB_DIRECTION.TO_STAND,
                 flow_mode=job.flow_mode,
                 current_service_total_units=job.current_service_total_units,
                 current_service_remaining_units=job.current_service_remaining_units,
             )
 
-            await self.dispatch_job_phase(session=session, job=resumed, direction="to_stand")
+            await self.dispatch_job_phase(session=session, job=resumed, direction=GROUND_JOB_DIRECTION.TO_STAND)
 
 
     def vehicle_speed_profile_for_segment(
@@ -729,7 +754,7 @@ class GroundVehicleCoordinator:
         index: int,
         total: int,
     ) -> dict:
-        is_bus = service_type == "passenger_transfer"
+        is_bus = service_type == GROUND_SERVICE_TYPE.PASSENGER_TRANSFER
 
         cruise_speed = 0.8 if is_bus else 0.5
         approach_speed = 0.2
@@ -744,7 +769,7 @@ class GroundVehicleCoordinator:
                 "deceleration_mps2": 0.15,
             }
 
-        if direction == "to_stand" and index == total - 1:
+        if direction == GROUND_JOB_DIRECTION.TO_STAND and index == total - 1:
             return {
                 "purpose": f"{service_type}_{direction}_approach",
                 "initial_speed_kmh": cruise_speed,
@@ -753,7 +778,7 @@ class GroundVehicleCoordinator:
                 "deceleration_mps2": 0.2,
             }
 
-        if direction == "to_home" and index == 0:
+        if direction == GROUND_JOB_DIRECTION.TO_HOME and index == 0:
             return {
                 "purpose": f"{service_type}_{direction}_depart",
                 "initial_speed_kmh": depart_speed,

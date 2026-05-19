@@ -2,6 +2,14 @@ from dataclasses import dataclass
 from enum import Enum
 from math import atan2, cos, degrees, floor, radians, sin
 
+from src.domain.status_constants import (
+    DEPARTURE_DIRECTION_PREFIX,
+    DEPARTURE_DIRECTION_SPLINE_PREFIX,
+    LANDING_DIRECTION_SPLINE_PREFIX,
+    LANDING_ROUTE_SPLINE,
+    PERSONAL_AIRPORT,
+)
+
 @dataclass(frozen=True)
 class GeoPoint:
     latitude: float
@@ -19,7 +27,7 @@ class CardinalDirection(str, Enum):
 
 AIRPORT_GEO_POINTS: dict[str, GeoPoint] = {
     # Local / fictional project airport, assumed at Amaro, Friuli-Venezia-Giulia
-    "LIAG": GeoPoint(latitude=46.3730, longitude=13.0960),
+    PERSONAL_AIRPORT: GeoPoint(latitude=46.3730, longitude=13.0960),
 
     # Italy
     "LIMC": GeoPoint(latitude=45.6306, longitude=8.7281),    # Milano Malpensa
@@ -51,11 +59,11 @@ CARDINAL_DIRECTIONS = tuple(direction.value for direction in CardinalDirection)
 
 
 def landing_route_source(direction: CardinalDirection, landing_id: str) -> str:
-    return f"Landing_Route_{direction.value}_{landing_id}"
+    return f"{LANDING_ROUTE_SPLINE}_{direction.value}_{landing_id}"
 
 
 def departure_route_destination(direction: CardinalDirection) -> str:
-    return f"Departure_{direction.value}"
+    return f"{DEPARTURE_DIRECTION_PREFIX}{direction.value}"
 
 
 def initial_bearing_degrees(origin: GeoPoint, target: GeoPoint) -> float:
@@ -94,7 +102,7 @@ def bearing_to_cardinal_8(bearing: float) -> CardinalDirection:
 def direction_from_amaro(target_airport: GeoPoint) -> CardinalDirection:
     """Return direction based on AMARO"""
 
-    bearing = initial_bearing_degrees(geo_point_for_airport("LIAG"), target_airport)
+    bearing = initial_bearing_degrees(geo_point_for_airport(PERSONAL_AIRPORT), target_airport)
     return bearing_to_cardinal_8(bearing)
 
 
@@ -109,13 +117,13 @@ def direction_for_airport_icao(icao: str | None) -> CardinalDirection | None:
 def landing_spline_name(direction: CardinalDirection) -> str:
     """Return landing spline name based on direction"""
 
-    return f"Spline_Landing_{direction.value}"
+    return f"{LANDING_DIRECTION_SPLINE_PREFIX}{direction.value}"
 
 
 def departure_spline_name(direction: CardinalDirection) -> str:
     """Return departure spline name based on direction"""
 
-    return f"Spline_Departure_{direction.value}"
+    return f"{DEPARTURE_DIRECTION_SPLINE_PREFIX}{direction.value}"
 
 
 def geo_point_for_airport(icao: str | None) -> GeoPoint | None:
@@ -123,5 +131,5 @@ def geo_point_for_airport(icao: str | None) -> GeoPoint | None:
 
     if not icao:
         return None
-    
+
     return AIRPORT_GEO_POINTS.get(icao.upper())

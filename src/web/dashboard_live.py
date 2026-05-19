@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 
 from fastapi import WebSocket
 
+from src.domain.status_constants import DASHBOARD_COMMANDS
 from src.web.dashboard_data import (
     EVENTS_LOG_FILE,
     _parse_clock_event,
@@ -42,7 +43,7 @@ def _parse_dashboard_redirect_event(line: str) -> dict[str, str] | None:
     if event.get("type") != "dashboard_redirect":
         return None
 
-    if event.get("command") != "highlight_flight":
+    if event.get("command") != DASHBOARD_COMMANDS.HIGHLIGHT_FLIGHT:
         return None
 
     flight_id = str(event.get("flight_id") or "")
@@ -172,7 +173,7 @@ async def _dashboard_loop() -> None:
                         dashboard_state.redirect_clients,
                         {
                             "kind": "redirect",
-                            "command": "highlight_flight",
+                            "command": DASHBOARD_COMMANDS.HIGHLIGHT_FLIGHT,
                             "flight_id": redirect["flight_id"],
                             "url": redirect["redirect_url"],
                         },

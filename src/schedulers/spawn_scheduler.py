@@ -11,7 +11,7 @@ from src.db import models
 
 from src.transport.command_builders import build_spawn_plane
 
-from src.domain.status_constants import FLIGHT_STATUS, PARKING_SPLINES, STAND_STATUS
+from src.domain.status_constants import FLIGHT_STATUS, PARKING_SPLINES, SPAWN_CONTEXT, STAND_STATUS
 
 
 @dataclass
@@ -124,7 +124,7 @@ class SpawnScheduler:
                     stand_id=stand_id,
                     position=position,
                     airplane_id=airplane_id,
-                    spawn_context="bootstrap",
+                    spawn_context=SPAWN_CONTEXT.BOOTSTRAP,
                 ))
 
             session.commit()
