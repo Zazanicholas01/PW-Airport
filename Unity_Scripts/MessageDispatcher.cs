@@ -33,6 +33,7 @@ public class MessageDispatcher : MonoBehaviour
         public string prefab;
         public string stand_id;
         public string airplane_id;
+        public string flight_id;
         public SerializableVector3 position;
     }
 
@@ -89,6 +90,7 @@ public class MessageDispatcher : MonoBehaviour
     public class StartPathCommand {
         public string command;
         public string airplane_id;
+        public string flight_id;
         public int route_id;
         public PathSegment[] segments;
     }

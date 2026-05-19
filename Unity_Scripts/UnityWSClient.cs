@@ -188,10 +188,10 @@ public class LocalWebSocketClient : MonoBehaviour
         var data = Encoding.UTF8.GetBytes(message);
 
         await socket.SendAsync(
-            new ArraySegment<byte>(data), 
-            WebSocketMessageType.Text, 
-            true, 
-            cts.Token
+            new ArraySegment<byte>(data),
+            WebSocketMessageType.Text,
+            true,
+            lifetimeCts.Token
         );
     }
 
@@ -213,8 +213,8 @@ public class LocalWebSocketClient : MonoBehaviour
         finally
         {
             socket?.Dispose();
-            cts?.Cancel();
-            cts?.Dispose();
+            lifetimeCts?.Cancel();
+            lifetimeCts?.Dispose();
             if (!connectedTcs.Task.IsCompleted)
             {
                 connectedTcs.TrySetCanceled();

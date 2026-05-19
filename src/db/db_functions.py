@@ -308,7 +308,7 @@ def create_and_assign_airplane_for_landing_departure(
 
         # Logging and return
         logging.info(
-            "[db] landing_dep: created airplane_id=%s type=%s range=%s and linked to flight_id=%s (status=Lan_Ongoing)",
+            "[db] landing_dep: created airplane_id=%s type=%s range=%s and linked to flight_id=%s (status=Scheduled)",
             airplane_id, airplane.type, airplane.range, flight_id
         )
         return airplane_id

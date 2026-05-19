@@ -254,6 +254,9 @@ async def flight_scheduler_loop(
     while not ctx.setup_bus.state.setup_completed:
         await asyncio.sleep(0.1)
 
+    if ctx.initial_spawns_ready is not None:
+        await ctx.initial_spawns_ready.wait()
+
     # Get landing spawn position from setup bus
     landing_spawn_position = ctx.setup_bus.state.landing_spawn_position
     logging.info("[spawn_scheduler] landing_spawn_position=%s", landing_spawn_position)
@@ -637,7 +640,11 @@ async def flight_scheduler_loop(
                 # Make start path command for the airplane and send through bus to Unity
                 if isinstance(airplane_id, str):
 
-                    cmd = make_start_path_command(airplane_id=airplane_id, Session=ctx.Session)
+                    cmd = make_start_path_command(
+                        airplane_id=airplane_id,
+                        flight_id=flight_id,
+                        Session=ctx.Session,
+                    )
 
                     if cmd is None:
                         logging.warning("[start_path][SKIP] flight_id=%s airplane_id=%s (no route/segments)", flight_id, airplane_id)
@@ -708,6 +715,7 @@ async def flight_scheduler_loop(
                     stand_id=f"landing:{flight_id}",
                     position=spawn_position,
                     airplane_id=airplane_id,
+                    flight_id=flight_id,
                     spawn_context="landing",
                 ))
                 logging.info("[flight_scheduler] landing_spawn: spawned airplane_id=%s flight_id=%s", airplane_id, flight_id)
@@ -743,7 +751,11 @@ async def flight_scheduler_loop(
                     continue
 
                 # Call Make start path command and send through bus to Unity
-                cmd = make_start_path_command(airplane_id=airplane_id, Session=ctx.Session)
+                cmd = make_start_path_command(
+                    airplane_id=airplane_id,
+                    flight_id=flight_id,
+                    Session=ctx.Session,
+                )
 
                 if cmd is None:
                     logging.warning(

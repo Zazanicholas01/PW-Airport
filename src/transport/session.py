@@ -27,3 +27,5 @@ class SessionContext:
 
     flight_actions: FlightActions
     commands: CommandBuilders
+
+    initial_spawns_ready: asyncio.Event | None = None

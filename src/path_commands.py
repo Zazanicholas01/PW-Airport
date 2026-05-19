@@ -228,7 +228,13 @@ def detect_motion_mode(segments: list[dict]) -> str:
 
 
 
-def make_start_path_command(*, airplane_id: str, speed: float = DEFAULT_PLANE_SPEED, Session=None) -> dict | None:
+def make_start_path_command(
+    *,
+    airplane_id: str,
+    flight_id: str | None = None,
+    speed: float = DEFAULT_PLANE_SPEED,
+    Session=None,
+) -> dict | None:
     
     with Session() as session:
 
@@ -248,6 +254,7 @@ def make_start_path_command(*, airplane_id: str, speed: float = DEFAULT_PLANE_SP
         # Return START PATH command
         return build_start_path_command(
             airplane_id=airplane_id,
+            flight_id=flight_id,
             route_id=route_id,
             segments=segments
         )

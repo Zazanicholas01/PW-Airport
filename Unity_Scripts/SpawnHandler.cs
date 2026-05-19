@@ -76,13 +76,14 @@ public class SpawnHandler : MonoBehaviour
         if (radarTarget != null)
         {
             radarTarget.airplaneId = command.airplane_id;
+            radarTarget.flightId = command.flight_id;
             radarTarget.isVisibleOnRadar = true;
         }
 
         if (registry != null && !string.IsNullOrWhiteSpace(command.airplane_id))
             registry.Register(command.airplane_id, instance);
             
-        Debug.Log($"[SpawnHandler] Spawned '{command.prefab}' at {position} rotY={rotation.eulerAngles.y:0.##} (stand {command.stand_id}).");
+        Debug.Log($"[SpawnHandler] Spawned '{command.prefab}' at {worldPosition} rotY={worldRotation.eulerAngles.y:0.##} (stand {command.stand_id}).");
         Debug.Log($"[SpawnHandler] spawn '{command.prefab}' airplane_id={command.airplane_id} " +
           $"pos={(command.position == null ? "NULL" : $"{command.position.x},{command.position.y},{command.position.z}")} " +
           $"spawnParent={(spawnParent == null ? "null" : spawnParent.position.ToString())}");

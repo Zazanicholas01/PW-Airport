@@ -30,6 +30,7 @@ def build_spawn_plane(
         position: dict | None,
         airplane_id: str,
         spawn_context: str,
+        flight_id: str | None = None,
 ) -> dict[str, Any]:
     
     return {
@@ -38,6 +39,7 @@ def build_spawn_plane(
         "stand_id": stand_id,
         "position": position,
         "airplane_id": airplane_id,
+        "flight_id": flight_id,
         "spawn_context": spawn_context
     }
 
@@ -49,10 +51,17 @@ def build_despawn_plane(*, airplane_id: str) -> dict[str, Any]:
     }
 
 
-def build_start_path_command(*, airplane_id: str, route_id: str, segments: list) -> dict[str, Any]:
+def build_start_path_command(
+    *,
+    airplane_id: str,
+    route_id: str,
+    segments: list,
+    flight_id: str | None = None,
+) -> dict[str, Any]:
     return {
         "command": BUS_COMMANDS.START_PATH,
         "airplane_id": airplane_id,
+        "flight_id": flight_id,
         "route_id": route_id,
         "segments": segments
     }

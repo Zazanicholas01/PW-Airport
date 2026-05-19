@@ -29,19 +29,23 @@ async def schedule_initial_spawns(ctx: SessionContext) -> None:
         session_factory=ctx.Session
     )
 
-    # Build initial spawn commands with helper function
-    commands = scheduler.plan_initial_spawns()
-    if not commands:
-        logging.info("No initial spawns commands generated")
-        return
+    try:
+        # Build initial spawn commands with helper function
+        commands = scheduler.plan_initial_spawns()
+        if not commands:
+            logging.info("No initial spawns commands generated")
+            return
 
-    # Send commands through bus to Unity
-    for cmd in commands:
-        await ctx.bus.send_command(cmd)
+        # Send commands through bus to Unity
+        for cmd in commands:
+            await ctx.bus.send_command(cmd)
 
-    logging.info("Scheduled %d initial spawn commands", len(commands))
-    append_event({
-        "type": "backend_event",
-        "event": "initial_spawns_scheduled",
-        "count": len(commands),
-    })
+        logging.info("Scheduled %d initial spawn commands", len(commands))
+        append_event({
+            "type": "backend_event",
+            "event": "initial_spawns_scheduled",
+            "count": len(commands),
+        })
+    finally:
+        if ctx.initial_spawns_ready is not None:
+            ctx.initial_spawns_ready.set()

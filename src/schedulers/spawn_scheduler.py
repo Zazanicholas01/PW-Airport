@@ -11,7 +11,7 @@ from src.db import models
 
 from src.transport.command_builders import build_spawn_plane
 
-from src.domain.status_constants import STAND_STATUS, PARKING_SPLINES
+from src.domain.status_constants import FLIGHT_STATUS, PARKING_SPLINES, STAND_STATUS
 
 
 @dataclass
@@ -51,7 +51,11 @@ class SpawnScheduler:
             session.execute(
                 update(models.Stand).values(status=STAND_STATUS.AVAILABLE, airplane_id=None,)
             )
-            session.execute(update(models.Flight).values(airplane_id=None))
+            session.execute(
+                update(models.Flight)
+                .where(models.Flight.status != FLIGHT_STATUS.COMPLETED)
+                .values(airplane_id=None, status=FLIGHT_STATUS.UNSCHEDULED)
+            )
             session.execute(delete(models.Operation))
             
             # Reset Parking Sports instead of deleting them

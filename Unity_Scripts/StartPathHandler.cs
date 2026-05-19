@@ -11,9 +11,7 @@ public class StartPathHandler : MonoBehaviour {
     [SerializeField] private GameObjectRegistry registry;
     [SerializeField] private Transform splineRoot;
     [SerializeField] private bool includeInactive = true;
-    [SerializeField] private Transform splineRoot;
     [SerializeField] private List<Transform> additionalSplineRoots = new();
-    [SerializeField] private bool includeInactive = true;
 
 
     private Dictionary<string, SplineContainer> splineByName;
@@ -103,6 +101,12 @@ public class StartPathHandler : MonoBehaviour {
 
         var follower = plane.GetComponent<SplineFollower>();
         if (follower == null) follower = plane.AddComponent<SplineFollower>();
+
+        var radarTarget = plane.GetComponentInChildren<RadarTarget>();
+        if (radarTarget != null && !string.IsNullOrWhiteSpace(cmd.flight_id))
+        {
+            radarTarget.flightId = cmd.flight_id;
+        }
 
         follower.ResolveSplineByName = FindSpline;
 

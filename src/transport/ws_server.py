@@ -3,6 +3,7 @@ import asyncio, logging
 import websockets
 from dataclasses import dataclass
 from typing import Any
+from urllib.parse import quote
 
 from src.handlers.runtime_bus import RuntimeBusHandler
 from src.handlers.setup_bus import SetupBusHandler
@@ -20,6 +21,7 @@ from src.transport.loops.build_flight_actions import build_flight_actions
 from src.transport.hooks.spawn_tracking import make_spawn_tracking_hook
 from src.transport.command_builders import build_welcome
 from src.db import db_functions
+from src.utils.event_log import append_event
 
 
 # Stable sender used by global loops
@@ -120,6 +122,26 @@ async def incoming_dispatch_loop(ctx: SessionContext, incoming_queue: asyncio.Qu
         try:
             # If clock control command, handle directly
             if isinstance(payload, dict) and await handle_clock_control(ctx, payload):
+                continue
+
+            if isinstance(payload, dict) and payload.get("command") == "highlight_flight":
+                flight_id = payload.get("flight_id")
+                if isinstance(flight_id, str) and flight_id.strip():
+                    redirect_url = f"/flight/{quote(flight_id, safe='')}"
+                    append_event({
+                        "type": "dashboard_redirect",
+                        "command": "highlight_flight",
+                        "flight_id": flight_id,
+                        "redirect_url": redirect_url,
+                    })
+                    logging.info(
+                        "[highlight_flight] received from Unity flight_id=%s airplane_id=%s redirect_url=%s",
+                        flight_id,
+                        payload.get("airplane_id"),
+                        redirect_url,
+                    )
+                else:
+                    logging.warning("[highlight_flight] ignored missing flight_id payload=%r", payload)
                 continue
 
             # If setup not finished, route to setup bus, otherwise route to runtime bus
@@ -248,6 +270,7 @@ async def main(host, port, *, container=None) -> None:
     clock = SimulationClock(sim_start=datetime.now(timezone.utc), time_scale=1.0)
     clock_lock = asyncio.Lock()
     clock_changed = asyncio.Event()
+    initial_spawns_ready = asyncio.Event()
 
     # Create Active Unity Bus obejct
     active_unity_bus = ActiveUnityBus()
@@ -291,6 +314,7 @@ async def main(host, port, *, container=None) -> None:
         clock=clock,
         clock_lock=clock_lock,
         clock_changed=clock_changed,
+        initial_spawns_ready=initial_spawns_ready,
         prefab_store=container.prefab_store,
         graph=container.graph,
         world_state=container.world_state,

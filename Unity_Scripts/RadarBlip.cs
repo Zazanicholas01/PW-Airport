@@ -1,7 +1,9 @@
+using System;
 using UnityEngine;
+using UnityEngine.EventSystems;
 using UnityEngine.UI;
 
-public class RadarBlip : MonoBehaviour
+public class RadarBlip : MonoBehaviour, IPointerClickHandler, IPointerDownHandler
 {
     [SerializeField] private Image arrowImage;
     [SerializeField] private Image glowImage;
@@ -18,6 +20,11 @@ public class RadarBlip : MonoBehaviour
 
     private Color baseColor = Color.green;
     private float highlight;
+    private RadarTarget target;
+    private Action<RadarTarget> onClicked;
+    private float lastClickTime = -1f;
+
+    private const float ClickDebounceSeconds = 0.25f;
 
     private void Awake()
     {
@@ -26,6 +33,11 @@ public class RadarBlip : MonoBehaviour
         if (arrowImage == null)
         {
             arrowImage = GetComponent<Image>();
+        }
+
+        if (arrowImage != null)
+        {
+            arrowImage.raycastTarget = true;
         }
     }
 
@@ -61,6 +73,53 @@ public class RadarBlip : MonoBehaviour
     public void Ping()
     {
         highlight = 1f;
+    }
+
+    public void Bind(RadarTarget radarTarget, Action<RadarTarget> clickHandler)
+    {
+        target = radarTarget;
+        onClicked = clickHandler;
+    }
+
+    public void OnPointerClick(PointerEventData eventData)
+    {
+        Debug.Log($"[RadarClick] OnPointerClick blip={name} pointer={eventData.pointerId} pos={eventData.position} {GetTargetDebugText()}");
+        InvokeClicked();
+    }
+
+    public void OnPointerDown(PointerEventData eventData)
+    {
+        Debug.Log($"[RadarClick] OnPointerDown blip={name} pointer={eventData.pointerId} pos={eventData.position} {GetTargetDebugText()}");
+        InvokeClicked();
+    }
+
+    private void InvokeClicked()
+    {
+        if (target == null)
+        {
+            Debug.LogWarning($"[RadarClick] Ignored blip={name}: target=null");
+            return;
+        }
+
+        if (Time.unscaledTime - lastClickTime < ClickDebounceSeconds)
+        {
+            Debug.Log($"[RadarClick] Ignored blip={name}: debounce {GetTargetDebugText()}");
+            return;
+        }
+
+        lastClickTime = Time.unscaledTime;
+        Debug.Log($"[RadarClick] Dispatching blip={name} {GetTargetDebugText()}");
+        onClicked?.Invoke(target);
+    }
+
+    private string GetTargetDebugText()
+    {
+        if (target == null)
+        {
+            return "target=null";
+        }
+
+        return $"airplane_id={target.airplaneId} flight_id={target.flightId}";
     }
 
     public void SetColor(Color color)

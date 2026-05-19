@@ -1,4 +1,5 @@
 from pathlib import Path
+import logging
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, HTMLResponse
@@ -84,6 +85,28 @@ async def window_flights_ws(websocket: WebSocket) -> None:
         pass
     finally:
         dashboard_state.window_clients.discard(websocket)
+
+
+@app.websocket("/ws/dashboard-commands")
+async def dashboard_commands_ws(websocket: WebSocket) -> None:
+    await websocket.accept()
+    dashboard_state.redirect_clients.add(websocket)
+    logging.info(
+        "[dashboard] command websocket connected clients=%d",
+        len(dashboard_state.redirect_clients),
+    )
+
+    try:
+        while True:
+            await websocket.receive_text()
+    except WebSocketDisconnect:
+        pass
+    finally:
+        dashboard_state.redirect_clients.discard(websocket)
+        logging.info(
+            "[dashboard] command websocket disconnected clients=%d",
+            len(dashboard_state.redirect_clients),
+        )
 
 @app.get("/api/status")
 def status() -> dict[str, object]:

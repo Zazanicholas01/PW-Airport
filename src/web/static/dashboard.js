@@ -72,14 +72,20 @@
     );
   }
 
+  function navigateToUrl(url) {
+    if (!url) return;
+    window.location.href = url;
+  }
+
   document.addEventListener("click", (event) => {
     const row = event.target.closest(".clickable-row[data-href]");
     if (!row) return;
-    window.location.href = row.dataset.href;
+    navigateToUrl(row.dataset.href);
   });
 
   const scheme = window.location.protocol === "https:" ? "wss" : "ws";
   const flightsSocket = new WebSocket(`${scheme}://${window.location.host}/ws/window-flights`);
+  const commandSocket = new WebSocket(`${scheme}://${window.location.host}/ws/dashboard-commands`);
 
   flightsSocket.addEventListener("message", (messageEvent) => {
     const payload = JSON.parse(messageEvent.data);
@@ -90,5 +96,29 @@
 
   flightsSocket.addEventListener("close", () => {
     renderFlightsSnapshot({ rows: [] });
+  });
+
+  commandSocket.addEventListener("open", () => {
+    console.info("[dashboard] command websocket open");
+  });
+
+  commandSocket.addEventListener("message", (messageEvent) => {
+    const payload = JSON.parse(messageEvent.data);
+    console.info("[dashboard] command websocket message", payload);
+    if (
+      payload.kind === "redirect" &&
+      payload.command === "highlight_flight" &&
+      payload.url
+    ) {
+      navigateToUrl(payload.url);
+    }
+  });
+
+  commandSocket.addEventListener("close", (event) => {
+    console.warn("[dashboard] command websocket closed", event.code, event.reason);
+  });
+
+  commandSocket.addEventListener("error", () => {
+    console.error("[dashboard] command websocket error");
   });
 })();

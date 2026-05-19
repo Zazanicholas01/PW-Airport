@@ -1,5 +1,6 @@
 import asyncio
 import contextlib
+import json
 import logging
 from dataclasses import dataclass, field
 
@@ -22,6 +23,7 @@ class DashboardState:
 
     clock_clients: set[WebSocket] = field(default_factory=set)
     window_clients: set[WebSocket] = field(default_factory=set)
+    redirect_clients: set[WebSocket] = field(default_factory=set)
 
     events_offset: int = 0
 
@@ -31,9 +33,38 @@ class DashboardState:
 dashboard_state = DashboardState()
 
 
+def _parse_dashboard_redirect_event(line: str) -> dict[str, str] | None:
+    try:
+        event = json.loads(line)
+    except json.JSONDecodeError:
+        return None
+
+    if event.get("type") != "dashboard_redirect":
+        return None
+
+    if event.get("command") != "highlight_flight":
+        return None
+
+    flight_id = str(event.get("flight_id") or "")
+    redirect_url = str(event.get("redirect_url") or "")
+    if not flight_id or not redirect_url:
+        return None
+
+    return {
+        "flight_id": flight_id,
+        "redirect_url": redirect_url,
+    }
+
+
 async def _broadcast_json(clients: set[WebSocket], payload) -> None:
 
     stale: list[WebSocket] = []
+
+    logging.info(
+        "[dashboard] broadcast payload kind=%s clients=%d",
+        payload.get("kind") if isinstance(payload, dict) else type(payload).__name__,
+        len(clients),
+    )
 
     for client in list(clients):
         try:
@@ -47,10 +78,11 @@ async def _broadcast_json(clients: set[WebSocket], payload) -> None:
 
 def _read_dashboard_events_since(offset: int, *, include_clock: bool):
     if not EVENTS_LOG_FILE.exists():
-        return [], [], 0
+        return [], [], [], 0
 
     clock_syncs = []
     scheduler_windows = []
+    redirects = []
 
     with EVENTS_LOG_FILE.open("rb") as handle:
         handle.seek(offset)
@@ -67,7 +99,11 @@ def _read_dashboard_events_since(offset: int, *, include_clock: bool):
             if scheduler_window:
                 scheduler_windows.append(scheduler_window)
 
-        return clock_syncs, scheduler_windows, handle.tell()
+            redirect = _parse_dashboard_redirect_event(line)
+            if redirect:
+                redirects.append(redirect)
+
+        return clock_syncs, scheduler_windows, redirects, handle.tell()
 
 
 async def _dashboard_loop() -> None:
@@ -95,7 +131,7 @@ async def _dashboard_loop() -> None:
             
             if file_size > dashboard_state.events_offset:
                 include_clock = bool(dashboard_state.clock_clients) or dashboard_state.latest_clock is None
-                new_syncs, new_windows, new_offset = _read_dashboard_events_since(
+                new_syncs, new_windows, new_redirects, new_offset = _read_dashboard_events_since(
                     dashboard_state.events_offset,
                     include_clock=include_clock,
                 )
@@ -123,6 +159,23 @@ async def _dashboard_loop() -> None:
                     await _broadcast_json(
                         dashboard_state.window_clients,
                         {"kind": "snapshot", "window": latest_window},
+                    )
+
+                for redirect in new_redirects:
+                    logging.info(
+                        "[dashboard] redirect event flight_id=%s url=%s redirect_clients=%d",
+                        redirect["flight_id"],
+                        redirect["redirect_url"],
+                        len(dashboard_state.redirect_clients),
+                    )
+                    await _broadcast_json(
+                        dashboard_state.redirect_clients,
+                        {
+                            "kind": "redirect",
+                            "command": "highlight_flight",
+                            "flight_id": redirect["flight_id"],
+                            "url": redirect["redirect_url"],
+                        },
                     )
             
             await asyncio.sleep(0.5)
