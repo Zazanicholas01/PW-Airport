@@ -199,6 +199,35 @@ class FlightSlidingWindowScheduler:
         return self._once(flight, "landing_arr")
 
 
+    def should_mark_landing_departed_dynamic(
+            self,
+            *,
+            flight,
+            now_utc: datetime,
+            lead_seconds: float,
+    ) -> bool:
+        """Mark an assigned inbound flight active at the dynamic Unity spawn time."""
+
+        arrival_utc = as_utc(getattr(flight, "arrival_time", None))
+        if arrival_utc is None:
+            return False
+
+        if getattr(flight, "destination", None) != self.airport_icao:
+            return False
+
+        if getattr(flight, "status", None) != FLIGHT_STATUS.SCHEDULED:
+            return False
+
+        if getattr(flight, "airplane_id", None) is None:
+            return False
+
+        spawn_time = arrival_utc - timedelta(seconds=lead_seconds)
+        if now_utc < spawn_time:
+            return False
+
+        return self._once(flight, "landing_departed")
+
+
     def should_mark_landing_departed(self, *, flight, now_utc: datetime) -> bool:
         """Handles Scheduled landing flights to check whether a plane has departed from a remote airport"""
 
@@ -323,7 +352,10 @@ class FlightSlidingWindowScheduler:
         if getattr(flight, "destination", None) != self.airport_icao:
             return False
 
-        if getattr(flight, "status", None) != FLIGHT_STATUS.LANDING:
+        if getattr(flight, "status", None) not in {
+            FLIGHT_STATUS.LAN_ONGOING,
+            FLIGHT_STATUS.LANDING,
+        }:
             return False
 
         if getattr(flight, "airplane_id", None) is None:

@@ -152,7 +152,7 @@ class InitGraph:
             links = [f"{SPLINE_PREFIX}{link}" for link in links]
             self.master_links[i] = links
 
-        logger.info("Master Links Constructed: %s", self.master_links)
+        logger.debug("Master Links Constructed: %s", self.master_links)
 
 
     def extract_t_master_edges(self) -> None:

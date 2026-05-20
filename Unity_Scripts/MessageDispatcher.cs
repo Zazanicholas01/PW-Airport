@@ -82,6 +82,7 @@ public class MessageDispatcher : MonoBehaviour
         public string purpose;
         public float initial_speed_kmh;
         public float target_speed_kmh;
+        public float schedule_speed_kmh;
         public float acceleration_mps2;
         public float deceleration_mps2;
     }

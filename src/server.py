@@ -9,14 +9,12 @@ from src.domain.world_state import WorldState
 from src.domain.status_constants import *
 from src.transport.ws_server import main
 from src.utils.event_log import append_event
+from src.utils.logging_config import configure_logging
 
 from src.app.container import build_container
 
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(message)s",
-)
+configure_logging()
 
 _ansi = re.compile(r"\x1b\[[0-9;]*m")
 _subsys = re.compile(r"^\[(?P<subsystem>[^\]]+)\]\s*")

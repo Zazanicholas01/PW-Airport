@@ -12,6 +12,11 @@ from src.domain.status_constants import (
     MASTER_SPLINE,
     PARKING_PREFIX,
     ROUTE_KIND,
+    LANDING_DIRECTION_SPLINE_PREFIX,
+    LANDING_ROUTE_SPLINE_NAME,
+    LANDING_APPROACH_SPLINE_NAME,
+    SPLINE_PREFIX,
+    LANDING_SOURCES
 )
 
 # Now constant speed CHANGE WITH DYNAMIC SPEED
@@ -83,20 +88,52 @@ def speed_profile_for_segment(*, route_kind: str, segment: dict, index: int, tot
             }
 
     if route_kind == ROUTE_KIND.LANDING:
-        if FLIGHT_STATUS.LANDING in name:
+        if name.startswith(LANDING_DIRECTION_SPLINE_PREFIX):
             return {
-                "purpose": "landing_decel",
-                "initial_speed_kmh": 2,
-                "target_speed_kmh": 0.5,
+                "purpose": "landing_inbound_fast",
+                "schedule_speed_kmh": 280.0,
+                "initial_speed_kmh": 280.0,
+                "target_speed_kmh": 280.0,
                 "acceleration_mps2": 0.10,
                 "deceleration_mps2": 0.35,
+            }
+
+        if name == LANDING_ROUTE_SPLINE_NAME:
+            return {
+                "purpose": "landing_route_decel",
+                "schedule_speed_kmh": 180.0,
+                "initial_speed_kmh": 240.0,
+                "target_speed_kmh": 180.0,
+                "acceleration_mps2": 0.0,
+                "deceleration_mps2": 1.0,
+            }
+
+        if name == LANDING_APPROACH_SPLINE_NAME:
+            return {
+                "purpose": "landing_approach_decel",
+                "schedule_speed_kmh": 130.0,
+                "initial_speed_kmh": 180.0,
+                "target_speed_kmh": 130.0,
+                "acceleration_mps2": 0.0,
+                "deceleration_mps2": 1.0,
+            }
+
+        if name in {f"{SPLINE_PREFIX}{landing_id}" for landing_id in LANDING_SOURCES}:
+            return {
+                "purpose": "landing_range_final",
+                "schedule_speed_kmh": 80.0,
+                "initial_speed_kmh": 130.0,
+                "target_speed_kmh": 80.0,
+                "acceleration_mps2": 0.0,
+                "deceleration_mps2": 1.0,
             }
 
         if name == MASTER_SPLINE_NAME:
             return {
                 "purpose": "taxi_after_landing",
-                "initial_speed_kmh": 0.5,
-                "target_speed_kmh": 0.25,
+                "schedule_speed_kmh": 25.0,
+                "initial_speed_kmh": 35.0,
+                "target_speed_kmh": 25.0,
                 "acceleration_mps2": 0.04,
                 "deceleration_mps2": 0.35,
             }
@@ -104,8 +141,9 @@ def speed_profile_for_segment(*, route_kind: str, segment: dict, index: int, tot
         if index == total - 1:
             return {
                 "purpose": "stand_approach",
-                "initial_speed_kmh": 0.25,
-                "target_speed_kmh": 0.25,
+                "schedule_speed_kmh": 8.0,
+                "initial_speed_kmh": 15.0,
+                "target_speed_kmh": 8.0,
                 "acceleration_mps2": 0.03,
                 "deceleration_mps2": 0.08,
             }

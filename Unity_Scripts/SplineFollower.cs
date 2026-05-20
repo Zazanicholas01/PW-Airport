@@ -9,6 +9,8 @@ public class SplineFollower : MonoBehaviour {
     [SerializeField] private bool orientToSpline = true;
     [SerializeField] private Vector3 up = default;
     [SerializeField] private int arcSamples = 200;
+    [SerializeField] private float metersPerUnityUnit = 867.08f;
+    [SerializeField, Range(0.01f, 2f)] private float movementSpeedScale = 0.35f;
 
     public event Action<string, int> OnPathCompleted;
     public event Action<string, int> OnPlaneLeftStand;
@@ -92,7 +94,7 @@ public class SplineFollower : MonoBehaviour {
 
         holding = false;
         holdRemainingSeconds = 0f;
-        advanceAfterHold = false;
+        advanceAfterHold = false;  
 
         parkingCleared = false;
         currentSegmentIsParkingLoop = false;
@@ -215,11 +217,12 @@ public class SplineFollower : MonoBehaviour {
 
             UpdateSpeed(remainingDt);
 
-            float stepDistMeters = currentSpeedMps * remainingDt;
-            float remainingDistMeters = currentTable.Length - traveled;
+            float speedUnitsPerSecond = (currentSpeedMps * movementSpeedScale) / Mathf.Max(0.0001f, metersPerUnityUnit);
+            float stepDistUnits = speedUnitsPerSecond * remainingDt;
+            float remainingDistUnits = currentTable.Length - traveled;
 
-            if (stepDistMeters < remainingDistMeters) {
-                traveled += stepDistMeters;
+            if (stepDistUnits < remainingDistUnits) {
+                traveled += stepDistUnits;
 
                 ApplyPose(currentContainer, currentTable.EvaluateT(traveled));
                 remainingDt = 0f;
@@ -275,7 +278,7 @@ public class SplineFollower : MonoBehaviour {
                     return;
                 }
 
-                float usedDt = remainingDistMeters / Mathf.Max(0.0001f, currentSpeedMps);
+                float usedDt = remainingDistUnits / Mathf.Max(0.0001f, speedUnitsPerSecond);
                 remainingDt = Mathf.Max(0f, remainingDt - usedDt);
 
                 int next = segIndex + 1;

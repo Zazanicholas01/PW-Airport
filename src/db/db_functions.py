@@ -66,7 +66,7 @@ def link_airplane_to_stand(*, stand_id: str, airplane_id: str) -> None:
         # Link airplane to Stand - airplane_id
         stand.airplane_id = airplane_id
         session.commit()
-        logging.info(f"[db] Linked stand {stand_id} -> airplane {airplane_id}")
+        logging.debug(f"[db] Linked stand {stand_id} -> airplane {airplane_id}")
 
 
 def unlink_airplane_from_stand(*, stand_id: str, airplane_id: str | None = None) -> None:
@@ -307,7 +307,7 @@ def create_and_assign_airplane_for_landing_departure(
         session.commit()
 
         # Logging and return
-        logging.info(
+        logging.debug(
             "[db] landing_dep: created airplane_id=%s type=%s range=%s and linked to flight_id=%s (status=Scheduled)",
             airplane_id, airplane.type, airplane.range, flight_id
         )

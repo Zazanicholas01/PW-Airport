@@ -10,7 +10,7 @@ from src.handlers.setup_bus import SetupBusHandler
 from src.transport.message_bus import WsMessageBus
 from src.domain.sim_clock import SimulationClock
 from src.services.ground_vehicle_coordinator import GroundVehicleCoordinator
-from src.domain.status_constants import BUS_COMMANDS, DASHBOARD_COMMANDS, WEBSOCKET_CONFIG
+from src.domain.status_constants import BUS_COMMANDS, DASHBOARD_COMMANDS, LOG_EVENTS, WEBSOCKET_CONFIG
 
 from src.transport.session import SessionContext
 from src.transport.loops.clock import handle_clock_control, clock_sync_loop
@@ -22,6 +22,7 @@ from src.transport.hooks.spawn_tracking import make_spawn_tracking_hook
 from src.transport.command_builders import build_welcome
 from src.db import db_functions
 from src.utils.event_log import append_event
+from src.utils.runtime_logging import runtime_log
 
 
 # Stable sender used by global loops
@@ -88,6 +89,11 @@ async def pause_simulation_for_disconnect(server_runtime: ServerRuntime) -> None
         "[runtime] Unity client lost -> simulation paused (resume_scale=%.3f)",
         server_runtime.resume_time_scale,
     )
+    runtime_log(
+        LOG_EVENTS.UNITY_DISCONNECTED,
+        "Unity disconnected: simulation paused",
+        resume_time_scale=server_runtime.resume_time_scale,
+    )
 
 
 async def resume_simulation_after_reconnect(server_runtime: ServerRuntime) -> None:
@@ -108,6 +114,11 @@ async def resume_simulation_after_reconnect(server_runtime: ServerRuntime) -> No
     logging.info(
         "[runtime] Unity client attached -> simulation resumed (time_scale=%.3f)",
         resume_scale,
+    )
+    runtime_log(
+        LOG_EVENTS.UNITY_CONNECTED,
+        "Unity connected: simulation resumed",
+        time_scale=resume_scale,
     )
 
 
@@ -303,7 +314,7 @@ async def main(host, port, *, container=None) -> None:
     if not isinstance(airport_icao, str) or not airport_icao:
         raise RuntimeError("InitGraph airport_id missing or invalid")
     
-    logging.info("Clock init: sim_start=%s time_scale=%.2f", clock.now().isoformat(), clock.time_scale)
+    logging.debug("Clock init: sim_start=%s time_scale=%.2f", clock.now().isoformat(), clock.time_scale)
 
     # Global session context definition
     global_ctx = SessionContext(
@@ -387,7 +398,7 @@ async def main(host, port, *, container=None) -> None:
         ping_timeout=WEBSOCKET_CONFIG.PING_TIMEOUT,
         max_queue=WEBSOCKET_CONFIG.MAX_QUEUE,
     ):
-        logging.info("WebSocket server running on ws://%s:%s", WEBSOCKET_CONFIG.HOST, WEBSOCKET_CONFIG.PORT)
+        logging.debug("WebSocket server running on ws://%s:%s", WEBSOCKET_CONFIG.HOST, WEBSOCKET_CONFIG.PORT)
 
         # Keep the server alive forever; replaced by a future that never resolves.
         await asyncio.Future()

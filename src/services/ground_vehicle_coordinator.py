@@ -20,11 +20,13 @@ from src.domain.status_constants import (
     GROUND_SERVICE_TYPE,
     GROUND_JOB_DIRECTION,
     GROUND_FLOW_MODE,
+    LOG_EVENTS,
     STAND_STATUS,
     BUS_COMMANDS,
     VEHICLE_STATUS,
     VEHICLE_TYPE,
 )
+from src.utils.runtime_logging import runtime_log
 
 # ============================
 # HELPER FUNCTIONS
@@ -396,6 +398,17 @@ class GroundVehicleCoordinator:
             direction,
             len(segments) if isinstance(segments, list) else "n/a",
         )
+        runtime_log(
+            LOG_EVENTS.VEHICLE_DISPATCHED,
+            "Vehicle dispatched",
+            vehicle_id=job.vehicle_id,
+            flight_id=job.flight_id,
+            airplane_id=job.airplane_id,
+            stand_id=job.stand_id,
+            service_type=service_type,
+            direction=direction,
+            route_id=route_id,
+        )
 
         await self._bus.send_command(cmd)
 
@@ -436,6 +449,17 @@ class GroundVehicleCoordinator:
             "duration_seconds": duration_seconds,
             "label": label,
         })
+        runtime_log(
+            LOG_EVENTS.GROUND_SERVICE_STARTED,
+            "Ground service started",
+            vehicle_id=job.vehicle_id,
+            flight_id=job.flight_id,
+            airplane_id=job.airplane_id,
+            stand_id=job.stand_id,
+            service_type=service_type,
+            duration_seconds=duration_seconds,
+            batch_units=batch_units,
+        )
 
         job.direction = GROUND_JOB_DIRECTION.SERVICING
         self.start_service_timer(job)
@@ -488,6 +512,16 @@ class GroundVehicleCoordinator:
                 job.current_service_remaining_units,
                 job.current_service_total_units,
             )
+            runtime_log(
+                LOG_EVENTS.GROUND_SERVICE_COMPLETED,
+                "Ground service completed",
+                vehicle_id=job.vehicle_id,
+                flight_id=job.flight_id,
+                service_type=service_type,
+                moved_units=moved_units,
+                remaining_units=job.current_service_remaining_units,
+                total_units=job.current_service_total_units,
+            )
 
             with self.Session() as session:
                 await self.dispatch_job_phase(session=session, job=job, direction=GROUND_JOB_DIRECTION.TO_HOME)
@@ -519,6 +553,15 @@ class GroundVehicleCoordinator:
             job.service_sequence[job.current_index],
             job.current_service_remaining_units,
             job.current_service_total_units,
+        )
+        runtime_log(
+            LOG_EVENTS.VEHICLE_AVAILABLE,
+            "Vehicle available",
+            vehicle_id=vehicle_id,
+            flight_id=job.flight_id,
+            service_type=job.service_sequence[job.current_index],
+            remaining_units=job.current_service_remaining_units,
+            total_units=job.current_service_total_units,
         )
 
         waiting_flight_ids = [

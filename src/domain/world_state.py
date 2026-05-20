@@ -82,7 +82,7 @@ class WorldState:
 
         # Save it into World State dictionary, Logging and return the record
         self._planes_by_stand[stand_id] = plane
-        logging.info("[world_state] spawn recorded stand=%s prefab=%s total=%d", stand_id, prefab, len(self._planes_by_stand))
+        logging.debug("[world_state] spawn recorded stand=%s prefab=%s total=%d", stand_id, prefab, len(self._planes_by_stand))
         return plane
     
 

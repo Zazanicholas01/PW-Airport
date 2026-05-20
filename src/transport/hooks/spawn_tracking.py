@@ -1,6 +1,7 @@
 from src.services.spawn_tracking import ensure_airplane_row
 from src.db.db_functions import link_airplane_to_stand
-from src.domain.status_constants import BUS_COMMANDS, SPAWN_CONTEXT
+from src.domain.status_constants import BUS_COMMANDS, LOG_EVENTS, NATURAL_LANGUAGE_LOGS, SPAWN_CONTEXT
+from src.utils.runtime_logging import runtime_log
 
 def make_spawn_tracking_hook(*, world_state, Session=None):
     def _hook(payload: dict) -> None:
@@ -34,5 +35,16 @@ def make_spawn_tracking_hook(*, world_state, Session=None):
             stand_id = stand_id,
             prefab = prefab,
             position = payload.get("position"),
+        )
+        runtime_log(
+            LOG_EVENTS.PLANE_SPAWN_LINKED,
+            NATURAL_LANGUAGE_LOGS.PLANE_SPAWN_LINKED.format(
+                prefab_model=prefab,
+                stand=stand_id,
+            ),
+            airplane_id=airplane_id,
+            prefab_model=prefab,
+            stand=stand_id,
+            spawn_context=spawn_ctx,
         )
     return _hook

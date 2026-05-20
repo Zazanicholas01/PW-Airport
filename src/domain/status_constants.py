@@ -1,6 +1,73 @@
 from dataclasses import dataclass
 from datetime import timedelta
 
+
+# ==========================================
+# LOGGING CONFIGURATION
+# ==========================================
+
+@dataclass
+class LOGGERS:
+    APP = "pw"
+    RUNTIME = "pw.runtime"
+    TRANSPORT = "pw.transport"
+    DB = "pw.db"
+    DASHBOARD = "pw.dashboard"
+
+
+@dataclass
+class LOG_EVENTS:
+    SETUP_SPLINES_PROCESSED = "setup_splines_processed"
+    SETUP_PREFABS_PROCESSED = "setup_prefabs_processed"
+    SETUP_FINISHED = "setup_finished"
+    MASTER_SPLINE_READY = "master_spline_ready"
+    LANDING_SPAWN_DIRECTIONS_CAPTURED = "landing_spawn_directions_captured"
+    STARTING_FLIGHTS_GENERATED = "starting_flights_generated"
+    RUNTIME_FLIGHTS_GENERATED = "runtime_flights_generated"
+    SCHEDULING_WINDOW = "scheduling_window"
+    FLIGHT_ASSIGNED = "flight_assigned"
+    FLIGHT_DEPARTED = "flight_departed"
+    FLIGHT_EMBARKING = "flight_embarking"
+    LANDING_PLANE_ASSIGNED = "landing_plane_assigned"
+    LANDING_DEPARTED = "landing_departed"
+    LANDING_RESERVED = "landing_reserved"
+    LANDING_ROUTED_TO_PARKING = "landing_routed_to_parking"
+    LANDING_APPROACH_STARTED = "landing_approach_started"
+    LANDING_COMPLETED = "landing_completed"
+    LANDING_DELAYED = "landing_delayed"
+    PLANE_SPAWN_LINKED = "plane_spawn_linked"
+    PLANE_SPAWNED = "plane_spawned"
+    PLANE_DESPAWNED = "plane_despawned"
+    PLANE_DISEMBARKED = "plane_disembarked"
+    STAND_RELEASED = "stand_released"
+    PARKING_ENTERED = "parking_entered"
+    PARKING_CLEARED = "parking_cleared"
+    GROUND_SERVICE_STARTED = "ground_service_started"
+    GROUND_SERVICE_COMPLETED = "ground_service_completed"
+    VEHICLE_DISPATCHED = "vehicle_dispatched"
+    VEHICLE_AVAILABLE = "vehicle_available"
+    UNITY_CONNECTED = "unity_connected"
+    UNITY_DISCONNECTED = "unity_disconnected"
+
+
+@dataclass
+class NATURAL_LANGUAGE_LOGS:
+    SETUP_SPLINES_EMPTY = "Spline batch processed successfully: no splines received"
+    SETUP_SPLINES_PROCESSED = "Spline batch processed successfully: {splines} splines, {stand_positions} stand positions"
+    SETUP_PREFABS_EMPTY = "Prefab batch processed successfully: no prefabs received"
+    SETUP_PREFABS_PROCESSED = "Prefab batch processed successfully: {prefabs} prefabs available"
+    SETUP_FINISHED = "Setup finished successfully: {paths} paths available"
+    MASTER_SPLINE_READY = "Master Spline Committed & Master Links Constructed"
+    LANDING_SPAWN_DIRECTIONS_CAPTURED = "Captured Directional Landing Spawn Directions"
+    PLANE_SPAWN_LINKED = "Spawned {prefab_model} into stand {stand} and linked together."
+    LANDING_PLANE_ASSIGNED = "Scheduled landing plane {plane_id} and linked to flight {flight_id}"
+    LANDING_DEPARTED = "Remote departure from {remote_airport} for flight {flight_id}"
+    STARTING_FLIGHTS_GENERATED = "Generated starting flights: {count}"
+    RUNTIME_FLIGHTS_GENERATED = "Generated runtime flights: {count}"
+    SCHEDULING_WINDOW = "Scheduling window flights: {count}"
+    SCHEDULING_WINDOW_WITH_STATUSES = "Scheduling window flights: {count} ({statuses})"
+
+
 # Global constants
 PERSONAL_AIRPORT = "LIAG"
 ALLOWED_AIRLINES = ("LUN", "UMB", "JAE", "ALI")
@@ -176,10 +243,10 @@ class GENERATOR_CONFIG:
     ARRIVAL_N_FLIGHTS = 5
 
     # Time windows are deltas from "now", in minutes.
-    DEPARTURE_MIN_DELTA_MINUTES = 60
-    DEPARTURE_MAX_DELTA_MINUTES = 120
-    ARRIVAL_MIN_DELTA_MINUTES = 30
-    ARRIVAL_MAX_DELTA_MINUTES = 60
+    DEPARTURE_MIN_DELTA_MINUTES = 120
+    DEPARTURE_MAX_DELTA_MINUTES = 180
+    ARRIVAL_MIN_DELTA_MINUTES = 60
+    ARRIVAL_MAX_DELTA_MINUTES = 120
 
     # Backwards-compatible alias used by the scheduler loop.
     RANDOM_FLIGHTS_COUNT = TOTAL_N_FLIGHTS

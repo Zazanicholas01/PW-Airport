@@ -13,6 +13,7 @@ public class SplineRegistry : MonoBehaviour
     [SerializeField] private bool includeInactive = true;
     [SerializeField] private Transform splineRoot;
     [SerializeField] private List<Transform> additionalSplineRoots = new();
+    [SerializeField] private float metersPerUnityUnit = 867.08f;
 
 
     private LocalWebSocketClient ws;
@@ -43,6 +44,7 @@ public class SplineRegistry : MonoBehaviour
         public List<KnotEntry> knotEntries; 
         public KnotPosition firstKnotPos;
         public KnotPosition lastKnotPos;
+        public float lengthUnits;
         public float lengthMeters;
     }
 
@@ -239,6 +241,9 @@ public class SplineRegistry : MonoBehaviour
                 knotIndex++;
             }
 
+            float lengthUnits = EstimateSplineLengthWorld(container);
+            float lengthMeters = lengthUnits * Mathf.Max(0.0001f, metersPerUnityUnit);
+
             yield return new SplineRecord
             {
                 name = splineName,
@@ -246,7 +251,8 @@ public class SplineRegistry : MonoBehaviour
                 knotEntries = knotEntries,
                 firstKnotPos = firstKnotPos,
                 lastKnotPos = lastKnotPos,
-                lengthMeters = EstimateSplineLengthWorld(container),
+                lengthUnits = lengthUnits,
+                lengthMeters = lengthMeters,
             };
         }
     }

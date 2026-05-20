@@ -11,6 +11,7 @@ from src.db import models
 
 from src.db.engine import get_engine
 from src.utils.event_log import append_event
+from src.utils.runtime_logging import runtime_log
 
 from src.domain.status_constants import *
 
@@ -129,6 +130,7 @@ class RuntimeBusHandler:
         try:
             # Wait the configured disembark seconds
             await self._sleep_sim_seconds(self._disembark_sim_seconds)
+            flight_id: str | None = None
 
             with self.Session() as session:
 
@@ -151,6 +153,7 @@ class RuntimeBusHandler:
                 ).first()
 
                 if flight is not None:
+                    flight_id = getattr(flight, "id", None)
                     flight.status = FLIGHT_STATUS.COMPLETED
 
                 session.commit()
@@ -158,6 +161,12 @@ class RuntimeBusHandler:
             # Final logging and exception handling
 
             logging.info("[runtime] disembark complete airplane_id=%s -> Parked", airplane_id)
+            runtime_log(
+                LOG_EVENTS.PLANE_DISEMBARKED,
+                "Plane disembarked",
+                airplane_id=airplane_id,
+                flight_id=flight_id,
+            )
             append_event({
                 "type": MESSAGE_TYPES.BACKEND_EVENT,
                 "event": BACKEND_EVENTS.DISEMBARK_COMPLETE,
@@ -272,6 +281,13 @@ class RuntimeBusHandler:
                         airplane_id,
                         parking_n,
                     )
+                    runtime_log(
+                        LOG_EVENTS.PARKING_ENTERED,
+                        "Plane entered parking",
+                        airplane_id=airplane_id,
+                        parking_n=parking_n,
+                        route_id=airplane.route_id,
+                    )
 
                     # Send event to dashboard web
                     append_event({
@@ -311,6 +327,13 @@ class RuntimeBusHandler:
 
                     # Logging and return
                     logging.info("[runtime] path_completed (departure) airplane_id=%s route_id=%s", airplane_id, airplane.route_id)
+                    runtime_log(
+                        LOG_EVENTS.PLANE_DESPAWNED,
+                        "Plane left airport airspace",
+                        airplane_id=airplane_id,
+                        flight_id=getattr(flight, "id", None) if flight is not None else None,
+                        route_id=airplane.route_id,
+                    )
                     append_event({
                         "type": MESSAGE_TYPES.BACKEND_EVENT,
                         "event": BACKEND_EVENTS.DEPARTURE_COMPLETED,
@@ -349,6 +372,13 @@ class RuntimeBusHandler:
                         await self._ground_ops.maybe_start_for_airplane(airplane_id)
 
                     logging.info("[runtime] path_completed (landing) airplane_id=%s -> Disembarking (timer started)", airplane_id)
+                    runtime_log(
+                        LOG_EVENTS.LANDING_COMPLETED,
+                        "Landing completed at stand",
+                        airplane_id=airplane_id,
+                        flight_id=getattr(flight, "id", None) if flight is not None else None,
+                        stand_id=stand_id,
+                    )
                     append_event({
                         "type": MESSAGE_TYPES.BACKEND_EVENT,
                         "event": BACKEND_EVENTS.LANDING_COMPLETED,
@@ -460,6 +490,14 @@ class RuntimeBusHandler:
                                     released_stand_id,
                                     route_id,
                                 )
+                                runtime_log(
+                                    LOG_EVENTS.PARKING_CLEARED,
+                                    "Parking cleared",
+                                    airplane_id=waiting_airplane_id,
+                                    parking_n=parking_n,
+                                    stand_id=released_stand_id,
+                                    route_id=route_id,
+                                )
 
                                 # Send event to dashboard web
                                 append_event({
@@ -473,6 +511,12 @@ class RuntimeBusHandler:
 
 
                 logging.info("[runtime] plane_left_stand released stand_id=%s airplane_id=%s", stand_id, airplane_id)
+                runtime_log(
+                    LOG_EVENTS.STAND_RELEASED,
+                    "Stand released",
+                    airplane_id=airplane_id,
+                    stand_id=stand_id,
+                )
                 append_event({
                     "type": MESSAGE_TYPES.BACKEND_EVENT,
                     "event": RUNTIME_EVENTS.PLANE_LEFT_STAND,
@@ -513,6 +557,12 @@ class RuntimeBusHandler:
                 session.commit()
 
                 logging.info("[runtime] parking_entered airplane_id=%s parking=%s", airplane_id, parking_n)
+                runtime_log(
+                    LOG_EVENTS.PARKING_ENTERED,
+                    "Plane entered parking",
+                    airplane_id=airplane_id,
+                    parking_n=parking_n,
+                )
                 return
 
 

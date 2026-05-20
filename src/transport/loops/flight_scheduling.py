@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import time
+from collections import Counter
 from datetime import timedelta
 
 from src.domain.status_constants import (
@@ -12,10 +13,13 @@ from src.domain.status_constants import (
     LANDING_DIRECTION_SPLINE_PREFIX,
     LANDING_ROUTE_DECISION,
     LANDING_ROUTE_SPLINE_NAME,
+    LOG_EVENTS,
     MASTER_SPLINE,
     MESSAGE_TYPES,
     MIN_POLL_REAL_S,
+    NATURAL_LANGUAGE_LOGS,
     PERSONAL_AIRPORT,
+    SPLINE_PREFIX,
     SPAWN_CONTEXT,
     STAND_STATUS,
     WINDOW_TIMEDELTA_HOURS,
@@ -27,10 +31,11 @@ from src.db import models
 from src.schedulers.flight_scheduler import FlightSlidingWindowScheduler
 from src.utils.datetimes import as_rome, as_utc
 from src.utils.event_log import append_event
+from src.utils.runtime_logging import runtime_log, runtime_summary
 from src.utils.geo_direction import direction_for_airport_icao
 from src.utils.mapping import landing_source_for_range, range_for_airplane_model
 from src.utils.landing_timing import landing_spawn_lead_seconds
-from src.path_commands import make_start_path_command
+from src.path_commands import attach_speed_profiles, make_start_path_command
 
 from src.transport.session import SessionContext
 
@@ -218,26 +223,43 @@ def _dynamic_landing_spawn_context(ctx: SessionContext, flight) -> tuple[object,
     route_segments = None
     if isinstance(airplane_model, str) and airplane_model:
         try:
+            with ctx.Session() as session:
+                airplane = session.get(models.Airplane, airplane_id)
+                route_id = getattr(airplane, "route_id", None) if airplane is not None else None
+                assigned_path = session.get(models.Path, route_id) if route_id is not None else None
+                route_segments = getattr(assigned_path, "spline", None) if assigned_path is not None else None
+
             landing_id = landing_source_for_range(range_for_airplane_model(airplane_model))
-            route_segments = []
-            if direction is not None:
-                route_segments.append({
-                    "name": f"{LANDING_DIRECTION_SPLINE_PREFIX}{direction.value}",
-                    "t_start": 0.0,
-                    "t_end": 1.0,
-                })
-            route_segments.extend([
-                {
-                    "name": LANDING_ROUTE_SPLINE_NAME,
-                    "t_start": 0.0,
-                    "t_end": 1.0,
-                },
-                {
-                    "name": LANDING_APPROACH_SPLINE_NAME,
-                    "t_start": 0.0,
-                    "t_end": 1.0,
-                },
-            ])
+            if not route_segments:
+                route_segments = []
+                if direction is not None:
+                    route_segments.append({
+                        "name": f"{LANDING_DIRECTION_SPLINE_PREFIX}{direction.value}",
+                        "t_start": 0.0,
+                        "t_end": 1.0,
+                    })
+                route_segments.extend([
+                    {
+                        "name": LANDING_ROUTE_SPLINE_NAME,
+                        "t_start": 0.0,
+                        "t_end": 1.0,
+                    },
+                    {
+                        "name": LANDING_APPROACH_SPLINE_NAME,
+                        "t_start": 0.0,
+                        "t_end": 1.0,
+                    },
+                    {
+                        "name": f"{SPLINE_PREFIX}{landing_id}",
+                        "t_start": 0.0,
+                        "t_end": 1.0,
+                    },
+                    {
+                        "name": MASTER_SPLINE,
+                        "t_start": 0.0,
+                        "t_end": 1.0,
+                    },
+                ])
         except ValueError:
             route_segments = None
 
@@ -248,6 +270,9 @@ def _dynamic_landing_spawn_context(ctx: SessionContext, flight) -> tuple[object,
             if isinstance(spline, dict) and spline.get("name") == name:
                 return spline
         return None
+
+    if route_segments:
+        route_segments = attach_speed_profiles(route_segments)
 
     lead_seconds = landing_spawn_lead_seconds(
         spawn_position=spawn_position,
@@ -276,7 +301,7 @@ async def flight_scheduler_loop(
 
     # Get landing spawn position from setup bus
     landing_spawn_position = ctx.setup_bus.state.landing_spawn_position
-    logging.info("[spawn_scheduler] landing_spawn_position=%s", landing_spawn_position)
+    logging.debug("[spawn_scheduler] landing_spawn_position=%s", landing_spawn_position)
 
     # Create a Flight Scheduler instance
     scheduler = FlightSlidingWindowScheduler(
@@ -305,7 +330,16 @@ async def flight_scheduler_loop(
         ensure_in_window=GENERATOR_CONFIG.ENSURE_IN_WINDOW,
         window=scheduler.window
     )
-    logging.info(f"[flight_scheduler] generated debug flights (n={GENERATOR_CONFIG.RANDOM_FLIGHTS_COUNT})")
+    logging.debug(f"[flight_scheduler] generated debug flights (n={GENERATOR_CONFIG.RANDOM_FLIGHTS_COUNT})")
+    runtime_summary(
+        LOG_EVENTS.STARTING_FLIGHTS_GENERATED,
+        NATURAL_LANGUAGE_LOGS.STARTING_FLIGHTS_GENERATED.format(
+            count=GENERATOR_CONFIG.RANDOM_FLIGHTS_COUNT
+        ),
+        aggregate_key="starting_flights_generated",
+        count=GENERATOR_CONFIG.RANDOM_FLIGHTS_COUNT,
+        window_minutes=int(scheduler.window.total_seconds() // 60),
+    )
     append_event({
         "type": MESSAGE_TYPES.BACKEND_EVENT,
         "event": BACKEND_EVENTS.DEBUG_FLIGHTS_GENERATED,
@@ -332,11 +366,19 @@ async def flight_scheduler_loop(
                 scheduler.window,
             )
 
-            logging.info(
+            logging.debug(
                 "[flight_scheduler] runtime flights generated count=%d scheduled_at=%s now=%s",
                 generated_count,
                 next_runtime_generation_at.isoformat(),
                 now.isoformat(),
+            )
+            runtime_summary(
+                LOG_EVENTS.RUNTIME_FLIGHTS_GENERATED,
+                NATURAL_LANGUAGE_LOGS.RUNTIME_FLIGHTS_GENERATED.format(count=generated_count),
+                aggregate_key=f"runtime_flights_generated:{next_runtime_generation_at.isoformat()}",
+                count=generated_count,
+                scheduled_at=next_runtime_generation_at.isoformat(),
+                generated_at=now.isoformat(),
             )
 
             append_event({
@@ -431,13 +473,36 @@ async def flight_scheduler_loop(
                 }
                 for flight in flights
             ]
+            status_counts = Counter(str(item.get("status") or "Unknown") for item in items)
+            status_summary = ", ".join(
+                f"{status}: {count}"
+                for status, count in sorted(status_counts.items())
+            )
+            message = (
+                NATURAL_LANGUAGE_LOGS.SCHEDULING_WINDOW_WITH_STATUSES.format(
+                    count=len(items),
+                    statuses=status_summary,
+                )
+                if status_summary
+                else NATURAL_LANGUAGE_LOGS.SCHEDULING_WINDOW.format(count=len(items))
+            )
 
             # Log scheduling window's flights
-            logging.info("[flight_scheduler] window now=%s time_scale=%.2f flights_in_window=%d flights=%s",
+            logging.debug("[flight_scheduler] window now=%s time_scale=%.2f flights_in_window=%d flights=%s",
                 now.isoformat(),
                 time_scale,
                 len(items),
                 items
+            )
+            runtime_summary(
+                LOG_EVENTS.SCHEDULING_WINDOW,
+                message,
+                aggregate_key="scheduling_window",
+                min_interval_seconds=poll_seconds,
+                flights=len(items),
+                statuses=dict(status_counts),
+                window_minutes=int(scheduler.window.total_seconds() // 60),
+                time_scale=round(time_scale, 2),
             )
 
         for flight in flights:
@@ -490,6 +555,15 @@ async def flight_scheduler_loop(
                     continue
 
                 logging.info("[flight_scheduler] departure assigned airplane_id=%s stand_id=%s flight_id=%s", airplane_id, stand_id, flight_id)
+                runtime_log(
+                    LOG_EVENTS.FLIGHT_ASSIGNED,
+                    "Departure assigned",
+                    flight_id=flight_id,
+                    airplane_id=airplane_id,
+                    stand_id=stand_id,
+                    route_id=route_id,
+                    required_type=required_type,
+                )
                 append_event({
                     "type": MESSAGE_TYPES.BACKEND_EVENT,
                     "event": BACKEND_EVENTS.DEPARTURE_ASSIGNED,
@@ -501,7 +575,7 @@ async def flight_scheduler_loop(
 
             # LANDING - In Window for Landing Flights on Departure Time
             if scheduler.should_assign_landing_plane(flight=flight, now_utc=now):
-                logging.info("[flight_scheduler] landing_dep: due flight_id=%s dep=%s", flight_id, getattr(flight, "departure_time", None))
+                logging.debug("[flight_scheduler] landing_dep: due flight_id=%s dep=%s", flight_id, getattr(flight, "departure_time", None))
 
                 # Create and assign airplane for landing flight that needs to depart from a remote airport
                 airplane_id = ctx.flight_actions.create_and_assign_airplane_for_landing_departure(
@@ -513,7 +587,16 @@ async def flight_scheduler_loop(
                     scheduler.handled.discard((flight_id, "landing_dep"))
                     continue
 
-                logging.info("[flight_scheduler] landing_dep: linked airplane_id=%s to flight_id=%s (Scheduled)", airplane_id, flight_id)
+                logging.debug("[flight_scheduler] landing_dep: linked airplane_id=%s to flight_id=%s (Scheduled)", airplane_id, flight_id)
+                runtime_log(
+                    LOG_EVENTS.LANDING_PLANE_ASSIGNED,
+                    NATURAL_LANGUAGE_LOGS.LANDING_PLANE_ASSIGNED.format(
+                        plane_id=airplane_id,
+                        flight_id=flight_id,
+                    ),
+                    flight_id=flight_id,
+                    airplane_id=airplane_id,
+                )
                 append_event({
                     "type": MESSAGE_TYPES.BACKEND_EVENT,
                     "event": BACKEND_EVENTS.LANDING_PLANE_ASSIGNED,
@@ -522,20 +605,72 @@ async def flight_scheduler_loop(
                 })
                 continue
 
+            landing_spawn_context = None
+            if getattr(flight, "destination", None) == ctx.airport_icao:
+                landing_spawn_context = _dynamic_landing_spawn_context(ctx, flight)
+
+            if landing_spawn_context is not None:
+                _, _, lead_seconds = landing_spawn_context
+                arrival_utc = as_utc(getattr(flight, "arrival_time", None))
+                if arrival_utc is not None:
+                    spawn_at = arrival_utc - timedelta(seconds=lead_seconds)
+                    logging.info(
+                        "[landing_spawn][PLAN] flight_id=%s arrival=%s lead_seconds=%.1f spawn_at=%s now=%s",
+                        flight_id,
+                        arrival_utc.isoformat(),
+                        lead_seconds,
+                        spawn_at.isoformat(),
+                        now.isoformat(),
+                    )
+
+                if scheduler.should_mark_landing_departed_dynamic(
+                    flight=flight,
+                    now_utc=now,
+                    lead_seconds=lead_seconds,
+                ):
+                    ctx.flight_actions.mark_landing_departed(flight_id=flight_id)
+                    remote_airport = getattr(flight, "origin", None) or "unknown"
+                    logging.debug(
+                        "[flight_scheduler] landing_dep: dynamic departed flight_id=%s -> Lan_Ongoing",
+                        flight_id,
+                    )
+                    runtime_log(
+                        LOG_EVENTS.LANDING_DEPARTED,
+                        NATURAL_LANGUAGE_LOGS.LANDING_DEPARTED.format(
+                            remote_airport=remote_airport,
+                            flight_id=flight_id,
+                        ),
+                        flight_id=flight_id,
+                        remote_airport=remote_airport,
+                        lead_seconds=lead_seconds,
+                    )
+                    append_event({
+                        "type": MESSAGE_TYPES.BACKEND_EVENT,
+                        "event": BACKEND_EVENTS.LANDING_DEPARTED,
+                        "flight_id": flight_id,
+                    })
+                    setattr(flight, "status", FLIGHT_STATUS.LAN_ONGOING)
+
             # MARK LANDING DEPARTED - Marks a landing flight as departed from a remote airport
             if scheduler.should_mark_landing_departed(flight=flight, now_utc=now):
                 ctx.flight_actions.mark_landing_departed(flight_id=flight_id)
-                logging.info("[flight_scheduler] landing_dep: departed flight_id=%s -> Lan_Ongoing", flight_id)
+                remote_airport = getattr(flight, "origin", None) or "unknown"
+                logging.debug("[flight_scheduler] landing_dep: departed flight_id=%s -> Lan_Ongoing", flight_id)
+                runtime_log(
+                    LOG_EVENTS.LANDING_DEPARTED,
+                    NATURAL_LANGUAGE_LOGS.LANDING_DEPARTED.format(
+                        remote_airport=remote_airport,
+                        flight_id=flight_id,
+                    ),
+                    flight_id=flight_id,
+                    remote_airport=remote_airport,
+                )
                 append_event({
                     "type": MESSAGE_TYPES.BACKEND_EVENT,
                     "event": BACKEND_EVENTS.LANDING_DEPARTED,
                     "flight_id": flight_id,
                 })
                 continue
-
-            landing_spawn_context = None
-            if getattr(flight, "destination", None) == ctx.airport_icao:
-                landing_spawn_context = _dynamic_landing_spawn_context(ctx, flight)
 
             # LANDING RESERVATION - dynamically timed from landing route distance/speed
             should_reserve_landing = False
@@ -572,6 +707,14 @@ async def flight_scheduler_loop(
                         result.get("route_id"),
                         flight_id,
                     )
+                    runtime_log(
+                        LOG_EVENTS.LANDING_RESERVED,
+                        "Landing stand reserved",
+                        flight_id=flight_id,
+                        airplane_id=airplane_id,
+                        stand_id=result.get("stand_id"),
+                        route_id=result.get("route_id"),
+                    )
 
                     append_event({
                         "type": MESSAGE_TYPES.BACKEND_EVENT,
@@ -581,7 +724,7 @@ async def flight_scheduler_loop(
                         "airplane_id": airplane_id,
                         "route_id": result.get("route_id"),
                     })
-                    continue
+                    setattr(flight, "status", FLIGHT_STATUS.LANDING)
 
                 # STAND UNAVAILABLE - PARKING LANDING
                 if decision == LANDING_ROUTE_DECISION.PARKING:
@@ -590,6 +733,14 @@ async def flight_scheduler_loop(
                         result.get("parking_n"),
                         result.get("route_id"),
                         flight_id,
+                    )
+                    runtime_log(
+                        LOG_EVENTS.LANDING_ROUTED_TO_PARKING,
+                        "Landing routed to parking",
+                        flight_id=flight_id,
+                        airplane_id=airplane_id,
+                        parking_n=result.get("parking_n"),
+                        route_id=result.get("route_id"),
                     )
 
                     append_event({
@@ -600,13 +751,19 @@ async def flight_scheduler_loop(
                         "airplane_id": airplane_id,
                         "route_id": result.get("route_id"),
                     })
-                    continue
+                    setattr(flight, "status", FLIGHT_STATUS.LANDING)
 
                 # PARKING UNAVAILABLE - DELAY 15 MINUTES
                 if decision == LANDING_ROUTE_DECISION.DELAYED:
                     logging.info(
                         "[flight_scheduler] landing_arr: no stand or parking; delayed arrival 15 minutes flight_id=%s",
                         flight_id,
+                    )
+                    runtime_log(
+                        LOG_EVENTS.LANDING_DELAYED,
+                        "Landing delayed: no stand or parking available",
+                        flight_id=flight_id,
+                        minutes=15,
                     )
 
                     append_event({
@@ -633,6 +790,12 @@ async def flight_scheduler_loop(
                     "[flight_scheduler] departure embarking flight_id=%s airplane_id=%s",
                     flight_id,
                     airplane_id,
+                )
+                runtime_log(
+                    LOG_EVENTS.FLIGHT_EMBARKING,
+                    "Departure embarking started",
+                    flight_id=flight_id,
+                    airplane_id=airplane_id,
                 )
 
                 if ctx.ground_ops is not None and isinstance(airplane_id, str) and airplane_id:
@@ -679,6 +842,13 @@ async def flight_scheduler_loop(
                         
                         await ctx.bus.send_command(cmd)
                         logging.info("[flight_scheduler] start_path departure airplane_id=%s flight_id=%s", airplane_id, flight_id)
+                        runtime_log(
+                            LOG_EVENTS.FLIGHT_DEPARTED,
+                            "Departure started",
+                            flight_id=flight_id,
+                            airplane_id=airplane_id,
+                            route_id=cmd["route_id"],
+                        )
                         append_event({
                             "type": MESSAGE_TYPES.BACKEND_EVENT,
                             "event": BACKEND_EVENTS.DEPARTURE_STARTED,
@@ -698,6 +868,19 @@ async def flight_scheduler_loop(
                 continue
 
             direction, spawn_position, lead_seconds = landing_spawn_context
+
+            arrival_utc = as_utc(getattr(flight, "arrival_time", None))
+            spawn_at = arrival_utc - timedelta(seconds=lead_seconds)
+
+            logging.warning(
+                "[landing_spawn][CHECK] flight_id=%s now=%s arrival=%s lead_seconds=%.1f spawn_at=%s delta_to_arrival=%.1f",
+                flight_id,
+                now.isoformat(),
+                arrival_utc.isoformat(),
+                lead_seconds,
+                spawn_at.isoformat(),
+                (arrival_utc - now).total_seconds(),
+            )
 
             if scheduler.should_spawn_landing_plane_dynamic(flight=flight, now_utc=now, lead_seconds=lead_seconds):
 
@@ -721,7 +904,7 @@ async def flight_scheduler_loop(
                     scheduler.handled.discard((flight_id, "landing_spawn"))
                     continue
 
-                logging.info(
+                logging.warning(
                     "[landing_spawn][OUT] flight_id=%s airplane_id=%s prefab=%s direction=%s lead_seconds=%.1f pos=%s",
                     flight_id, airplane_id, prefab, getattr(direction, "value", None), lead_seconds, spawn_position,
                 )
@@ -736,6 +919,15 @@ async def flight_scheduler_loop(
                     spawn_context=SPAWN_CONTEXT.LANDING,
                 ))
                 logging.info("[flight_scheduler] landing_spawn: spawned airplane_id=%s flight_id=%s", airplane_id, flight_id)
+                runtime_log(
+                    LOG_EVENTS.PLANE_SPAWNED,
+                    "Landing plane spawned",
+                    flight_id=flight_id,
+                    airplane_id=airplane_id,
+                    prefab=prefab,
+                    direction=getattr(direction, "value", None),
+                    lead_seconds=lead_seconds,
+                )
                 append_event({
                     "type": MESSAGE_TYPES.BACKEND_EVENT,
                     "event": BACKEND_EVENTS.LANDING_SPAWN,
@@ -785,6 +977,13 @@ async def flight_scheduler_loop(
 
                 # Send start path command
                 await ctx.bus.send_command(cmd)
+                runtime_log(
+                    LOG_EVENTS.LANDING_APPROACH_STARTED,
+                    "Landing approach started",
+                    flight_id=flight_id,
+                    airplane_id=airplane_id,
+                    route_id=cmd["route_id"],
+                )
 
                 # Log to dashboard web
                 append_event({

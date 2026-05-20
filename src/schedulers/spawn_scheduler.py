@@ -51,10 +51,11 @@ class SpawnScheduler:
             session.execute(
                 update(models.Stand).values(status=STAND_STATUS.AVAILABLE, airplane_id=None,)
             )
+            session.execute(update(models.Flight).values(airplane_id=None))
             session.execute(
                 update(models.Flight)
                 .where(models.Flight.status != FLIGHT_STATUS.COMPLETED)
-                .values(airplane_id=None, status=FLIGHT_STATUS.UNSCHEDULED)
+                .values(status=FLIGHT_STATUS.UNSCHEDULED)
             )
             session.execute(delete(models.Operation))
             

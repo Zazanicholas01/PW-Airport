@@ -9,6 +9,7 @@ from sqlalchemy import delete, text, update
 from src.db.engine import get_engine
 from src.db import models
 from src.domain.status_constants import *
+from src.utils.runtime_logging import runtime_summary
 
 from src.utils.geo_direction import CARDINAL_DIRECTIONS
 
@@ -243,6 +244,12 @@ class SetupBusHandler:
         self.setup_completed = True
 
         logging.info("[setup bus] Setup completed; subsequent setup payloads will be ignored.")
+        runtime_summary(
+            LOG_EVENTS.SETUP_FINISHED,
+            NATURAL_LANGUAGE_LOGS.SETUP_FINISHED.format(paths=len(paths)),
+            aggregate_key="setup_finished",
+            paths=len(paths),
+        )
 
 
     async def _buffer_spline(self, spline: dict) -> None:
@@ -268,12 +275,30 @@ class SetupBusHandler:
         # Check if there is any pending spline to commit
         if not self.state.pending_splines:
             logging.info("[setup bus] No splines to commit")
+            runtime_summary(
+                LOG_EVENTS.SETUP_SPLINES_PROCESSED,
+                NATURAL_LANGUAGE_LOGS.SETUP_SPLINES_EMPTY,
+                aggregate_key="setup_splines",
+                splines=0,
+                stand_positions=0,
+            )
             return
-        
+
         # Build a map of stand_id -> position derived from spline first-knot positions
+        spline_count = len(self.state.pending_splines)
         stand_positions = self._commit_splines_to_graph(self.state.pending_splines)
-        logging.info(f"[setup bus] Committed splines {len(self.state.pending_splines)}")
+        logging.info(f"[setup bus] Committed splines {spline_count}")
         self.state.pending_splines.clear()
+        runtime_summary(
+            LOG_EVENTS.SETUP_SPLINES_PROCESSED,
+            NATURAL_LANGUAGE_LOGS.SETUP_SPLINES_PROCESSED.format(
+                splines=spline_count,
+                stand_positions=len(stand_positions),
+            ),
+            aggregate_key="setup_splines",
+            splines=spline_count,
+            stand_positions=len(stand_positions),
+        )
 
         # Update stand position in DB and commits
         if stand_positions:
@@ -305,12 +330,25 @@ class SetupBusHandler:
         # No commit if no prefabs have been buffered
         if not self.state.pending_prefabs:
             logging.info("[setup bus] No Prefabs to Commit")
+            runtime_summary(
+                LOG_EVENTS.SETUP_PREFABS_PROCESSED,
+                NATURAL_LANGUAGE_LOGS.SETUP_PREFABS_EMPTY,
+                aggregate_key="setup_prefabs",
+                prefabs=0,
+            )
             return
 
         # Add prefabs to prefab store
+        prefab_count = len(self.state.pending_prefabs)
         self.prefab_store.add_prefabs(self.state.pending_prefabs)
-        logging.info(f"[setup bus] Committed {len(self.state.pending_prefabs)} Prefabs")
+        logging.info(f"[setup bus] Committed {prefab_count} Prefabs")
         self.state.pending_prefabs.clear()
+        runtime_summary(
+            LOG_EVENTS.SETUP_PREFABS_PROCESSED,
+            NATURAL_LANGUAGE_LOGS.SETUP_PREFABS_PROCESSED.format(prefabs=prefab_count),
+            aggregate_key="setup_prefabs",
+            prefabs=prefab_count,
+        )
 
 
     @staticmethod
@@ -326,6 +364,7 @@ class SetupBusHandler:
         """Commit spline definitions into the graph and extract stand positions"""
 
         stand_positions: dict[str, dict[str, Any]] = {}
+        captured_landing_directions: list[str] = []
 
         for spline in splines:
             name = spline.get("name", "<unnamed>")
@@ -339,7 +378,14 @@ class SetupBusHandler:
                 if self._is_vec3(first):
                     self.state.airport_position = self._vec3(first)
 
-                logging.info("[setup bus] Committed Master Spline")
+                logging.debug("[setup bus] Committed Master Spline")
+                runtime_summary(
+                    LOG_EVENTS.MASTER_SPLINE_READY,
+                    NATURAL_LANGUAGE_LOGS.MASTER_SPLINE_READY,
+                    aggregate_key="master_spline_ready",
+                    master_links=len(getattr(self.init_graph, "master_links", {})),
+                    master_edges=len(getattr(self.init_graph, "master_edges", [])),
+                )
                 continue
 
             # For non-master splines route to add_spline method and get first knot position from Unity payload
@@ -355,8 +401,9 @@ class SetupBusHandler:
 
                     if self.state.landing_spawn_position is None:
                         self.state.landing_spawn_position = pos
-                    
-                    logging.info(
+
+                    captured_landing_directions.append(direction)
+                    logging.debug(
                         "[setup bus] captured directional landing spawn direction=%s pos=%s",
                         direction,
                         pos,
@@ -368,7 +415,16 @@ class SetupBusHandler:
 
                 if stand_id in AVAILABLE_STANDS:
                     stand_positions[stand_id] = self._vec3(first)
-        
+
+        if captured_landing_directions:
+            runtime_summary(
+                LOG_EVENTS.LANDING_SPAWN_DIRECTIONS_CAPTURED,
+                NATURAL_LANGUAGE_LOGS.LANDING_SPAWN_DIRECTIONS_CAPTURED,
+                aggregate_key="landing_spawn_directions_captured",
+                count=len(captured_landing_directions),
+                directions=captured_landing_directions,
+            )
+
         return stand_positions
 
 

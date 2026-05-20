@@ -4,8 +4,9 @@ import asyncio
 import logging
 
 from src.schedulers.spawn_scheduler import SpawnScheduler
-from src.domain.status_constants import BACKEND_EVENTS, MESSAGE_TYPES
+from src.domain.status_constants import BACKEND_EVENTS, LOG_EVENTS, MESSAGE_TYPES
 from src.utils.event_log import append_event
+from src.utils.runtime_logging import runtime_log
 
 from src.transport.session import SessionContext
 
@@ -42,6 +43,11 @@ async def schedule_initial_spawns(ctx: SessionContext) -> None:
             await ctx.bus.send_command(cmd)
 
         logging.info("Scheduled %d initial spawn commands", len(commands))
+        runtime_log(
+            LOG_EVENTS.PLANE_SPAWNED,
+            "Initial plane spawns scheduled",
+            count=len(commands),
+        )
         append_event({
             "type": MESSAGE_TYPES.BACKEND_EVENT,
             "event": BACKEND_EVENTS.INITIAL_SPAWNS_SCHEDULED,

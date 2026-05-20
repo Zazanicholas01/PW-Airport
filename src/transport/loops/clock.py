@@ -127,7 +127,7 @@ async def clock_sync_loop(ctx: SessionContext) -> None:
     
     # Compute sync period (10 Hz)
     period = 1.0 / CLOCK_HERTZ
-    logging.info("Clock sync loop started: hz=%.1f", CLOCK_HERTZ)
+    logging.debug("Clock sync loop started: hz=%.1f", CLOCK_HERTZ)
 
     # Initialize timestamps to rate-limit logs on Terminal and events on Web UI
     last_log_t = 0.0
@@ -155,7 +155,7 @@ async def clock_sync_loop(ctx: SessionContext) -> None:
             # Clock Sync Logging in the CLI
             if (t - last_log_t) >= LOG_EVERY_S:
                 last_log_t = t
-                logging.info(
+                logging.debug(
                     "[clock_sync] sim_now=%s sim_unix_ms=%d time_scale=%.2f sync_id=%d",
                     isoformat_rome(sim_now, timespec="seconds"),
                     sync.sim_unix_ms,

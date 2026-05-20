@@ -1,9 +1,13 @@
 from __future__ import annotations
 
+import logging
 from math import sqrt
 
 from src.domain.status_constants import LANDING_PARAMETERS
-from src.path_commands import attach_speed_profiles
+
+logger = logging.getLogger(__name__)
+
+TOUCHDOWN_SEGMENT_PURPOSES = {"landing_range_final"}
 
 
 def _vec3_distance(a: dict, b: dict) -> float:
@@ -37,13 +41,16 @@ def _segment_points(spline: dict) -> list[tuple[float, float, float]]:
 
 
 def _spline_total_length_units(spline: dict) -> float | None:
-    try:
-        length_meters = float(spline.get("lengthMeters"))
-    except (AttributeError, TypeError, ValueError):
-        length_meters = 0.0
+    for key in ("lengthUnits", "lengthMeters"):
+        try:
+            length_units = float(spline.get(key))
+        except (AttributeError, TypeError, ValueError):
+            length_units = 0.0
 
-    if length_meters > 0.0:
-        return length_meters / LANDING_PARAMETERS.METERS_PER_UNITY_UNIT
+        # lengthMeters is a legacy Unity field that currently contains world
+        # units. Prefer lengthUnits when Unity sends it.
+        if length_units > 0.0:
+            return length_units
 
     points = _segment_points(spline)
     if len(points) < 2:
@@ -90,85 +97,16 @@ def _length_between_t_for_spline(spline: dict, t_start: float, t_end: float) -> 
     return abs(end_t - start_t) * total
 
 
-def _segment_speed_mps(segment: dict, fallback_kmh: float) -> float:
-    profile = segment.get("speed_profile") or {}
-
-    initial_kmh = float(profile.get("initial_speed_kmh", fallback_kmh))
-    target_kmh = float(profile.get("target_speed_kmh", fallback_kmh))
-    effective_kmh = max(0.5, target_kmh if target_kmh > 0.0 else initial_kmh)
-
-    return effective_kmh * 1000.0 / 3600.0
-
-
-def _profile_params(segment: dict, fallback_kmh: float) -> tuple[float, float, float]:
-    profile = segment.get("speed_profile") or {}
-
-    initial_kmh = float(profile.get("initial_speed_kmh", fallback_kmh))
-    target_kmh = float(profile.get("target_speed_kmh", fallback_kmh))
-    initial_mps = max(0.0, initial_kmh * 1000.0 / 3600.0)
-    target_mps = max(0.0, target_kmh * 1000.0 / 3600.0)
-
-    accel = float(profile.get("acceleration_mps2", 0.1))
-    decel = float(profile.get("deceleration_mps2", 0.1))
-    rate = max(0.01, accel if initial_mps < target_mps else decel)
-
-    return initial_mps, target_mps, rate
-
-
-def _time_for_distance_with_profile(
-        *,
-        distance_m: float,
-        initial_mps: float,
-        target_mps: float,
-        rate_mps2: float,
-) -> tuple[float, float]:
-    distance = max(0.0, distance_m)
-    current = max(0.0, initial_mps)
-    target = max(0.0, target_mps)
-    rate = max(0.01, rate_mps2)
-
-    if distance <= 0.0:
-        return 0.0, current
-
-    if abs(current - target) < 1e-6:
-        speed = max(0.1, target)
-        return distance / speed, target
-
-    delta_speed = target - current
-    time_to_target = abs(delta_speed) / rate
-    distance_to_target = ((current + target) / 2.0) * time_to_target
-
-    if distance <= distance_to_target:
-        if delta_speed > 0.0:
-            # distance = v0*t + 0.5*a*t^2
-            discriminant = max(0.0, current * current + 2.0 * rate * distance)
-            time_needed = (-current + sqrt(discriminant)) / rate
-            final_speed = current + rate * time_needed
-            return time_needed, final_speed
-
-        # distance = v0*t - 0.5*a*t^2
-        discriminant = max(0.0, current * current - 2.0 * rate * distance)
-        time_needed = (current - sqrt(discriminant)) / rate
-        final_speed = max(target, current - rate * time_needed)
-        return time_needed, final_speed
-
-    cruise_speed = max(0.1, target)
-    cruise_distance = distance - distance_to_target
-    return time_to_target + (cruise_distance / cruise_speed), target
-
-
 def _route_travel_seconds(
         *,
         route_segments: list[dict],
         spline_lookup,
         fallback_kmh: float,
 ) -> float | None:
-    enriched_segments = attach_speed_profiles(route_segments)
     total_seconds = 0.0
     resolved_any = False
-    current_speed_mps = 0.0
 
-    for index, segment in enumerate(enriched_segments):
+    for segment in route_segments:
         spline_name = str(segment.get("name", "") or "")
         spline = spline_lookup(spline_name)
         if not isinstance(spline, dict):
@@ -183,26 +121,56 @@ def _route_travel_seconds(
             continue
 
         resolved_any = True
+        profile = segment.get("speed_profile") if isinstance(segment.get("speed_profile"), dict) else {}
+        speed_kmh = _segment_schedule_speed_kmh(segment, fallback_kmh)
+        speed_mps = max(0.01, speed_kmh * 1000.0 / 3600.0)
         meters = length_units * LANDING_PARAMETERS.METERS_PER_UNITY_UNIT
-        profile_initial_mps, target_mps, rate_mps2 = _profile_params(segment, fallback_kmh)
-
-        if index == 0 or current_speed_mps <= 0.0:
-            initial_mps = profile_initial_mps
-        else:
-            initial_mps = current_speed_mps
-
-        segment_seconds, current_speed_mps = _time_for_distance_with_profile(
-            distance_m=meters,
-            initial_mps=initial_mps,
-            target_mps=target_mps,
-            rate_mps2=rate_mps2,
-        )
+        segment_seconds = meters / speed_mps
         total_seconds += segment_seconds
+
+        logger.info(
+            "[landing_timing] segment=%s length_units=%.3f meters=%.3f target_kmh=%.3f seconds=%.1f",
+            spline_name,
+            length_units,
+            meters,
+            speed_kmh,
+            segment_seconds,
+        )
+
+        if profile.get("purpose") in TOUCHDOWN_SEGMENT_PURPOSES:
+            logger.info(
+                "[landing_timing] stopping_at_touchdown segment=%s purpose=%s",
+                spline_name,
+                profile.get("purpose"),
+            )
+            break
 
     if not resolved_any:
         return None
 
+    if total_seconds <= 0.0:
+        return None
+
+    logger.info("[landing_timing] route_total_seconds=%.1f", total_seconds)
+
     return total_seconds
+
+
+def _segment_schedule_speed_kmh(segment: dict, fallback_kmh: float) -> float:
+    profile = segment.get("speed_profile")
+    if not isinstance(profile, dict):
+        return fallback_kmh
+
+    for key in ("schedule_speed_kmh", "target_speed_kmh"):
+        try:
+            speed_kmh = float(profile.get(key))
+        except (TypeError, ValueError):
+            continue
+
+        if speed_kmh > 0.0:
+            return speed_kmh
+
+    return fallback_kmh
 
 
 def landing_spawn_lead_seconds(
@@ -227,7 +195,7 @@ def landing_spawn_lead_seconds(
         unity_distance = _vec3_distance(spawn_position, airport_position)
         meters = unity_distance * LANDING_PARAMETERS.METERS_PER_UNITY_UNIT
 
-        speed_mps = max(1.0, avg_speed_kmh * 1000.0 / 3600.0)
+        speed_mps = max(0.01, avg_speed_kmh * 1000.0 / 3600.0)
         seconds = meters / speed_mps
 
     seconds += max(0.0, float(final_landing_to_stand_seconds))

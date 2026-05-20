@@ -67,5 +67,5 @@ def ensure_airplane_row(*, Session=None, airplane_id: str | None, prefab: str) -
         # Aggiunge in DB, log e ritorna l'ID dell'aereo creato
         session.add(airplane)
         session.commit()
-        logging.info("[db] Airplane created id=%s prefab=%s", airplane_id, prefab)
+        logging.debug("[db] Airplane created id=%s prefab=%s", airplane_id, prefab)
         return airplane_id

@@ -311,12 +311,11 @@ LAST_TASKS
     Dashboard
         - Valutare se cambiare immagini con render dei nostri modelli
     
-    Codice
-        - Parametrizzare dove possibile
-        - Ripulire Log
-    
     AR
         - Sistemare Plane Detection
 
     Monitoring & Dashboard
         - Implementare parte di analisi dati e dashboard
+
+    Docker
+        - Containerizzare servizio LLM
